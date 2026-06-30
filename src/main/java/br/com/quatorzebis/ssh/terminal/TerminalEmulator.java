@@ -371,7 +371,7 @@ public class TerminalEmulator {
                 case 1           -> appCursorKeys = true;
                 case 12          -> {} // cursor blink on  — ignored
                 case 25          -> cursorVisible = true;
-                case 47, 1047    -> activateAltBuffer(false);
+                case 47, 1047    -> activateAltBuffer(true);
                 case 1049        -> activateAltBuffer(true);
                 // commonly sent by vim/bash — safe to ignore
                 case 2004        -> {} // bracketed paste enable
@@ -386,7 +386,7 @@ public class TerminalEmulator {
                 case 4           -> {} // smooth scroll — ignored
                 case 12          -> {} // cursor blink off — ignored
                 case 25          -> cursorVisible = false;
-                case 47, 1047    -> deactivateAltBuffer(false);
+                case 47, 1047    -> deactivateAltBuffer(true);
                 case 1049        -> deactivateAltBuffer(true);
                 case 2004        -> {} // bracketed paste disable
                 case 1000, 1002,
