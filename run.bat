@@ -34,8 +34,18 @@ if !OK!==1 (
 
 if !OK!==0 ( pause & exit /b 1 )
 
+:: ── Increment build number ────────────────────────────────────
+set BUILD_FILE=build.number
+set BUILD_NUM=1
+if exist "%BUILD_FILE%" (
+    set /p BUILD_NUM=<"%BUILD_FILE%"
+    set /a BUILD_NUM+=1
+)
+echo !BUILD_NUM!>"%BUILD_FILE%"
+echo [INFO] Build #!BUILD_NUM!
+
 :: ── Build ─────────────────────────────────────────────────────
-call mvn -q package -DskipTests
+call mvn -q package -DskipTests -Dbuild.number=!BUILD_NUM!
 if errorlevel 1 ( echo [ERROR] Build failed. & pause & exit /b 1 )
 
 :: ── Run ──────────────────────────────────────────────────────
