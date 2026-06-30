@@ -299,12 +299,17 @@ public class TerminalTab {
     private void updateScrollBar() {
         ScrollBar sb = canvas.getVerticalBar();
         if (sb == null || sb.isDisposed()) return;
-        int hist  = emulator.getScrollbackSize();
-        int rows  = emulator.getRows();
-        // Hide scrollbar when in alternate buffer (vim, yast, etc.) or no scrollback
-        boolean show = !emulator.isAltBufferActive() && hist > 0;
-        sb.setVisible(show);
-        if (!show) return;
+        int hist = emulator.getScrollbackSize();
+        int rows = emulator.getRows();
+        // In alternate buffer (vim, yast) or no scrollback: keep scrollbar present
+        // but collapsed (thumb = max) so it stays disabled without changing canvas width
+        if (emulator.isAltBufferActive() || hist == 0) {
+            sb.setMinimum(0);
+            sb.setMaximum(1);
+            sb.setThumb(1);
+            sb.setSelection(0);
+            return;
+        }
         int total = hist + rows;
         sb.setMinimum(0);
         sb.setMaximum(total);

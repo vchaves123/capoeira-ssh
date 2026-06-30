@@ -21,8 +21,8 @@ if errorlevel 1 (
     )
 )
 
-:: ── Check Maven (only needed if JAR not yet built) ───────────
-if !OK!==1 if not exist "target\%JAR%" (
+:: ── Check Maven ───────────────────────────────────────────────
+if !OK!==1 (
     where mvn >nul 2>&1
     if errorlevel 1 (
         echo [ERROR] Maven not found in PATH ^(required to build the project^).
@@ -34,12 +34,9 @@ if !OK!==1 if not exist "target\%JAR%" (
 
 if !OK!==0 ( pause & exit /b 1 )
 
-:: ── Build if needed ──────────────────────────────────────────
-if not exist "target\%JAR%" (
-    echo Building...
-    call mvn -q package -DskipTests
-    if errorlevel 1 ( echo [ERROR] Build failed. & pause & exit /b 1 )
-)
+:: ── Build ─────────────────────────────────────────────────────
+call mvn -q package -DskipTests
+if errorlevel 1 ( echo [ERROR] Build failed. & pause & exit /b 1 )
 
 :: ── Run ──────────────────────────────────────────────────────
 java -jar "target\%JAR%"

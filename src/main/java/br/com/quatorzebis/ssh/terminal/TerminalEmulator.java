@@ -210,13 +210,33 @@ public class TerminalEmulator {
             }
             utf8Remaining = 0; // invalid — discard
         }
+        // C1 controls (0x80-0x9F): 8-bit equivalents of ESC + letter.
+        // These overlap the UTF-8 continuation-byte range, so handle them before UTF-8.
+        if (b >= 0x80 && b <= 0x9F) { processC1(b); return; }
         if      ((b & 0x80) == 0) processASCII(b);
         else if ((b & 0xE0) == 0xC0) { utf8Codepoint = b & 0x1F; utf8Remaining = 1; }
         else if ((b & 0xF0) == 0xE0) { utf8Codepoint = b & 0x0F; utf8Remaining = 2; }
         else if ((b & 0xF8) == 0xF0) { utf8Codepoint = b & 0x07; utf8Remaining = 3; }
     }
 
+    private void processC1(int b) {
+        switch (b) {
+            case 0x84 -> ind();
+            case 0x85 -> nel();
+            case 0x8D -> ri();
+            case 0x9B -> { state = State.CSI; params.clear(); csiPrivate = false; csiIntermediate = false; }
+            case 0x9C -> { state = State.NORMAL; oscBuffer.setLength(0); }  // ST — terminates any open string
+            case 0x90, 0x98, 0x9D, 0x9E, 0x9F -> { state = State.OSC; oscBuffer.setLength(0); } // DCS/SOS/OSC/PM/APC
+            default -> {}
+        }
+    }
+
     private void processASCII(int b) {
+        // ESC always (re)starts an escape sequence, regardless of current parser state.
+        // CAN (0x18) and SUB (0x1A) also cancel the current sequence.
+        if (b == 0x1B) { state = State.ESC; return; }
+        if (b == 0x18 || b == 0x1A) { state = State.NORMAL; return; }
+
         if (state == State.NORMAL) {
             switch (b) {
                 case 0x07 -> {}
@@ -226,7 +246,6 @@ public class TerminalEmulator {
                 case 0x0D -> { cursorCol = 0; wrapPending = false; }
                 case 0x0E -> useG1 = true;
                 case 0x0F -> useG1 = false;
-                case 0x1B -> state = State.ESC;
                 default   -> { if (b >= 0x20) processCodePoint(b); }
             }
         } else if (state == State.ESC) {
@@ -272,6 +291,8 @@ public class TerminalEmulator {
         switch (b) {
             case '[' -> { state = State.CSI; params.clear(); csiPrivate = false; csiIntermediate = false; }
             case ']' -> { state = State.OSC; oscBuffer.setLength(0); }
+            // String sequences — consume until ST (ESC \) using the OSC state machine
+            case 'P', '_', '^', 'X', 'k' -> { state = State.OSC; oscBuffer.setLength(0); }
             case '(' -> state = State.CHARSET_G0;
             case ')' -> state = State.CHARSET_G1;
             case '7' -> saveCursor();
@@ -625,11 +646,25 @@ public class TerminalEmulator {
      * Erases a single cell using the current SGR background colour.
      * VT100 spec: erase operations fill with space + current bg, not DEFAULT_COLOR.
      * This is what makes ncurses/YaST coloured backgrounds render correctly.
+     *
+     * Special case for alternate buffer (ncurses TUI apps like YaST/vim):
+     * when the current SGR background is DEFAULT_COLOR (i.e. after \e[0m reset),
+     * preserve the cell's existing explicit background rather than wiping it to
+     * DEFAULT_COLOR.  ncurses relies on background-color-erase (bce) but on
+     * navigation it issues \e[0m + \e[K for rows that visually should keep their
+     * coloured background, causing "black stripes" in gap areas.  Preserving the
+     * existing colour avoids this without breaking intentional explicit-colour erases.
      */
     private void eraseCell(TerminalCell cell) {
         cell.character = ' ';
         cell.fgColor   = DEFAULT_COLOR;
-        cell.bgColor   = currentAttrs.bgColor;   // honour current SGR background
+        if (currentAttrs.bgColor != DEFAULT_COLOR) {
+            cell.bgColor = currentAttrs.bgColor;
+        } else if (altBufferActive && cell.bgColor != DEFAULT_COLOR) {
+            // preserve the cell's existing coloured background in TUI apps
+        } else {
+            cell.bgColor = DEFAULT_COLOR;
+        }
         cell.bold      = false;
         cell.underline = false;
         cell.reverse   = false;

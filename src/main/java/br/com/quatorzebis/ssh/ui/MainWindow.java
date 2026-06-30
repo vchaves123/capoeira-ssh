@@ -56,16 +56,9 @@ public class MainWindow {
 
         shell.addListener(SWT.Close, e -> {
             long active = terminalTabs.stream().filter(t -> !t.isDisconnected()).count();
-            if (active > 0) {
-                MessageBox mb = new MessageBox(shell, SWT.ICON_WARNING | SWT.YES | SWT.NO);
-                mb.setText("Close 14bis SSH");
-                mb.setMessage("There " + (active == 1 ? "is" : "are") + " " + active
-                        + " active session" + (active == 1 ? "" : "s") + ".\n"
-                        + "Close anyway?");
-                if (mb.open() != SWT.YES) {
-                    e.doit = false;
-                    return;
-                }
+            if (active > 0 && !confirmClose(active)) {
+                e.doit = false;
+                return;
             }
             closeAll();
         });
@@ -222,10 +215,30 @@ public class MainWindow {
     }
 
     private void showAbout() {
-        MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
-        mb.setText("About 14bis SSH");
-        mb.setMessage("14bis SSH Client\nVersion 1.0.0\n\nxterm-256color terminal emulator built with SWT.");
-        mb.open();
+        Shell dlg = new Shell(shell, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
+        dlg.setText("About 14bis SSH");
+        GridLayout gl = new GridLayout(1, false);
+        gl.marginWidth = 24; gl.marginHeight = 18; gl.verticalSpacing = 12;
+        dlg.setLayout(gl);
+
+        Label lbl = new Label(dlg, SWT.NONE);
+        lbl.setText("14bis SSH Client\nVersion 1.0.0\n\nxterm-256color terminal emulator built with SWT.");
+        lbl.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+
+        Button ok = new Button(dlg, SWT.PUSH);
+        ok.setText("  OK  ");
+        ok.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+        ok.addListener(SWT.Selection, e -> dlg.close());
+
+        dlg.setDefaultButton(ok);
+        dlg.pack();
+        Rectangle pb = shell.getBounds();
+        org.eclipse.swt.graphics.Point sz = dlg.getSize();
+        dlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
+        dlg.open();
+        while (!dlg.isDisposed()) {
+            if (!display.readAndDispatch()) display.sleep();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -500,5 +513,49 @@ public class MainWindow {
         f.dispose();
         gc.dispose();
         return img;
+    }
+
+    private boolean confirmClose(long activeSessions) {
+        Shell dlg = new Shell(shell, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
+        dlg.setText("Close 14bis SSH");
+        GridLayout gl = new GridLayout(1, false);
+        gl.marginWidth = 20; gl.marginHeight = 16; gl.verticalSpacing = 14;
+        dlg.setLayout(gl);
+
+        Label msg = new Label(dlg, SWT.WRAP);
+        msg.setText("There " + (activeSessions == 1 ? "is" : "are") + " " + activeSessions
+                + " active session" + (activeSessions == 1 ? "" : "s") + ".\nClose anyway?");
+        GridData gd = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        gd.widthHint = 280;
+        msg.setLayoutData(gd);
+
+        Composite btns = new Composite(dlg, SWT.NONE);
+        btns.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+        RowLayout rl = new RowLayout(SWT.HORIZONTAL);
+        rl.spacing = 10;
+        btns.setLayout(rl);
+
+        boolean[] result = { false };
+        Button btnYes = new Button(btns, SWT.PUSH);
+        btnYes.setText("  Close  ");
+        btnYes.addListener(SWT.Selection, e -> { result[0] = true;  dlg.close(); });
+
+        Button btnNo = new Button(btns, SWT.PUSH);
+        btnNo.setText("  Cancel  ");
+        btnNo.addListener(SWT.Selection, e -> { result[0] = false; dlg.close(); });
+
+        dlg.setDefaultButton(btnNo);
+        dlg.pack();
+
+        // center over main window
+        Rectangle pb = shell.getBounds();
+        org.eclipse.swt.graphics.Point sz = dlg.getSize();
+        dlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
+
+        dlg.open();
+        while (!dlg.isDisposed()) {
+            if (!display.readAndDispatch()) display.sleep();
+        }
+        return result[0];
     }
 }
