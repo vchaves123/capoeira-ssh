@@ -34,13 +34,8 @@ if !OK!==1 (
 
 if !OK!==0 ( pause & exit /b 1 )
 
-:: ── Build number = git commit count ─────────────────────────
-for /f %%c in ('git rev-list --count HEAD 2^>nul') do set BUILD_NUM=%%c
-if not defined BUILD_NUM set BUILD_NUM=0
-echo [INFO] Build #!BUILD_NUM!
-
 :: ── Build ─────────────────────────────────────────────────────
-call mvn -q package -DskipTests -Dbuild.number=!BUILD_NUM!
+call mvn -q package -DskipTests
 if errorlevel 1 ( echo [ERROR] Build failed. & pause & exit /b 1 )
 
 :: ── Run ──────────────────────────────────────────────────────

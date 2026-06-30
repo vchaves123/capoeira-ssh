@@ -123,7 +123,6 @@ public class WelcomeTab {
                 Properties p = new Properties();
                 p.load(is);
                 String version = p.getProperty("build.version", "?");
-                String build    = p.getProperty("build.number", "?");
                 String raw      = p.getProperty("build.timestamp", "");
                 String ts = raw;
                 try {
@@ -131,7 +130,7 @@ public class WelcomeTab {
                             .withZone(ZoneId.systemDefault())
                             .format(Instant.parse(raw));
                 } catch (Exception ignored) {}
-                return "v" + version + "  build #" + build + "  built " + ts;
+                return "v" + version + "  build #" + br.com.quatorzebis.ssh.BuildInfo.BUILD + "  built " + ts;
             }
         } catch (Exception ignored) {}
         return "dev";
