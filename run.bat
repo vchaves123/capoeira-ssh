@@ -34,14 +34,9 @@ if !OK!==1 (
 
 if !OK!==0 ( pause & exit /b 1 )
 
-:: ── Increment build number ────────────────────────────────────
-set BUILD_FILE=build.number
-set BUILD_NUM=1
-if exist "%BUILD_FILE%" (
-    set /p BUILD_NUM=<"%BUILD_FILE%"
-    set /a BUILD_NUM+=1
-)
-echo !BUILD_NUM!>"%BUILD_FILE%"
+:: ── Build number = git commit count ─────────────────────────
+for /f %%c in ('git rev-list --count HEAD 2^>nul') do set BUILD_NUM=%%c
+if not defined BUILD_NUM set BUILD_NUM=0
 echo [INFO] Build #!BUILD_NUM!
 
 :: ── Build ─────────────────────────────────────────────────────
