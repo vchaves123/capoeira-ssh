@@ -49,9 +49,16 @@ public class TerminalEmulator {
     private int          savedCol;
     private final TerminalCell savedAttrs = new TerminalCell();
 
-    // Saved cursor for alternate buffer (DECSC/DECRC)
-    private int altSavedRow;
-    private int altSavedCol;
+    // Saved state for alternate buffer switch (ESC[?1049h / ESC[?1049l)
+    private int          altSavedRow;
+    private int          altSavedCol;
+    private int          altSavedScrollTop;
+    private int          altSavedScrollBottom;
+    private boolean      altSavedG0LineDrawing;
+    private boolean      altSavedG1LineDrawing;
+    private boolean      altSavedUseG1;
+    private boolean      altSavedAppCursorKeys;
+    private final TerminalCell altSavedAttrs = new TerminalCell();
 
     // -----------------------------------------------------------------------
     // Scroll region (0-based, inclusive)
@@ -539,22 +546,49 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     // Alternate screen buffer
     // -----------------------------------------------------------------------
-    private void activateAltBuffer(boolean saveCursorPos) {
+    private void activateAltBuffer(boolean saveState) {
         if (altBufferActive) return;
-        if (saveCursorPos) { altSavedRow = cursorRow; altSavedCol = cursorCol; }
+        if (saveState) {
+            altSavedRow          = cursorRow;
+            altSavedCol          = cursorCol;
+            altSavedScrollTop    = scrollTop;
+            altSavedScrollBottom = scrollBottom;
+            altSavedG0LineDrawing = g0LineDrawing;
+            altSavedG1LineDrawing = g1LineDrawing;
+            altSavedUseG1        = useG1;
+            altSavedAppCursorKeys = appCursorKeys;
+            altSavedAttrs.copyFrom(currentAttrs);
+        }
         for (TerminalCell[] row : alternateBuffer) for (TerminalCell c : row) c.clear();
         altBufferActive = true;
         activeBuffer    = alternateBuffer;
         cursorRow = 0; cursorCol = 0; wrapPending = false;
-        g0LineDrawing = false; g1LineDrawing = false;
+        scrollTop = 0; scrollBottom = rows - 1;
+        g0LineDrawing = false; g1LineDrawing = false; useG1 = false;
+        currentAttrs.clear();
         notifyAltBufferChanged();
     }
 
-    private void deactivateAltBuffer(boolean restoreCursorPos) {
+    private void deactivateAltBuffer(boolean restoreState) {
         if (!altBufferActive) return;
         altBufferActive = false;
         activeBuffer    = primaryBuffer;
-        if (restoreCursorPos) { cursorRow = altSavedRow; cursorCol = altSavedCol; }
+        if (restoreState) {
+            cursorRow    = altSavedRow;
+            cursorCol    = altSavedCol;
+            scrollTop    = altSavedScrollTop;
+            scrollBottom = altSavedScrollBottom;
+            g0LineDrawing = altSavedG0LineDrawing;
+            g1LineDrawing = altSavedG1LineDrawing;
+            useG1         = altSavedUseG1;
+            appCursorKeys = altSavedAppCursorKeys;
+            currentAttrs.copyFrom(altSavedAttrs);
+        } else {
+            // partial restore: at minimum reset scroll region and charset
+            scrollTop = 0; scrollBottom = rows - 1;
+            g0LineDrawing = false; g1LineDrawing = false; useG1 = false;
+            currentAttrs.clear();
+        }
         wrapPending = false;
         notifyAltBufferChanged();
     }
