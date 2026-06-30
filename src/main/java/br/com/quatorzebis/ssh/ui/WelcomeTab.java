@@ -7,6 +7,12 @@ import org.eclipse.swt.graphics.*;
 import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
 
+import java.io.InputStream;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Properties;
+
 public class WelcomeTab {
 
     private final CTabItem tabItem;
@@ -88,10 +94,46 @@ public class WelcomeTab {
         btn.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
         btn.addListener(SWT.Selection, e -> onNewSession.run());
 
+        // Filler to push version label to the bottom
+        Label filler = new Label(root, SWT.NONE);
+        filler.setBackground(display.getSystemColor(SWT.COLOR_BLACK));
+        filler.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, true));
+
+        // Version label — bottom-right, subtle
+        Label lblVersion = new Label(root, SWT.RIGHT);
+        lblVersion.setText(buildVersion());
+        lblVersion.setBackground(display.getSystemColor(SWT.COLOR_BLACK));
+        lblVersion.setForeground(new Color(display, 70, 70, 70));
+        Font versionFont = new Font(display, "Consolas", 9, SWT.NORMAL);
+        lblVersion.setFont(versionFont);
+        GridData gdVer = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        gdVer.horizontalIndent = 0;
+        lblVersion.setLayoutData(gdVer);
+        lblVersion.addDisposeListener(e -> versionFont.dispose());
+
         tabItem.setControl(root);
     }
 
     public CTabItem getTabItem() { return tabItem; }
+
+    private static String buildVersion() {
+        try (InputStream is = WelcomeTab.class.getResourceAsStream("/build.properties")) {
+            if (is != null) {
+                Properties p = new Properties();
+                p.load(is);
+                String version = p.getProperty("build.version", "?");
+                String raw      = p.getProperty("build.timestamp", "");
+                String ts = raw;
+                try {
+                    ts = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                            .withZone(ZoneId.systemDefault())
+                            .format(Instant.parse(raw));
+                } catch (Exception ignored) {}
+                return "v" + version + "  built " + ts;
+            }
+        } catch (Exception ignored) {}
+        return "dev";
+    }
 
     private static void spacer(Composite parent, int height) {
         Label gap = new Label(parent, SWT.NONE);

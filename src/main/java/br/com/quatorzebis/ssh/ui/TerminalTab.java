@@ -133,6 +133,16 @@ public class TerminalTab {
             }
         });
 
+        // Reset scroll offset when entering/leaving alternate screen (e.g. vim, yast)
+        emulator.setAltBufferListener(active ->
+            display.asyncExec(() -> {
+                if (canvas.isDisposed()) return;
+                scrollOffset = 0;
+                updateScrollBar();
+                canvas.redraw();
+            })
+        );
+
         setupCanvas();
         setupScrollBar();
         startCursorBlink();
@@ -289,9 +299,13 @@ public class TerminalTab {
     private void updateScrollBar() {
         ScrollBar sb = canvas.getVerticalBar();
         if (sb == null || sb.isDisposed()) return;
-        int hist   = emulator.getScrollbackSize();
-        int rows   = emulator.getRows();
-        int total  = hist + rows;
+        int hist  = emulator.getScrollbackSize();
+        int rows  = emulator.getRows();
+        // Hide scrollbar when in alternate buffer (vim, yast, etc.) or no scrollback
+        boolean show = !emulator.isAltBufferActive() && hist > 0;
+        sb.setVisible(show);
+        if (!show) return;
+        int total = hist + rows;
         sb.setMinimum(0);
         sb.setMaximum(total);
         sb.setThumb(rows);
@@ -467,6 +481,9 @@ public class TerminalTab {
     // Keyboard
     // -----------------------------------------------------------------------
     private void handleKey(org.eclipse.swt.events.KeyEvent e) {
+        // Alt+key is handled entirely by altFilter — skip here to avoid double-send
+        if ((e.stateMask & SWT.ALT) != 0) return;
+
         if (scrollOffset != 0) { scrollOffset = 0; updateScrollBar(); }
         if (hasSelection()) { clearSelection(); canvas.redraw(); }
 

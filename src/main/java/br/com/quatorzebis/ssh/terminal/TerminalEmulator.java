@@ -96,11 +96,13 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     // Listeners
     // -----------------------------------------------------------------------
-    @FunctionalInterface public interface DataListener   { void onData(byte[] data); }
-    @FunctionalInterface public interface ChangeListener { void onChange(); }
+    @FunctionalInterface public interface DataListener      { void onData(byte[] data); }
+    @FunctionalInterface public interface ChangeListener   { void onChange(); }
+    @FunctionalInterface public interface AltBufferListener { void onAltBufferChanged(boolean active); }
 
-    private DataListener   dataListener;
-    private ChangeListener changeListener;
+    private DataListener      dataListener;
+    private ChangeListener    changeListener;
+    private AltBufferListener altBufferListener;
 
     /** Queued terminal responses (DSR, DA, XTWINOPS). Populated inside processBytes;
      *  drained by the caller after the lock is released to avoid I/O under the lock. */
@@ -150,8 +152,9 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     // Listeners
     // -----------------------------------------------------------------------
-    public synchronized void setDataListener(DataListener l)   { this.dataListener = l; }
-    public synchronized void setChangeListener(ChangeListener l) { this.changeListener = l; }
+    public synchronized void setDataListener(DataListener l)         { this.dataListener = l; }
+    public synchronized void setChangeListener(ChangeListener l)     { this.changeListener = l; }
+    public synchronized void setAltBufferListener(AltBufferListener l) { this.altBufferListener = l; }
 
     // -----------------------------------------------------------------------
     // Resize
@@ -318,6 +321,7 @@ public class TerminalEmulator {
             case 'L' -> insertLines(Math.max(1, p1));
             case 'M' -> deleteLines(Math.max(1, p1));
             case 'P' -> deleteChars(Math.max(1, p1));
+            case 'X' -> eraseChars(Math.max(1, p1));
             case '@' -> insertChars(Math.max(1, p1));
             case 'S' -> scrollUp(Math.max(1, p1));
             case 'T' -> scrollDown(Math.max(1, p1));
@@ -442,6 +446,11 @@ public class TerminalEmulator {
         for (int c = cols - n; c < cols; c++) activeBuffer[cursorRow][c].clear();
     }
 
+    private void eraseChars(int n) {
+        for (int c = cursorCol; c < cursorCol + n && c < cols; c++)
+            eraseCell(activeBuffer[cursorRow][c]);
+    }
+
     private void insertChars(int n) {
         for (int c = cols - 1; c >= cursorCol + n; c--)
             activeBuffer[cursorRow][c].copyFrom(activeBuffer[cursorRow][c - n]);
@@ -517,6 +526,7 @@ public class TerminalEmulator {
         activeBuffer    = alternateBuffer;
         cursorRow = 0; cursorCol = 0; wrapPending = false;
         g0LineDrawing = false; g1LineDrawing = false;
+        notifyAltBufferChanged();
     }
 
     private void deactivateAltBuffer(boolean restoreCursorPos) {
@@ -525,6 +535,7 @@ public class TerminalEmulator {
         activeBuffer    = primaryBuffer;
         if (restoreCursorPos) { cursorRow = altSavedRow; cursorCol = altSavedCol; }
         wrapPending = false;
+        notifyAltBufferChanged();
     }
 
     // -----------------------------------------------------------------------
@@ -646,6 +657,10 @@ public class TerminalEmulator {
         if (changeListener != null) changeListener.onChange();
     }
 
+    private void notifyAltBufferChanged() {
+        if (altBufferListener != null) altBufferListener.onAltBufferChanged(altBufferActive);
+    }
+
     // -----------------------------------------------------------------------
     // Read access for the renderer  (call inside synchronized block)
     // -----------------------------------------------------------------------
@@ -656,6 +671,7 @@ public class TerminalEmulator {
     public synchronized boolean isCursorVisible() { return cursorVisible; }
     public synchronized boolean isAppCursorKeys() { return appCursorKeys; }
     public synchronized int  getScrollbackSize()  { return scrollback.size(); }
+    public synchronized boolean isAltBufferActive() { return altBufferActive; }
 
     /**
      * Returns the cell at visible row {@code visibleRow}, column {@code col},
