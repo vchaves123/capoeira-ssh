@@ -256,6 +256,8 @@ public class SessionTreePanel {
 
                 addItem(menu, "Rename",    SWT.PUSH, hasSession,
                         ev -> renameSelected());
+                addItem(menu, "Rename Group", SWT.PUSH, hasGroup,
+                        ev -> renameGroupSelected(selGroup));
                 addItem(menu, "Duplicate", SWT.PUSH, hasSession,
                         ev -> duplicateSelected());
                 addItem(menu, "Edit",      SWT.PUSH, hasSession,
@@ -315,6 +317,23 @@ public class SessionTreePanel {
         String group = s.group;
         try { SessionStorage.save(s); reload(); expandGroup(group); onChanged.run(); }
         catch (IOException ex) { error("Could not rename session:\n" + ex.getMessage()); }
+    }
+
+    private void renameGroupSelected(String oldName) {
+        InputDialog dlg = new InputDialog(shell, "Rename Group", "New group name:");
+        dlg.setInitialValue(oldName);
+        String newName = dlg.open();
+        if (newName == null || newName.isBlank()) return;
+        newName = newName.trim();
+        if (SessionStorage.sanitize(newName).equals(SessionStorage.sanitize(oldName))) return;
+        try {
+            SessionStorage.renameGroup(oldName, newName);
+            reload();
+            expandGroup(SessionStorage.sanitize(newName));
+            onChanged.run();
+        } catch (IOException ex) {
+            error("Could not rename group:\n" + ex.getMessage());
+        }
     }
 
     private void duplicateSelected() {

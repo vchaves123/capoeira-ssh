@@ -125,6 +125,28 @@ public final class SessionStorage {
         }
     }
 
+    /**
+     * Renames a group by moving its directory (and every session file inside it) to
+     * the new sanitized name. Session.group is derived from the directory name on
+     * load, so the *.session files themselves don't need to be rewritten.
+     */
+    public static void renameGroup(String oldName, String newName) throws IOException {
+        if (oldName == null || oldName.isBlank() || newName == null || newName.isBlank()) return;
+        Path oldDir = BASE.resolve(sanitize(oldName));
+        Path newDir = BASE.resolve(sanitize(newName));
+        if (oldDir.equals(newDir) || !Files.exists(oldDir)) return;
+
+        SecureFiles.createDirectories(newDir);
+        try (Stream<Path> files = Files.list(oldDir)) {
+            for (Path f : files.toList()) {
+                Files.move(f, newDir.resolve(f.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        try (Stream<Path> remaining = Files.list(oldDir)) {
+            if (remaining.findAny().isEmpty()) Files.delete(oldDir);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
