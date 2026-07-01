@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.0.7] — 2026-07-01
+
+### Added
+- **Linux `.rpm` package**: built via `jpackage --type rpm` alongside the existing `.deb`, for
+  RHEL, Oracle Linux, AlmaLinux, Rocky Linux, SUSE/openSUSE, and other RPM-based distributions.
+- **Linux portable `.tar.gz`**: a self-contained, JRE-bundled build (`jpackage --type app-image`)
+  that can be unpacked anywhere and run directly via `bin/ssh-14bis`, with no installation or
+  package manager required.
+
+---
+
 ## [1.0.6] — 2026-07-01
 
 ### Fixed
