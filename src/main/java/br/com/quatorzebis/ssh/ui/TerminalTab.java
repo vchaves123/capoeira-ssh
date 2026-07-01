@@ -1112,4 +1112,31 @@ public class TerminalTab {
 
     public CTabItem getTabItem() { return tabItem; }
     public Canvas   getCanvas()  { return canvas;  }
+
+    public boolean isLogging()   { return logStream != null; }
+
+    public String getLogDir() {
+        SessionInfo s = sessionInfo;
+        return (s.logDir != null && !s.logDir.isBlank())
+               ? s.logDir
+               : System.getProperty("user.home") + "/.14bis/screen_captures";
+    }
+
+    public String getLogFileName() {
+        return sessionInfo.logFileName != null ? sessionInfo.logFileName : "";
+    }
+
+    /** Start logging to the given directory and base filename. Stops any active log first. */
+    public void startLogging(String dir, String fileName) {
+        closeLog();
+        SessionInfo tmp = new SessionInfo();
+        tmp.host        = sessionInfo.host;
+        tmp.logEnabled  = true;
+        tmp.logDir      = dir;
+        tmp.logFileName = fileName;
+        openLogFile(tmp);
+    }
+
+    /** Stop logging immediately. */
+    public void stopLogging() { closeLog(); }
 }

@@ -304,6 +304,23 @@ public class MainWindow {
 
             new MenuItem(menu, SWT.SEPARATOR);
 
+            if (terminal.isLogging()) {
+                MenuItem miLogStop = new MenuItem(menu, SWT.PUSH);
+                miLogStop.setText("Stop Logging");
+                miLogStop.addListener(SWT.Selection, ev -> terminal.stopLogging());
+            } else {
+                MenuItem miLogStart = new MenuItem(menu, SWT.PUSH);
+                miLogStart.setText("Start Logging");
+                miLogStart.addListener(SWT.Selection, ev ->
+                    terminal.startLogging(terminal.getLogDir(), terminal.getLogFileName()));
+            }
+
+            MenuItem miLogChange = new MenuItem(menu, SWT.PUSH);
+            miLogChange.setText("Log Settings...");
+            miLogChange.addListener(SWT.Selection, ev -> showLogSettingsDialog(terminal));
+
+            new MenuItem(menu, SWT.SEPARATOR);
+
             MenuItem miClose = new MenuItem(menu, SWT.PUSH);
             miClose.setText("Close Session");
             miClose.addListener(SWT.Selection, ev -> {
@@ -316,6 +333,62 @@ public class MainWindow {
             menu.setLocation(e.x, e.y);
             menu.setVisible(true);
         });
+    }
+
+    private void showLogSettingsDialog(TerminalTab terminal) {
+        Shell dlg = new Shell(shell, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
+        dlg.setText("Log Settings");
+        AppIcon.apply(dlg);
+        GridLayout gl = new GridLayout(3, false);
+        gl.marginWidth = 14; gl.marginHeight = 12; gl.verticalSpacing = 8;
+        dlg.setLayout(gl);
+
+        Label lblDir = new Label(dlg, SWT.NONE); lblDir.setText("Directory:");
+        Text txtDir = new Text(dlg, SWT.BORDER | SWT.READ_ONLY);
+        txtDir.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        txtDir.setText(terminal.getLogDir());
+        Button btnBrowse = new Button(dlg, SWT.PUSH); btnBrowse.setText("…");
+        btnBrowse.addListener(SWT.Selection, e -> {
+            DirectoryDialog dd = new DirectoryDialog(dlg, SWT.NONE);
+            dd.setText("Select log directory");
+            dd.setFilterPath(txtDir.getText());
+            String chosen = dd.open();
+            if (chosen != null) txtDir.setText(chosen);
+        });
+
+        Label lblFile = new Label(dlg, SWT.NONE); lblFile.setText("File name:");
+        Text txtFile = new Text(dlg, SWT.BORDER);
+        GridData gdFile = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        gdFile.horizontalSpan = 2;
+        txtFile.setLayoutData(gdFile);
+        txtFile.setMessage("e.g. session (timestamp prepended automatically)");
+        txtFile.setText(terminal.getLogFileName());
+
+        new Label(dlg, SWT.NONE);
+        Composite cmpBtns = new Composite(dlg, SWT.NONE);
+        GridData gdBtns = new GridData(SWT.RIGHT, SWT.CENTER, true, false);
+        gdBtns.horizontalSpan = 2;
+        cmpBtns.setLayoutData(gdBtns);
+        org.eclipse.swt.layout.RowLayout rl = new org.eclipse.swt.layout.RowLayout(SWT.HORIZONTAL);
+        rl.spacing = 8; cmpBtns.setLayout(rl);
+
+        Button btnApply  = new Button(cmpBtns, SWT.PUSH); btnApply.setText("Apply & Start");
+        Button btnCancel = new Button(cmpBtns, SWT.PUSH); btnCancel.setText("Cancel");
+        dlg.setDefaultButton(btnApply);
+
+        btnCancel.addListener(SWT.Selection, e -> dlg.dispose());
+        btnApply.addListener(SWT.Selection, e -> {
+            terminal.startLogging(txtDir.getText().trim(), txtFile.getText().trim());
+            dlg.dispose();
+        });
+
+        dlg.pack();
+        dlg.setSize(Math.max(dlg.getSize().x, 420), dlg.getSize().y);
+        Rectangle pb = shell.getBounds();
+        org.eclipse.swt.graphics.Point sz = dlg.getSize();
+        dlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
+        dlg.open();
+        while (!dlg.isDisposed()) { if (!display.readAndDispatch()) display.sleep(); }
     }
 
     private void closeAll() {
