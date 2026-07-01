@@ -94,7 +94,7 @@ public class TerminalAppearanceDialog {
             String fontName = display.getFontList("Consolas", true).length > 0 ? "Consolas" : "Courier New";
             Font f = new Font(display, fontName, fontSize, SWT.NORMAL);
             gc.setFont(f);
-            gc.drawString("  st3tailor@server:~$ ls -la", 4, 8, true);
+            gc.drawString("  user@server:~$ ls -la", 4, 8, true);
             f.dispose();
             fg.dispose();
         });
