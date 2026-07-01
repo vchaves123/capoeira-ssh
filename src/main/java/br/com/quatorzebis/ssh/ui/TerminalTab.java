@@ -114,7 +114,7 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     // Constructor
     // -----------------------------------------------------------------------
-    public TerminalTab(CTabFolder folder, SessionInfo info, String password) {
+    public TerminalTab(CTabFolder folder, SessionInfo info, char[] password) {
         this.display     = folder.getDisplay();
         this.sessionInfo = info;
         this.tabTitle    = info.label();
@@ -660,7 +660,7 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     // SSH connection lifecycle
     // -----------------------------------------------------------------------
-    private void startSshThread(SessionInfo info, String password) {
+    private void startSshThread(SessionInfo info, char[] password) {
         Thread t = new Thread(() -> runSsh(info, password), "ssh-" + info.label());
         t.setDaemon(true);
         t.start();
@@ -760,9 +760,9 @@ public class TerminalTab {
         logStream = null;
     }
 
-    private void runSsh(SessionInfo info, String password) {
+    private void runSsh(SessionInfo info, char[] password) {
         try {
-            connection.connect(info, password);
+            connection.connect(info, password, display); // zeroes password internally
             openLogFile(info);
             display.asyncExec(() -> {
                 if (!canvas.isDisposed()) { updateTerminalSize(); canvas.setFocus(); }
@@ -1036,7 +1036,7 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     // Reconnect
     // -----------------------------------------------------------------------
-    public void reconnect(String password) {
+    public void reconnect(char[] password) {
         disconnected = false;
         display.asyncExec(() -> {
             if (!tabItem.isDisposed()) {

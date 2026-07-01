@@ -137,7 +137,7 @@ public class MainWindow {
     // -----------------------------------------------------------------------
     private void openTerminal(SessionInfo info) {
         ConnectDialog dlg = new ConnectDialog(shell, info);
-        String password = dlg.open();
+        char[] password = dlg.open();
         if (password == null) return;
 
         TerminalTab tab = new TerminalTab(tabFolder, info, password);
@@ -246,7 +246,7 @@ public class MainWindow {
     // -----------------------------------------------------------------------
     private void reconnectTab(TerminalTab tab) {
         ConnectDialog dlg = new ConnectDialog(shell, tab.getSessionInfo());
-        String pw = dlg.open();
+        char[] pw = dlg.open();
         if (pw != null) tab.reconnect(pw);
     }
 

@@ -51,19 +51,20 @@ public final class CredentialStore {
     // Lifecycle
     // -----------------------------------------------------------------------
 
-    /** Create a brand-new vault with the given master password. */
-    public void create(String masterPassword) throws Exception {
+    /** Create a brand-new vault with the given master password. Zeroes the array after use. */
+    public void create(char[] masterPassword) throws Exception {
         this.salt      = randomBytes(SALT_LEN);
         this.masterKey = deriveKey(masterPassword, salt);
+        Arrays.fill(masterPassword, '\0');
         this.entries   = new ArrayList<>();
         persist();
     }
 
     /**
-     * Unlock an existing vault.
+     * Unlock an existing vault. Zeroes the array after use.
      * @throws AEADBadTagException if the master password is wrong.
      */
-    public void unlock(String masterPassword) throws Exception {
+    public void unlock(char[] masterPassword) throws Exception {
         byte[] raw  = Files.readAllBytes(VAULT);
         int    off  = 0;
 
@@ -78,13 +79,16 @@ public final class CredentialStore {
         byte[] cipher   = Arrays.copyOfRange(raw, off, raw.length);
 
         SecretKey key = deriveKey(masterPassword, fileSalt);
+        Arrays.fill(masterPassword, '\0');
         Cipher aes    = Cipher.getInstance("AES/GCM/NoPadding");
         aes.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
         byte[] plain  = aes.doFinal(cipher);   // throws AEADBadTagException on wrong key
 
         this.salt      = fileSalt;
         this.masterKey = key;
-        this.entries   = deserialize(new String(plain, StandardCharsets.UTF_8));
+        String plainText = new String(plain, StandardCharsets.UTF_8);
+        Arrays.fill(plain, (byte) 0);
+        this.entries   = deserialize(plainText);
     }
 
     public void lock() {
@@ -149,7 +153,7 @@ public final class CredentialStore {
         for (CredentialEntry e : list) {
             sb.append("e.").append(e.id).append(".l=").append(esc(e.label))   .append('\n');
             sb.append("e.").append(e.id).append(".u=").append(esc(e.username)).append('\n');
-            sb.append("e.").append(e.id).append(".p=").append(esc(e.password)).append('\n');
+            sb.append("e.").append(e.id).append(".p=").append(esc(new String(e.password))).append('\n');
         }
         return sb.toString();
     }
@@ -171,7 +175,7 @@ public final class CredentialStore {
             switch (p[2]) {
                 case "l" -> ce.label    = val;
                 case "u" -> ce.username = val;
-                case "p" -> ce.password = val;
+                case "p" -> ce.password = val.toCharArray();
             }
         }
         return new ArrayList<>(map.values());
@@ -188,15 +192,21 @@ public final class CredentialStore {
     // Crypto helpers
     // -----------------------------------------------------------------------
 
-    private static SecretKey deriveKey(String password, byte[] salt) throws Exception {
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    private static SecretKey deriveKey(char[] password, byte[] salt) throws Exception {
         SecretKeyFactory f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        KeySpec spec = new PBEKeySpec(password.toCharArray(), salt, PBKDF2_ITER, 256);
-        return new SecretKeySpec(f.generateSecret(spec).getEncoded(), "AES");
+        PBEKeySpec spec = new PBEKeySpec(password, salt, PBKDF2_ITER, 256);
+        try {
+            return new SecretKeySpec(f.generateSecret(spec).getEncoded(), "AES");
+        } finally {
+            spec.clearPassword();
+        }
     }
 
     private static byte[] randomBytes(int len) {
         byte[] b = new byte[len];
-        new SecureRandom().nextBytes(b);
+        SECURE_RANDOM.nextBytes(b);
         return b;
     }
 }

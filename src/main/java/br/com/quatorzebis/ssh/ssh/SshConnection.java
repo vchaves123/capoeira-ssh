@@ -2,10 +2,20 @@ package br.com.quatorzebis.ssh.ssh;
 
 import br.com.quatorzebis.ssh.model.SessionInfo;
 import com.jcraft.jsch.*;
+import org.eclipse.swt.SWT;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.MessageBox;
+import org.eclipse.swt.widgets.Shell;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
 
 public class SshConnection {
 
@@ -16,29 +26,45 @@ public class SshConnection {
     private OutputStream output;
 
     /**
-     * @param info     session configuration (no password stored)
-     * @param password plaintext password or passphrase; may be null for key auth without passphrase
+     * @param info     session configuration
+     * @param password plaintext password or passphrase as char[] (zeroed after use); null = no password
+     * @param display  SWT display — used to show the host-key verification dialog on the UI thread
      */
-    public void connect(SessionInfo info, String password) throws Exception {
+    public void connect(SessionInfo info, char[] password, Display display) throws Exception {
         jsch = new JSch();
+
+        // Known-hosts file — host keys are stored here and verified on every connection.
+        Path knownHosts = Path.of(System.getProperty("user.home"), ".14bis", "known_hosts");
+        Files.createDirectories(knownHosts.getParent());
+        jsch.setKnownHosts(knownHosts.toString());
 
         if (info.authType == SessionInfo.AuthType.PRIVATE_KEY
                 && info.keyPath != null && !info.keyPath.isBlank()) {
-            String pass = (password == null || password.isBlank()) ? null : password;
-            jsch.addIdentity(info.keyPath, pass);
+            byte[] passBytes = (password != null && password.length > 0) ? toBytes(password) : null;
+            jsch.addIdentity(info.keyPath, passBytes);
+            if (passBytes != null) Arrays.fill(passBytes, (byte) 0);
         }
 
         session = jsch.getSession(info.username, info.host, info.port);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.setConfig("ServerAliveInterval",   "30");
+
+        // "ask" — JSch calls UserInfo.promptYesNo for unknown hosts and saves accepted keys
+        // to the known_hosts file automatically.  "yes" would reject all unknown hosts silently.
+        session.setConfig("StrictHostKeyChecking", "ask");
+        session.setUserInfo(new SwtHostVerifier(display, info.host, info.port));
+        session.setConfig("ServerAliveInterval", "30");
 
         if (info.authType == SessionInfo.AuthType.PASSWORD
                 || info.authType == SessionInfo.AuthType.SAVED_CREDENTIAL) {
-            session.setPassword(password != null ? password : "");
+            byte[] passBytes = (password != null) ? toBytes(password) : new byte[0];
+            session.setPassword(passBytes);
+            Arrays.fill(passBytes, (byte) 0);
             session.setConfig("PreferredAuthentications", "password,keyboard-interactive");
         } else {
             session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
         }
+
+        // Zero the caller's array — we have already extracted what we need above.
+        if (password != null) Arrays.fill(password, '\0');
 
         session.setTimeout(15_000);
         session.connect(15_000);
@@ -72,5 +98,58 @@ public class SshConnection {
     public void close() {
         try { if (channel != null) channel.disconnect();  } catch (Exception ignored) {}
         try { if (session != null) session.disconnect();  } catch (Exception ignored) {}
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    /** Convert char[] to UTF-8 bytes without creating an intermediate String. */
+    private static byte[] toBytes(char[] chars) {
+        ByteBuffer bb = StandardCharsets.UTF_8.encode(CharBuffer.wrap(chars));
+        byte[] b = new byte[bb.remaining()];
+        bb.get(b);
+        return b;
+    }
+
+    // -----------------------------------------------------------------------
+    // Host-key verifier — runs on SSH thread, shows SWT dialog via syncExec
+    // -----------------------------------------------------------------------
+
+    private static final class SwtHostVerifier implements UserInfo {
+
+        private final Display display;
+        private final String  host;
+        private final int     port;
+
+        SwtHostVerifier(Display display, String host, int port) {
+            this.display = display;
+            this.host    = host;
+            this.port    = port;
+        }
+
+        @Override
+        public boolean promptYesNo(String message) {
+            boolean[] result = {false};
+            display.syncExec(() -> {
+                Shell active = display.getActiveShell();
+                MessageBox mb = new MessageBox(
+                    active != null ? active : new Shell(display),
+                    SWT.ICON_WARNING | SWT.YES | SWT.NO);
+                mb.setText("Unknown Host Key — " + host + ":" + port);
+                mb.setMessage(message
+                    + "\n\nAccept this host key and continue connecting?\n"
+                    + "The key will be saved to ~/.14bis/known_hosts.");
+                result[0] = mb.open() == SWT.YES;
+            });
+            return result[0];
+        }
+
+        // We handle passwords ourselves — these are never called.
+        @Override public String  getPassphrase()              { return null;  }
+        @Override public String  getPassword()                { return null;  }
+        @Override public boolean promptPassphrase(String m)   { return false; }
+        @Override public boolean promptPassword(String m)     { return false; }
+        @Override public void    showMessage(String m)        {}
     }
 }

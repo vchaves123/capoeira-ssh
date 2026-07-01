@@ -144,7 +144,7 @@ public class CredentialManagerDialog {
         if (existing != null) {
             txtLabel.setText(existing.label);
             txtUser.setText(existing.username);
-            txtPass.setText(existing.password);
+            txtPass.setTextChars(existing.password);
         }
 
         new Label(dlg, SWT.NONE);
@@ -166,7 +166,7 @@ public class CredentialManagerDialog {
             CredentialEntry ce = existing != null ? existing : new CredentialEntry();
             ce.label    = txtLabel.getText().trim();
             ce.username = user;
-            ce.password = txtPass.getText();
+            ce.password = txtPass.getTextChars();
             result[0]   = ce;
             dlg.dispose();
         });

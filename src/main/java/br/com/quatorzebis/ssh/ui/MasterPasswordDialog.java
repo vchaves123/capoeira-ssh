@@ -79,29 +79,36 @@ public class MasterPasswordDialog {
         btnCancel.addListener(SWT.Selection, e -> dlg.dispose());
 
         btnOk.addListener(SWT.Selection, e -> {
-            String pw = txtPass.getText();
-            if (pw.isEmpty()) { lblError.setText("Password cannot be empty."); return; }
+            char[] pw = txtPass.getTextChars();
+            if (pw.length == 0) { lblError.setText("Password cannot be empty."); return; }
 
             if (createMode) {
-                if (!pw.equals(confirmField.getText())) {
+                char[] confirm = confirmField.getTextChars();
+                boolean match  = java.util.Arrays.equals(pw, confirm);
+                java.util.Arrays.fill(confirm, '\0');
+                if (!match) {
+                    java.util.Arrays.fill(pw, '\0');
                     lblError.setText("Passwords do not match.");
                     return;
                 }
                 try {
-                    CredentialStore.getInstance().create(pw);
+                    CredentialStore.getInstance().create(pw); // zeroes pw internally
                     result[0] = true;
                     dlg.dispose();
                 } catch (Exception ex) {
+                    java.util.Arrays.fill(pw, '\0');
                     lblError.setText("Error: " + ex.getMessage());
                 }
             } else {
                 try {
-                    CredentialStore.getInstance().unlock(pw);
+                    CredentialStore.getInstance().unlock(pw); // zeroes pw internally
                     result[0] = true;
                     dlg.dispose();
                 } catch (javax.crypto.AEADBadTagException ex) {
+                    java.util.Arrays.fill(pw, '\0');
                     lblError.setText("Wrong password.");
                 } catch (Exception ex) {
+                    java.util.Arrays.fill(pw, '\0');
                     lblError.setText("Error: " + ex.getMessage());
                 }
             }

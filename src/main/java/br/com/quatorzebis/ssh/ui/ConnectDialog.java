@@ -23,7 +23,7 @@ public class ConnectDialog {
 
     private final Shell       parent;
     private final SessionInfo session;
-    private String            result;  // null = cancelled
+    private char[]            result;  // null = cancelled
 
     public ConnectDialog(Shell parent, SessionInfo session) {
         this.parent  = parent;
@@ -31,10 +31,11 @@ public class ConnectDialog {
     }
 
     /**
-     * Returns the password/passphrase to use, or null if the user cancelled.
+     * Returns the password/passphrase to use as a char[] (caller must zero after use),
+     * or null if the user cancelled.
      * May return without showing a dialog if the session has a saved credential.
      */
-    public String open() {
+    public char[] open() {
         CredentialStore store = CredentialStore.getInstance();
 
         // ── Saved credential auth type — auto-connect from vault ─────────────
@@ -47,7 +48,7 @@ public class ConnectDialog {
             CredentialEntry ce = store.findById(session.credentialId);
             if (ce != null) {
                 session.username = ce.username;
-                return ce.password;   // skip the dialog entirely
+                return java.util.Arrays.copyOf(ce.password, ce.password.length);
             }
             // Credential was deleted from vault — fall through to manual dialog
         }
@@ -56,7 +57,7 @@ public class ConnectDialog {
         return showDialog(store);
     }
 
-    private String showDialog(CredentialStore store) {
+    private char[] showDialog(CredentialStore store) {
         Shell dlg = new Shell(parent, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
         dlg.setText("Connect — " + session.label());
         AppIcon.apply(dlg);
@@ -117,7 +118,7 @@ public class ConnectDialog {
                     CredentialEntry ce = finalCreds.get(idx - 1);
                     txtUser.setText(ce.username);
                     txtUser.setEditable(false);
-                    txtPass.setText(ce.password);
+                    txtPass.setTextChars(ce.password);
                     txtPass.setEditable(false);
                 }
             });
@@ -138,7 +139,7 @@ public class ConnectDialog {
         btnConnect.addListener(SWT.Selection, e -> {
             String typedUser = txtUser.getText().trim();
             if (!typedUser.isEmpty()) session.username = typedUser;
-            result = txtPass.getText();
+            result = txtPass.getTextChars();
             dlg.dispose();
         });
 
