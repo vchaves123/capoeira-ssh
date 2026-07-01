@@ -4,6 +4,16 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 
 ![14bis SSH](docs/screenshot.png)
 
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![Home](docs/screenshots/home.png) Session tree & welcome screen | ![Unlock vault](docs/screenshots/unlock-vault.png) Credential vault unlock |
+| ![Terminal session](docs/screenshots/terminal-session.png) An active terminal session | ![Disconnected tab](docs/screenshots/disconnected-tab.png) Disconnected session (red tab) |
+
+</details>
+
 ## Features
 
 - **xterm-256color** terminal emulator with full colour, bold, underline and reverse support
@@ -16,7 +26,7 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 - **Screen capture / logging** — save terminal output (plain text, ANSI stripped) to a file; toggle on/off at any time from the tab context menu
 - **Scrollback buffer** with mouse wheel and scroll bar
 - **Text selection** and copy with mouse; paste with right-click (multiline paste confirmation)
-- **Activity indicator** — blinking blue dot on background tabs with incoming data
+- **Activity indicator** — background tabs with incoming data blink bold blue; disconnected sessions turn bold red
 
 ## Requirements
 
