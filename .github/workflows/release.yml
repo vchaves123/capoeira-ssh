@@ -113,6 +113,7 @@ jobs:
             --win-menu ^
             --win-shortcut ^
             --dest installer
+          for %%f in (installer\*.exe) do ren "%%f" "14bis-SSH-windows.exe"
 
       - name: Sign Windows installer
         if: matrix.runner == 'windows-latest'
@@ -228,6 +229,7 @@ jobs:
             --description "Lightweight SSH terminal client" \
             --icon target/app-icon.icns \
             --dest installer
+          mv installer/*.dmg installer/14bis-SSH-macos.dmg
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
