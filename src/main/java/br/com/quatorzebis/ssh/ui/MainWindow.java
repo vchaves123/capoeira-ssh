@@ -105,13 +105,17 @@ public class MainWindow {
                     event.doit = false;
                     return;
                 }
-                terminalTabs.stream()
-                    .filter(t -> t.getTabItem() == event.item)
-                    .findFirst()
-                    .ifPresent(t -> {
-                        terminalTabs.remove(t);
-                        t.dispose();
-                    });
+                TerminalTab t = terminalTabs.stream()
+                    .filter(tt -> tt.getTabItem() == event.item)
+                    .findFirst().orElse(null);
+                if (t == null) return;
+
+                if (!confirmCloseTab()) {
+                    event.doit = false;
+                    return;
+                }
+                terminalTabs.remove(t);
+                t.dispose();
                 // If all terminal tabs closed, go back to Sessions tab
                 display.asyncExec(() -> {
                     if (!tabFolder.isDisposed() && tabFolder.getItemCount() <= 1) {
@@ -623,6 +627,48 @@ public class MainWindow {
         f.dispose();
         gc.dispose();
         return img;
+    }
+
+    private boolean confirmCloseTab() {
+        Shell dlg = new Shell(shell, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
+        dlg.setText("Close Session");
+        GridLayout gl = new GridLayout(1, false);
+        gl.marginWidth = 20; gl.marginHeight = 16; gl.verticalSpacing = 14;
+        dlg.setLayout(gl);
+
+        Label msg = new Label(dlg, SWT.WRAP);
+        msg.setText("Close this session?");
+        GridData gd = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        gd.widthHint = 240;
+        msg.setLayoutData(gd);
+
+        Composite btns = new Composite(dlg, SWT.NONE);
+        btns.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+        RowLayout rl = new RowLayout(SWT.HORIZONTAL);
+        rl.spacing = 10;
+        btns.setLayout(rl);
+
+        boolean[] result = { false };
+        Button btnYes = new Button(btns, SWT.PUSH);
+        btnYes.setText("  Close  ");
+        btnYes.addListener(SWT.Selection, e -> { result[0] = true;  dlg.close(); });
+
+        Button btnNo = new Button(btns, SWT.PUSH);
+        btnNo.setText("  Cancel  ");
+        btnNo.addListener(SWT.Selection, e -> { result[0] = false; dlg.close(); });
+
+        dlg.setDefaultButton(btnNo);
+        dlg.pack();
+
+        Rectangle pb = shell.getBounds();
+        org.eclipse.swt.graphics.Point sz = dlg.getSize();
+        dlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
+
+        dlg.open();
+        while (!dlg.isDisposed()) {
+            if (!display.readAndDispatch()) display.sleep();
+        }
+        return result[0];
     }
 
     private boolean confirmClose(long activeSessions) {
