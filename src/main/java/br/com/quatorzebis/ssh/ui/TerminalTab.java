@@ -104,7 +104,8 @@ public class TerminalTab {
     // Logging
     // -----------------------------------------------------------------------
     private OutputStream logStream;
-    private static final DateTimeFormatter LOG_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    private static final DateTimeFormatter LOG_TS       = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    private static final java.util.concurrent.atomic.AtomicInteger LOG_SEQ = new java.util.concurrent.atomic.AtomicInteger();
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -673,7 +674,10 @@ public class TerminalTab {
             String baseName = (info.logFileName != null && !info.logFileName.isBlank())
                               ? info.logFileName.replaceAll("[^\\w\\-.]", "_")
                               : info.host.replaceAll("[^\\w\\-.]", "_");
-            Path   file = logDir.resolve(ts + "_" + baseName + ".log");
+            String candidate = ts + "_" + baseName;
+            Path   file = logDir.resolve(candidate + ".log");
+            if (Files.exists(file))
+                file = logDir.resolve(candidate + "_" + LOG_SEQ.incrementAndGet() + ".log");
             logStream = Files.newOutputStream(file,
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
