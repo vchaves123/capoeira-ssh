@@ -119,7 +119,7 @@ public class TerminalTab {
         this.sessionInfo = info;
         this.tabTitle    = info.label();
 
-        tabItem = new CTabItem(folder, SWT.CLOSE);
+        tabItem = new CTabItem(folder, SWT.NONE);
         tabItem.setText(tabTitle);
 
         canvas = new Canvas(folder, SWT.NO_BACKGROUND | SWT.V_SCROLL);

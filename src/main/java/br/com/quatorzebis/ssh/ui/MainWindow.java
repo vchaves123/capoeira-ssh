@@ -73,7 +73,7 @@ public class MainWindow {
     // Content — tab folder fills the whole shell
     // -----------------------------------------------------------------------
     private void buildContent() {
-        tabFolder = new CTabFolder(shell, SWT.TOP | SWT.BORDER | SWT.CLOSE);
+        tabFolder = new CTabFolder(shell, SWT.TOP | SWT.BORDER);
         tabFolder.setSimple(false);
         tabFolder.setTabHeight(22);
 
@@ -483,8 +483,6 @@ public class MainWindow {
         Image    image     = src.getImage();
         String   tooltip   = src.getToolTipText();
         Control  control   = src.getControl();
-        boolean  showClose = (src.getStyle() & SWT.CLOSE) != 0;
-
         // Find the TerminalTab wrapper (may be null for the welcome tab)
         TerminalTab terminal = terminalTabs.stream()
             .filter(t -> t.getTabItem() == src)
@@ -498,8 +496,7 @@ public class MainWindow {
         int idx = insertIdx > srcIdx ? insertIdx - 1 : insertIdx;
         idx = Math.max(0, Math.min(idx, tabFolder.getItemCount()));
 
-        int style = showClose ? SWT.CLOSE : SWT.NONE;
-        CTabItem newItem = new CTabItem(tabFolder, style, idx);
+        CTabItem newItem = new CTabItem(tabFolder, SWT.NONE, idx);
         newItem.setText(text);
         if (image   != null) newItem.setImage(image);
         if (tooltip != null) newItem.setToolTipText(tooltip);
