@@ -5,6 +5,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.0.6] — 2026-07-01
+
+### Fixed
+Third full security audit (6 dimensions: credential vault, network/SSH, filesystem, terminal
+emulator, supply chain/CI, UI input validation), each finding adversarially verified by 3
+independent reviewers. Eight confirmed issues, all fixed:
+
+- **HIGH — `CredentialStore.unlock()`**: the whole decrypted vault (every saved password) was
+  materialized as an immutable `String` that can never be zeroed and would linger on the heap
+  until GC, recoverable via a heap/core dump. `deserialize()` now works directly on `char[]`,
+  extracting only non-secret label/username fields to short-lived `String`s.
+- **HIGH — `CredentialStore.persist()`**: the same issue on the write path — `serialize()` built
+  one unzeroed `String`/`StringBuilder` containing every password on every save. Now serializes
+  into a `StringBuilder` that is explicitly wiped, then encodes to a `byte[]` that is zeroed after
+  encryption.
+- **HIGH — `TerminalEmulator.deleteChars()`**: a remote server could crash an active session with
+  a single ~8-byte escape sequence (`CSI P` with a count larger than the terminal width), driving
+  an array index negative and throwing an uncaught exception. Now clamped to the remaining columns.
+- **HIGH — `TerminalTab.openLogFile()`**: the log-directory containment check was purely lexical,
+  so a symlink/NTFS junction planted under the home directory (e.g. via an unvalidated `logDir` in
+  an imported session file) could redirect log writes outside the intended sandbox. Now re-verified
+  against the real (symlink-resolved) path, falling back to the default log directory otherwise.
+- **MEDIUM — `SessionStorage.sanitize()`**: a group named `"."` or `".."` resolved outside the
+  intended `sessions/<group>` directory into `~/.14bis` itself. Now falls back to a safe name.
+- **MEDIUM — `TerminalEmulator` OSC buffer**: a malicious server that never sends the OSC/DCS
+  terminator could grow the payload buffer without bound toward `OutOfMemoryError`. Capped at 8KB.
+- **MEDIUM — `TerminalEmulator.insertLines()`/`deleteLines()`**: `CSI L`/`M` accepted an unbounded
+  repeat count, freezing the whole application UI (SWT is single-threaded) on a single short escape
+  sequence. Clamped to the scroll-region size.
+- **MEDIUM — `TerminalTab.stripAnsi()`**: the log sanitizer only recognized 7-bit `ESC` as an
+  escape introducer, letting 8-bit C1 control sequences (which the terminal emulator itself
+  interprets as CSI/OSC) pass through unfiltered into the plaintext session log. Added
+  UTF-8-continuation-aware C1 handling so genuine multi-byte characters aren't corrupted.
+
+---
+
 ## [1.0.5] — 2026-07-01
 
 ### Added
