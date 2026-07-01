@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.0.8] — 2026-07-01
+
+### Fixed
+- Windows/macOS release assets were named `14bis.SSH-<version>.exe`/`.dmg` (jpackage's default
+  naming) instead of the documented `14bis-SSH-windows.exe`/`14bis-SSH-macos.dmg`. Now renamed
+  after packaging, consistent with the Linux asset naming.
+- The "+ Session"/"+ Group"/refresh toolbar buttons on the session tree panel were nearly
+  invisible on Linux (GTK draws native toolbar button labels using the system theme, ignoring the
+  app's dark-panel colours). Replaced with plain `Button` widgets, which render with proper
+  contrast on every platform.
+
+---
+
 ## [1.0.7] — 2026-07-01
 
 ### Added
