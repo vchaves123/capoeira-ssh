@@ -186,6 +186,23 @@ jobs:
             --dest installer
           mv installer/*.rpm installer/14bis-SSH-linux.rpm
 
+      - name: Package with jpackage (Linux portable tar.gz)
+        if: matrix.runner == 'ubuntu-latest'
+        run: |
+          jpackage \
+            --input target \
+            --name "ssh-14bis" \
+            --main-jar 14bis-ssh-${{ steps.ver.outputs.jar }}.jar \
+            --main-class br.com.quatorzebis.ssh.Main \
+            --type app-image \
+            --app-version ${{ steps.ver.outputs.app }} \
+            --vendor "Molho Ltda." \
+            --copyright "Copyright (C) 2026 Vicente Melo - Molho Ltda." \
+            --description "Lightweight SSH terminal client" \
+            --icon target/app-icon.png \
+            --dest installer-appimage
+          tar -C installer-appimage -czf installer/14bis-SSH-linux.tar.gz "ssh-14bis"
+
       - name: Convert icon to ICNS (macOS)
         if: matrix.runner == 'macos-latest'
         run: |
@@ -249,7 +266,8 @@ jobs:
             |----------|------|
             | Windows  | `14bis-SSH-windows.exe` |
             | Linux (Debian/Ubuntu) | `14bis-SSH-linux.deb` |
-            | Linux (RHEL/OEL/AlmaLinux/Rocky Linux/etc.) | `14bis-SSH-linux.rpm` |
+            | Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | `14bis-SSH-linux.rpm` |
+            | Linux (portable, no install — unpack and run `bin/ssh-14bis`) | `14bis-SSH-linux.tar.gz` |
             | macOS    | `14bis-SSH-macos.dmg` |
 
             > Java is bundled — no separate installation required.
