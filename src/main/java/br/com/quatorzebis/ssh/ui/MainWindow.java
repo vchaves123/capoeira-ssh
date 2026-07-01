@@ -6,6 +6,7 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.*;
 import org.eclipse.swt.graphics.*;
 import org.eclipse.swt.layout.*;
+import org.eclipse.swt.program.Program;
 import org.eclipse.swt.widgets.*;
 
 import java.util.ArrayList;
@@ -242,6 +243,17 @@ public class MainWindow {
         Label lbl = new Label(dlg, SWT.NONE);
         lbl.setText("14bis SSH Client\nVersion 1.0.0\n\nxterm-256color terminal emulator built with SWT.");
         lbl.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+
+        Label lblThirdParty = new Label(dlg, SWT.NONE);
+        lblThirdParty.setText("Third-party libraries:");
+        lblThirdParty.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+
+        Link link = new Link(dlg, SWT.NONE);
+        link.setText(
+            "• <a href=\"https://www.eclipse.org/swt/\">Eclipse SWT</a> (EPL 2.0)\n" +
+            "• <a href=\"https://github.com/mwiede/jsch\">JSch — mwiede fork</a> (BSD-style)");
+        link.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+        link.addListener(SWT.Selection, e -> Program.launch(e.text));
 
         Button ok = new Button(dlg, SWT.PUSH);
         ok.setText("  OK  ");
