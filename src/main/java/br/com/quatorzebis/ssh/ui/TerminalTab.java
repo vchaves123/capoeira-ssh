@@ -108,7 +108,7 @@ public class TerminalTab {
     private static final java.util.concurrent.atomic.AtomicInteger LOG_SEQ = new java.util.concurrent.atomic.AtomicInteger();
 
     // State machine for stripping ANSI escape sequences from the log stream.
-    private enum AnsiState { NORMAL, ESC, CSI, OSC, OSC_ESC }
+    private enum AnsiState { NORMAL, ESC, ESC_INTERMEDIATE, CSI, OSC, OSC_ESC }
     private AnsiState ansiState = AnsiState.NORMAL;
 
     // -----------------------------------------------------------------------
@@ -722,10 +722,17 @@ public class TerminalTab {
                         ansiState = AnsiState.CSI;
                     } else if (b == ']') {
                         ansiState = AnsiState.OSC;
+                    } else if (b >= 0x20 && b <= 0x2F) {
+                        // Intermediate byte (e.g. ESC # B, ESC ( B) — consume one more byte
+                        ansiState = AnsiState.ESC_INTERMEDIATE;
                     } else {
                         // 2-char ESC sequence — consume this byte and return to NORMAL
                         ansiState = AnsiState.NORMAL;
                     }
+                    break;
+                case ESC_INTERMEDIATE:
+                    // Final byte of a 3-char ESC sequence — discard and return to NORMAL
+                    ansiState = AnsiState.NORMAL;
                     break;
                 case CSI:
                     // CSI ends at a byte in 0x40–0x7E (the "final" byte)
