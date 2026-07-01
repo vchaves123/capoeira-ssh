@@ -1,7 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
 
-for %%f in (target\14bis-ssh-*.jar) do set JAR=%%~nxf
 set REQUIRED_JAVA=21
 set OK=1
 
@@ -39,5 +38,6 @@ call mvn clean package -DskipTests
 if errorlevel 1 ( echo [ERROR] Build failed. & pause & exit /b 1 )
 
 :: ── Run ──────────────────────────────────────────────────────
+for %%f in (target\14bis-ssh-*.jar) do set JAR=%%~nxf
 if not defined JAR ( echo [ERROR] No JAR found in target\. & pause & exit /b 1 )
 java -jar "target\%JAR%"
