@@ -89,6 +89,7 @@ public class SessionTreePanel {
         tree.setForeground(colorSession);
         tree.setFont(treeFont);
         tree.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        disableNativeExplorerTheme(tree);
 
         // Custom selection / hover highlight so the dark theme stays readable
         tree.addListener(SWT.EraseItem, e -> {
@@ -110,6 +111,27 @@ public class SessionTreePanel {
         setupDragAndDrop();
         buildContextMenu();
         reload();
+    }
+
+    /**
+     * On Windows, the Tree control's expand/collapse triangle is drawn by the
+     * native "Explorer" visual theme, which assumes a light background and
+     * renders as a barely-visible glyph on a dark background. Disabling the
+     * theme reverts to the classic +/- box, which stays legible on any
+     * background colour. No-op on other platforms.
+     */
+    private void disableNativeExplorerTheme(Tree tree) {
+        if (!SWT.getPlatform().equals("win32")) return;
+        try {
+            Class<?> osClass = Class.forName("org.eclipse.swt.internal.win32.OS");
+            java.lang.reflect.Method setWindowTheme = osClass.getMethod(
+                "SetWindowTheme", long.class, char[].class, char[].class);
+            java.lang.reflect.Field handleField = tree.getClass().getField("handle");
+            long handle = handleField.getLong(tree);
+            setWindowTheme.invoke(null, handle, new char[1], null);
+        } catch (Throwable ignored) {
+            // Best-effort cosmetic tweak; safe to skip on unsupported SWT builds.
+        }
     }
 
     // -----------------------------------------------------------------------
