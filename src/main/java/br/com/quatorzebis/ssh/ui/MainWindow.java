@@ -27,6 +27,7 @@ public class MainWindow {
     private Shell         shell;
     private CTabFolder    tabFolder;
     private SessionsTab   sessionsTab;
+    private Color         colorSelectionDisconnectedRed;
 
     private final List<TerminalTab> terminalTabs = new ArrayList<>();
 
@@ -80,6 +81,7 @@ public class MainWindow {
         tabFolder.setSelectionBackground(
             new Color[]{ new Color(display, 58, 58, 58), new Color(display, 30, 30, 30) },
             new int[]{ 100 }, true);
+        colorSelectionDisconnectedRed = new Color(display, 220, 60, 60);
         tabFolder.setSelectionForeground(display.getSystemColor(SWT.COLOR_WHITE));
 
         // Clear activity dot when user switches to a terminal tab
@@ -91,6 +93,7 @@ public class MainWindow {
                     .filter(t -> t.getTabItem() == sel)
                     .findFirst()
                     .ifPresent(TerminalTab::clearActivity);
+                refreshSelectionColor();
             }
         });
 
@@ -127,6 +130,16 @@ public class MainWindow {
         tabFolder.setSelection(sessionsTab.getTabItem());
     }
 
+    /** Keeps the CTabFolder's selection text colour in sync with the currently selected tab's state. */
+    private void refreshSelectionColor() {
+        if (tabFolder.isDisposed()) return;
+        CTabItem sel = tabFolder.getSelection();
+        boolean disconnected = terminalTabs.stream()
+            .anyMatch(t -> t.getTabItem() == sel && t.isDisconnected());
+        tabFolder.setSelectionForeground(
+            disconnected ? colorSelectionDisconnectedRed : display.getSystemColor(SWT.COLOR_WHITE));
+    }
+
     private void showSessionsTab() {
         if (sessionsTab != null && !sessionsTab.getTabItem().isDisposed())
             tabFolder.setSelection(sessionsTab.getTabItem());
@@ -142,6 +155,7 @@ public class MainWindow {
 
         TerminalTab tab = new TerminalTab(tabFolder, info, password);
         tab.setOnReconnectRequest(() -> reconnectTab(tab));
+        tab.setOnStateChanged(this::refreshSelectionColor);
         if (info.appearFontSize > 0) {
             tab.applyAppearance(info.appearFontSize,
                 new org.eclipse.swt.graphics.RGB(info.appearFgR, info.appearFgG, info.appearFgB),
@@ -409,6 +423,8 @@ public class MainWindow {
     private void closeAll() {
         for (TerminalTab t : terminalTabs) t.dispose();
         terminalTabs.clear();
+        if (colorSelectionDisconnectedRed != null && !colorSelectionDisconnectedRed.isDisposed())
+            colorSelectionDisconnectedRed.dispose();
     }
 
     // -----------------------------------------------------------------------
