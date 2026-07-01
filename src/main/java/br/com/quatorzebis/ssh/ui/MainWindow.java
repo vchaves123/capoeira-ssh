@@ -290,7 +290,7 @@ public class MainWindow {
 
             MenuItem miRename = new MenuItem(menu, SWT.PUSH);
             miRename.setText("Rename Tab...");
-            miRename.addListener(SWT.Selection, ev -> renameTab(item));
+            miRename.addListener(SWT.Selection, ev -> renameTab(terminal));
 
             new MenuItem(menu, SWT.SEPARATOR);
 
@@ -355,12 +355,12 @@ public class MainWindow {
         });
     }
 
-    private void renameTab(CTabItem item) {
+    private void renameTab(TerminalTab terminal) {
         InputDialog dlg = new InputDialog(shell, "Rename Tab", "Tab title:");
-        dlg.setInitialValue(item.getText().trim());
+        dlg.setInitialValue(terminal.getTabItem().getText().trim());
         String name = dlg.open();
         if (name != null && !name.trim().isEmpty()) {
-            item.setText("  " + name.trim() + "  ");
+            terminal.rename(name.trim());
         }
     }
 

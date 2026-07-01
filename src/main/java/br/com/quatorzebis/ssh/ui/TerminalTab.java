@@ -67,7 +67,9 @@ public class TerminalTab {
     private int              scrollOffset  = 0;    // 0 = pinned to bottom
 
     private final SessionInfo sessionInfo;
-    private final String      tabTitle;
+    private String            tabTitle;
+    private String            textNormal;   // padded so its width matches textBold
+    private String            textBold;
     private Font              boldTabFont;
     private Color             colorActivityBlue;
     private Color             colorDisconnectedRed;
@@ -120,7 +122,8 @@ public class TerminalTab {
         this.tabTitle    = info.label();
 
         tabItem = new CTabItem(folder, SWT.CLOSE);
-        tabItem.setText("  " + tabTitle + "  ");
+        computeTabTexts();
+        tabItem.setText(textNormal);
 
         canvas = new Canvas(folder, SWT.NO_BACKGROUND | SWT.V_SCROLL);
         tabItem.setControl(canvas);
@@ -961,6 +964,7 @@ public class TerminalTab {
             long idle = System.currentTimeMillis() - lastActivityTime;
             if (idle >= IDLE_THRESHOLD_MS) {
                 // Traffic stopped — stay fixed on bold blue
+                tabItem.setText(textBold);
                 tabItem.setFont(getBoldTabFont());
                 tabItem.setForeground(getColorActivityBlue());
                 blinkRunning = false;
@@ -968,9 +972,11 @@ public class TerminalTab {
             }
             blinkPhase = !blinkPhase;
             if (blinkPhase) {
+                tabItem.setText(textBold);
                 tabItem.setFont(getBoldTabFont());
                 tabItem.setForeground(getColorActivityBlue());
             } else {
+                tabItem.setText(textNormal);
                 tabItem.setFont(null);
                 tabItem.setForeground(null);
             }
@@ -988,9 +994,11 @@ public class TerminalTab {
                 // Re-assert the disconnected style: selecting the tab makes the
                 // CTabFolder repaint it with its own selection colours, which
                 // would otherwise wipe out the red indicator.
+                tabItem.setText(textBold);
                 tabItem.setFont(getBoldTabFont());
                 tabItem.setForeground(getColorDisconnectedRed());
             } else {
+                tabItem.setText(textNormal);
                 tabItem.setFont(null);
                 tabItem.setForeground(null);
             }
@@ -1003,6 +1011,40 @@ public class TerminalTab {
         for (FontData d : fd) d.setStyle(SWT.BOLD);
         boldTabFont = new Font(display, fd);
         return boldTabFont;
+    }
+
+    /**
+     * Builds the normal and bold tab label strings so both render at the same
+     * pixel width — the normal one gets extra trailing spaces to compensate
+     * for the narrower font, preventing the tab from growing/shrinking when
+     * the font toggles between normal and bold during the activity blink.
+     */
+    private void computeTabTexts() {
+        String base = "  " + tabTitle + "  ";
+        textBold = base;
+        GC gc = new GC(display);
+        try {
+            gc.setFont(tabItem.getParent().getFont());
+            int normalWidth = gc.textExtent(base).x;
+            gc.setFont(getBoldTabFont());
+            int boldWidth = gc.textExtent(base).x;
+            gc.setFont(tabItem.getParent().getFont());
+            int spaceWidth = Math.max(1, gc.textExtent(" ").x);
+            int deficit = boldWidth - normalWidth;
+            int spaces = deficit > 0 ? (int) Math.ceil(deficit / (double) spaceWidth) : 0;
+            textNormal = base + " ".repeat(spaces);
+        } finally {
+            gc.dispose();
+        }
+    }
+
+    /** Renames the tab title, keeping the normal/bold width compensation in sync. */
+    public void rename(String newTitle) {
+        this.tabTitle = newTitle;
+        computeTabTexts();
+        if (tabItem.isDisposed()) return;
+        boolean bold = tabItem.getFont() != null && tabItem.getFont().equals(boldTabFont);
+        tabItem.setText(bold ? textBold : textNormal);
     }
 
     private Color getColorActivityBlue() {
@@ -1023,6 +1065,7 @@ public class TerminalTab {
         blinkRunning    = false;
         display.asyncExec(() -> {
             if (tabItem.isDisposed()) return;
+            tabItem.setText(textBold);
             tabItem.setFont(getBoldTabFont());
             tabItem.setForeground(getColorDisconnectedRed());
             canvas.redraw();
@@ -1037,6 +1080,7 @@ public class TerminalTab {
         disconnected = false;
         display.asyncExec(() -> {
             if (!tabItem.isDisposed()) {
+                tabItem.setText(textNormal);
                 tabItem.setFont(null);
                 tabItem.setForeground(null);
                 canvas.redraw();
