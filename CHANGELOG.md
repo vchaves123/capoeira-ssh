@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.0.9] — 2026-07-01
+
+### Added
+- **Import sessions**: new "Import..." button on the Home tab session tree scans PuTTY sessions
+  (Windows registry, or `~/.putty/sessions` on Linux/macOS) and/or a browsed `MobaXterm.ini` file,
+  listing found sessions with checkboxes to pick what to import. Only name/host/port/username are
+  imported — never passwords. MobaXterm's undocumented session-string format is best-effort
+  parsed, with encoding auto-detection (UTF-8/UTF-16/Windows-1252) and support for bookmark
+  subfolders (`[Bookmarks_1]`, `[Bookmarks_2]`, ...).
+- Session tree now supports **dragging multiple selected sessions** at once into another group.
+- Release asset filenames now include the version (e.g. `14bis-SSH-windows-1.0.9.exe`).
+- Linux releases now also ship `.rpm` (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) and a portable
+  `.tar.gz` build alongside the existing `.deb`.
+
+### Fixed
+- `reload()` used to force-expand every group in the session tree whenever none was currently
+  expanded, silently undoing a deliberate "collapse all". Now the actual expanded/collapsed state
+  is preserved across session create/edit/move actions (only the very first load defaults open).
+- The "+ Session"/"+ Group"/refresh buttons were nearly invisible on Linux (GTK ignored the
+  app's dark-panel colours on native toolbar buttons); replaced with plain `Button` widgets.
+
+---
+
 ## [1.0.8] — 2026-07-01
 
 ### Fixed
