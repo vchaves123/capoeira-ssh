@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.0.5] — 2026-07-01
+
+### Added
+- **Home tab**: the former "Sessions" tab is renamed to "Home", always stays first, and can no
+  longer be reordered past — no other tab can be dragged before it.
+- **Session tab renaming**: right-click a session tab → "Rename Tab..." to give it a custom title.
+- **Activity feedback**: background tab activity now blinks the tab title in bold blue (settling
+  to solid bold blue once traffic stops) instead of a small dot icon; the tab title is pre-padded
+  so it no longer grows/shrinks when the font toggles bold. Disconnected sessions show a fixed
+  bold red title, including while selected.
+- **Close confirmation**: clicking the close (×) button on a session tab now asks for confirmation
+  before disconnecting/closing it.
+- **Per-session terminal type**: editable combo (`xterm-256color`, `xterm`, `vt100`, `ansi`,
+  `linux`) sent as the PTY type — useful for AIX servers, which expect a plain `xterm`.
+- **Per-session Backspace key**: choose `DEL (0x7F)` (default) or `BS (0x08)` — AIX servers use a
+  different Backspace code than Linux.
+- **Update check**: on startup, the app silently checks GitHub for a newer release; if found, a
+  "New version available — Download" link appears on the Home tab.
+- **About dialog**: now shows the real running version/build/date (previously hardcoded
+  "Version 1.0.0"), credits third-party libraries (Eclipse SWT, JSch — mwiede fork) with clickable
+  links, and includes the project copyright line.
+- The build version label on the Home tab is now a clickable link to that release's GitHub page.
+
+### Fixed
+- The tree-view expand/collapse triangle for session groups was nearly invisible on the dark
+  background (Windows Explorer theme assumes a light background); it now uses the classic +/- box.
+- Removed a leftover internal hostname reference from the terminal appearance preview text.
+
+---
+
 ## [1.0.4] — 2026-07-01
 
 ### Added
