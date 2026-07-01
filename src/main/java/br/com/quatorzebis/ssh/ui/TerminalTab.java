@@ -68,9 +68,9 @@ public class TerminalTab {
 
     private final SessionInfo sessionInfo;
     private final String      tabTitle;
-    private Image             redDotIcon;
-    private Image             blueDarkIcon;
-    private Image             blueLightIcon;
+    private Font              boldTabFont;
+    private Color             colorActivityBlue;
+    private Color             colorDisconnectedRed;
 
     /** True while this tab has unread activity (not the active tab). */
     private volatile boolean  activityPending  = false;
@@ -120,7 +120,7 @@ public class TerminalTab {
         this.tabTitle    = info.label();
 
         tabItem = new CTabItem(folder, SWT.CLOSE);
-        tabItem.setText(tabTitle);
+        tabItem.setText("  " + tabTitle + "  ");
 
         canvas = new Canvas(folder, SWT.NO_BACKGROUND | SWT.V_SCROLL);
         tabItem.setControl(canvas);
@@ -960,13 +960,20 @@ public class TerminalTab {
             if (tabItem.isDisposed() || closed || !activityPending) return;
             long idle = System.currentTimeMillis() - lastActivityTime;
             if (idle >= IDLE_THRESHOLD_MS) {
-                // Traffic stopped — stay fixed on dark blue
-                tabItem.setImage(getBlueDarkIcon());
+                // Traffic stopped — stay fixed on bold blue
+                tabItem.setFont(getBoldTabFont());
+                tabItem.setForeground(getColorActivityBlue());
                 blinkRunning = false;
                 return;
             }
             blinkPhase = !blinkPhase;
-            tabItem.setImage(blinkPhase ? getBlueLightIcon() : getBlueDarkIcon());
+            if (blinkPhase) {
+                tabItem.setFont(getBoldTabFont());
+                tabItem.setForeground(getColorActivityBlue());
+            } else {
+                tabItem.setFont(null);
+                tabItem.setForeground(null);
+            }
             scheduleBlink();
         });
     }
@@ -976,65 +983,42 @@ public class TerminalTab {
         activityPending = false;
         blinkRunning    = false;
         display.asyncExec(() -> {
-            if (!tabItem.isDisposed() && !disconnected) tabItem.setImage(null);
+            if (!tabItem.isDisposed() && !disconnected) {
+                tabItem.setFont(null);
+                tabItem.setForeground(null);
+            }
         });
     }
 
-    private Image getBlueDarkIcon() {
-        if (blueDarkIcon != null && !blueDarkIcon.isDisposed()) return blueDarkIcon;
-        blueDarkIcon = buildDot(new RGB(30, 90, 170), new RGB(70, 130, 200));
-        return blueDarkIcon;
+    private Font getBoldTabFont() {
+        if (boldTabFont != null && !boldTabFont.isDisposed()) return boldTabFont;
+        FontData[] fd = tabItem.getParent().getFont().getFontData();
+        for (FontData d : fd) d.setStyle(SWT.BOLD);
+        boldTabFont = new Font(display, fd);
+        return boldTabFont;
     }
 
-    private Image getBlueLightIcon() {
-        if (blueLightIcon != null && !blueLightIcon.isDisposed()) return blueLightIcon;
-        blueLightIcon = buildDot(new RGB(80, 160, 240), new RGB(160, 210, 255));
-        return blueLightIcon;
+    private Color getColorActivityBlue() {
+        if (colorActivityBlue != null && !colorActivityBlue.isDisposed()) return colorActivityBlue;
+        colorActivityBlue = new Color(display, 80, 160, 240);
+        return colorActivityBlue;
     }
 
-    private Image buildDot(RGB fill, RGB highlight) {
-        final int SZ = 10;
-        PaletteData pal = new PaletteData(0xFF0000, 0x00FF00, 0x0000FF);
-        ImageData data  = new ImageData(SZ, SZ, 24, pal);
-        data.transparentPixel = pal.getPixel(new RGB(0, 0, 0));
-        Image img = new Image(display, data);
-        GC gc = new GC(img);
-        gc.setBackground(new Color(display, 0, 0, 0));
-        gc.fillRectangle(0, 0, SZ, SZ);
-        gc.setBackground(new Color(display, fill.red, fill.green, fill.blue));
-        gc.fillOval(1, 1, SZ - 2, SZ - 2);
-        gc.setForeground(new Color(display, highlight.red, highlight.green, highlight.blue));
-        gc.drawArc(2, 2, 3, 3, 45, 90);
-        gc.dispose();
-        return img;
+    private Color getColorDisconnectedRed() {
+        if (colorDisconnectedRed != null && !colorDisconnectedRed.isDisposed()) return colorDisconnectedRed;
+        colorDisconnectedRed = new Color(display, 220, 60, 60);
+        return colorDisconnectedRed;
     }
 
     private void handleDisconnect() {
         disconnected = true;
         display.asyncExec(() -> {
             if (tabItem.isDisposed()) return;
-            tabItem.setImage(getRedDotIcon());
+            tabItem.setFont(getBoldTabFont());
+            tabItem.setForeground(getColorDisconnectedRed());
             canvas.redraw();
             if (onStateChanged != null) onStateChanged.run();
         });
-    }
-
-    private Image getRedDotIcon() {
-        if (redDotIcon != null && !redDotIcon.isDisposed()) return redDotIcon;
-        final int SZ = 10;
-        PaletteData pal = new PaletteData(0xFF0000, 0x00FF00, 0x0000FF);
-        ImageData data  = new ImageData(SZ, SZ, 24, pal);
-        data.transparentPixel = pal.getPixel(new RGB(0, 0, 0));
-        redDotIcon = new Image(display, data);
-        GC gc = new GC(redDotIcon);
-        gc.setBackground(new Color(display,   0,   0,   0));
-        gc.fillRectangle(0, 0, SZ, SZ);
-        gc.setBackground(new Color(display, 210,  50,  50));
-        gc.fillOval(1, 1, SZ - 2, SZ - 2);
-        gc.setForeground(new Color(display, 255, 120, 120));
-        gc.drawArc(2, 2, 3, 3, 45, 90);
-        gc.dispose();
-        return redDotIcon;
     }
 
     // -----------------------------------------------------------------------
@@ -1044,7 +1028,8 @@ public class TerminalTab {
         disconnected = false;
         display.asyncExec(() -> {
             if (!tabItem.isDisposed()) {
-                tabItem.setImage(null);
+                tabItem.setFont(null);
+                tabItem.setForeground(null);
                 canvas.redraw();
                 if (onStateChanged != null) onStateChanged.run();
             }
@@ -1105,9 +1090,9 @@ public class TerminalTab {
         connection.close();
         display.asyncExec(() -> {
             disposeOffscreen();
-            if (redDotIcon   != null && !redDotIcon.isDisposed())   redDotIcon.dispose();
-            if (blueDarkIcon != null && !blueDarkIcon.isDisposed()) blueDarkIcon.dispose();
-            if (blueLightIcon!= null && !blueLightIcon.isDisposed())blueLightIcon.dispose();
+            if (boldTabFont       != null && !boldTabFont.isDisposed())       boldTabFont.dispose();
+            if (colorActivityBlue != null && !colorActivityBlue.isDisposed()) colorActivityBlue.dispose();
+            if (colorDisconnectedRed != null && !colorDisconnectedRed.isDisposed()) colorDisconnectedRed.dispose();
             if (!termFont.isDisposed())  termFont.dispose();
             if (!defaultBg.isDisposed()) defaultBg.dispose();
             if (!defaultFg.isDisposed()) defaultFg.dispose();

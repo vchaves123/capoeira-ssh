@@ -346,7 +346,7 @@ public class MainWindow {
         dlg.setInitialValue(item.getText().trim());
         String name = dlg.open();
         if (name != null && !name.trim().isEmpty()) {
-            item.setText(name.trim());
+            item.setText("  " + name.trim() + "  ");
         }
     }
 
@@ -497,11 +497,13 @@ public class MainWindow {
      */
     private void moveTab(CTabItem src, int srcIdx, int insertIdx) {
         // Save all properties
-        String   text      = src.getText();
-        Image    image     = src.getImage();
-        String   tooltip   = src.getToolTipText();
-        Control  control   = src.getControl();
-        boolean  showClose = (src.getStyle() & SWT.CLOSE) != 0;
+        String   text       = src.getText();
+        Image    image      = src.getImage();
+        String   tooltip    = src.getToolTipText();
+        Control  control    = src.getControl();
+        boolean  showClose  = (src.getStyle() & SWT.CLOSE) != 0;
+        Font     font       = src.getFont();
+        Color    foreground = src.getForeground();
 
         // Find the TerminalTab wrapper (may be null for the welcome tab)
         TerminalTab terminal = terminalTabs.stream()
@@ -518,8 +520,10 @@ public class MainWindow {
 
         CTabItem newItem = new CTabItem(tabFolder, showClose ? SWT.CLOSE : SWT.NONE, idx);
         newItem.setText(text);
-        if (image   != null) newItem.setImage(image);
-        if (tooltip != null) newItem.setToolTipText(tooltip);
+        if (image      != null) newItem.setImage(image);
+        if (tooltip    != null) newItem.setToolTipText(tooltip);
+        if (font       != null) newItem.setFont(font);
+        if (foreground != null) newItem.setForeground(foreground);
         newItem.setControl(control);
 
         if (terminal != null) terminal.replaceTabItem(newItem);
