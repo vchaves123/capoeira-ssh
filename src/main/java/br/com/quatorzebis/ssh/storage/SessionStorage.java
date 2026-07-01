@@ -21,7 +21,7 @@ import java.util.stream.Stream;
  */
 public final class SessionStorage {
 
-    private static final Path BASE = Path.of(System.getProperty("user.home"), ".14bis");
+    private static final Path BASE = Path.of(System.getProperty("user.home"), ".14bis", "sessions");
     private static final String EXT = ".session";
 
     private SessionStorage() {}
