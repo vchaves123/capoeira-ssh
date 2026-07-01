@@ -41,7 +41,7 @@ public class SessionTreePanel {
     /** Terminal icon drawn for session tree items. */
     private final Image terminalIcon;
 
-    private ToolBar mainToolbar;
+    private Composite mainToolbar;
 
     // Dark theme colours (same palette as the Sessions welcome pane)
     private final Color colorBg;        // near-black background
@@ -138,29 +138,31 @@ public class SessionTreePanel {
     // Toolbar
     // -----------------------------------------------------------------------
     private void buildToolbar() {
-        mainToolbar = new ToolBar(composite, SWT.FLAT | SWT.HORIZONTAL);
+        // Plain Buttons instead of a ToolBar/ToolItem: on GTK (Linux), native toolbar
+        // buttons draw their label text using the system theme and ignore
+        // setForeground/setBackground, making them nearly invisible on this dark
+        // panel. Regular Buttons respect the explicit colours on every platform.
+        mainToolbar = new Composite(composite, SWT.NONE);
         mainToolbar.setBackground(colorBg);
-        mainToolbar.setForeground(colorSession);
         mainToolbar.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        RowLayout rl = new RowLayout(SWT.HORIZONTAL);
+        rl.spacing = 4; rl.marginWidth = 4; rl.marginHeight = 2; rl.center = true;
+        mainToolbar.setLayout(rl);
 
-        ToolItem tiNew = new ToolItem(mainToolbar, SWT.PUSH);
-        tiNew.setText("+ Session");
-        tiNew.setToolTipText("New session");
-        tiNew.addListener(SWT.Selection, e -> newSession(""));
+        Button btnNew = new Button(mainToolbar, SWT.PUSH);
+        btnNew.setText("+ Session");
+        btnNew.setToolTipText("New session");
+        btnNew.addListener(SWT.Selection, e -> newSession(""));
 
-        new ToolItem(mainToolbar, SWT.SEPARATOR);
+        Button btnGroup = new Button(mainToolbar, SWT.PUSH);
+        btnGroup.setText("+ Group");
+        btnGroup.setToolTipText("New group");
+        btnGroup.addListener(SWT.Selection, e -> newGroup());
 
-        ToolItem tiGroup = new ToolItem(mainToolbar, SWT.PUSH);
-        tiGroup.setText("+ Group");
-        tiGroup.setToolTipText("New group");
-        tiGroup.addListener(SWT.Selection, e -> newGroup());
-
-        new ToolItem(mainToolbar, SWT.SEPARATOR);
-
-        ToolItem tiRefresh = new ToolItem(mainToolbar, SWT.PUSH);
-        tiRefresh.setText("⟳");
-        tiRefresh.setToolTipText("Refresh");
-        tiRefresh.addListener(SWT.Selection, e -> reload());
+        Button btnRefresh = new Button(mainToolbar, SWT.PUSH);
+        btnRefresh.setText("⟳");
+        btnRefresh.setToolTipText("Refresh");
+        btnRefresh.addListener(SWT.Selection, e -> reload());
     }
 
     // -----------------------------------------------------------------------
