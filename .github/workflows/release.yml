@@ -23,8 +23,8 @@ jobs:
           - runner:     ubuntu-latest
             os-label:   Linux
             mvn-profile: linux
-            pkg-type:   deb
-            asset-name: 14bis-SSH-linux.deb
+            pkg-type:   deb+rpm
+            asset-name: 14bis-SSH-linux
 
           - runner:     macos-latest
             os-label:   macOS (Apple Silicon)
@@ -146,7 +146,11 @@ jobs:
           Remove-Item $pfx -Force
           Write-Host "Signed: $installer"
 
-      - name: Package with jpackage (Linux)
+      - name: Install rpmbuild (Linux)
+        if: matrix.runner == 'ubuntu-latest'
+        run: sudo apt-get update -qq && sudo apt-get install -y rpm
+
+      - name: Package with jpackage (Linux DEB)
         if: matrix.runner == 'ubuntu-latest'
         run: |
           jpackage \
@@ -163,6 +167,24 @@ jobs:
             --linux-shortcut \
             --dest installer
           mv installer/*.deb installer/14bis-SSH-linux.deb
+
+      - name: Package with jpackage (Linux RPM)
+        if: matrix.runner == 'ubuntu-latest'
+        run: |
+          jpackage \
+            --input target \
+            --name "ssh-14bis" \
+            --main-jar 14bis-ssh-${{ steps.ver.outputs.jar }}.jar \
+            --main-class br.com.quatorzebis.ssh.Main \
+            --type rpm \
+            --app-version ${{ steps.ver.outputs.app }} \
+            --vendor "Molho Ltda." \
+            --copyright "Copyright (C) 2026 Vicente Melo - Molho Ltda." \
+            --description "Lightweight SSH terminal client" \
+            --icon target/app-icon.png \
+            --linux-shortcut \
+            --dest installer
+          mv installer/*.rpm installer/14bis-SSH-linux.rpm
 
       - name: Convert icon to ICNS (macOS)
         if: matrix.runner == 'macos-latest'
@@ -226,7 +248,8 @@ jobs:
             | Platform | File |
             |----------|------|
             | Windows  | `14bis-SSH-windows.exe` |
-            | Linux    | `14bis-SSH-linux.deb` |
+            | Linux (Debian/Ubuntu) | `14bis-SSH-linux.deb` |
+            | Linux (RHEL/OEL/AlmaLinux/Rocky Linux/etc.) | `14bis-SSH-linux.rpm` |
             | macOS    | `14bis-SSH-macos.dmg` |
 
             > Java is bundled — no separate installation required.
