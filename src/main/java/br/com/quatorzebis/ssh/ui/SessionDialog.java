@@ -31,7 +31,6 @@ public class SessionDialog {
         Shell dlg = new Shell(parent, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM | SWT.RESIZE);
         dlg.setText(editing == null ? "New Session" : "Edit Session");
         AppIcon.apply(dlg);
-        dlg.setSize(460, 500);
         center(dlg, parent);
 
         GridLayout gl = new GridLayout(2, false);
@@ -204,6 +203,9 @@ public class SessionDialog {
             boolean p = rbPass.getSelection(), k = rbKey.getSelection(), c = rbCred.getSelection();
             setVisible(passW, p); setVisible(keyW, k); setVisible(credW, c);
             dlg.layout(true, true);
+            dlg.pack();
+            dlg.setSize(Math.max(dlg.getSize().x, 460), dlg.getSize().y);
+            center(dlg, parent);
         };
 
         rbPass.addListener(SWT.Selection, e -> updateAuth.run());
@@ -252,6 +254,9 @@ public class SessionDialog {
             }
         }
         updateAuth.run();
+        dlg.pack();
+        dlg.setSize(Math.max(dlg.getSize().x, 460), dlg.getSize().y);
+        center(dlg, parent);
 
         // ── Save ──────────────────────────────────────────────────────────────
         btnCancel.addListener(SWT.Selection, e -> dlg.dispose());
