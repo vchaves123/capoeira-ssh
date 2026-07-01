@@ -10,6 +10,8 @@ jobs:
   build:
     name: Build — ${{ matrix.os-label }}
     runs-on: ${{ matrix.runner }}
+    outputs:
+      app-version: ${{ steps.ver.outputs.app }}
     strategy:
       fail-fast: false
       matrix:
@@ -113,7 +115,7 @@ jobs:
             --win-menu ^
             --win-shortcut ^
             --dest installer
-          for %%f in (installer\*.exe) do ren "%%f" "14bis-SSH-windows.exe"
+          for %%f in (installer\*.exe) do ren "%%f" "14bis-SSH-windows-${{ steps.ver.outputs.app }}.exe"
 
       - name: Sign Windows installer
         if: matrix.runner == 'windows-latest'
@@ -167,7 +169,7 @@ jobs:
             --icon target/app-icon.png \
             --linux-shortcut \
             --dest installer
-          mv installer/*.deb installer/14bis-SSH-linux.deb
+          mv installer/*.deb installer/14bis-SSH-linux-${{ steps.ver.outputs.app }}.deb
 
       - name: Package with jpackage (Linux RPM)
         if: matrix.runner == 'ubuntu-latest'
@@ -185,7 +187,7 @@ jobs:
             --icon target/app-icon.png \
             --linux-shortcut \
             --dest installer
-          mv installer/*.rpm installer/14bis-SSH-linux.rpm
+          mv installer/*.rpm installer/14bis-SSH-linux-${{ steps.ver.outputs.app }}.rpm
 
       - name: Package with jpackage (Linux portable tar.gz)
         if: matrix.runner == 'ubuntu-latest'
@@ -202,7 +204,7 @@ jobs:
             --description "Lightweight SSH terminal client" \
             --icon target/app-icon.png \
             --dest installer-appimage
-          tar -C installer-appimage -czf installer/14bis-SSH-linux.tar.gz "ssh-14bis"
+          tar -C installer-appimage -czf installer/14bis-SSH-linux-${{ steps.ver.outputs.app }}.tar.gz "ssh-14bis"
 
       - name: Convert icon to ICNS (macOS)
         if: matrix.runner == 'macos-latest'
@@ -229,7 +231,7 @@ jobs:
             --description "Lightweight SSH terminal client" \
             --icon target/app-icon.icns \
             --dest installer
-          mv installer/*.dmg installer/14bis-SSH-macos.dmg
+          mv installer/*.dmg installer/14bis-SSH-macos-${{ steps.ver.outputs.app }}.dmg
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -266,11 +268,11 @@ jobs:
 
             | Platform | File |
             |----------|------|
-            | Windows  | `14bis-SSH-windows.exe` |
-            | Linux (Debian/Ubuntu) | `14bis-SSH-linux.deb` |
-            | Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | `14bis-SSH-linux.rpm` |
-            | Linux (portable, no install — unpack and run `bin/ssh-14bis`) | `14bis-SSH-linux.tar.gz` |
-            | macOS    | `14bis-SSH-macos.dmg` |
+            | Windows  | `14bis-SSH-windows-${{ needs.build.outputs.app-version }}.exe` |
+            | Linux (Debian/Ubuntu) | `14bis-SSH-linux-${{ needs.build.outputs.app-version }}.deb` |
+            | Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | `14bis-SSH-linux-${{ needs.build.outputs.app-version }}.rpm` |
+            | Linux (portable, no install — unpack and run `bin/ssh-14bis`) | `14bis-SSH-linux-${{ needs.build.outputs.app-version }}.tar.gz` |
+            | macOS    | `14bis-SSH-macos-${{ needs.build.outputs.app-version }}.dmg` |
 
             > Java is bundled — no separate installation required.
 

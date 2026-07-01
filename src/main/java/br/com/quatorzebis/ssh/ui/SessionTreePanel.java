@@ -159,10 +159,31 @@ public class SessionTreePanel {
         btnGroup.setToolTipText("New group");
         btnGroup.addListener(SWT.Selection, e -> newGroup());
 
+        Button btnImport = new Button(mainToolbar, SWT.PUSH);
+        btnImport.setText("Import...");
+        btnImport.setToolTipText("Import sessions from PuTTY or MobaXterm");
+        btnImport.addListener(SWT.Selection, e -> importSessions());
+
         Button btnRefresh = new Button(mainToolbar, SWT.PUSH);
         btnRefresh.setText("⟳");
         btnRefresh.setToolTipText("Refresh");
         btnRefresh.addListener(SWT.Selection, e -> reload());
+    }
+
+    private void importSessions() {
+        java.util.List<SessionInfo> selected = new ImportSessionsDialog(shell).open();
+        if (selected == null || selected.isEmpty()) return;
+        int ok = 0, fail = 0;
+        for (SessionInfo s : selected) {
+            try { SessionStorage.save(s); ok++; }
+            catch (IOException e) { fail++; }
+        }
+        reload();
+        String msg = "Imported " + ok + " session" + (ok == 1 ? "" : "s") + ".";
+        if (fail > 0) msg += "\n" + fail + " failed to save.";
+        MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
+        mb.setMessage(msg);
+        mb.open();
     }
 
     // -----------------------------------------------------------------------
