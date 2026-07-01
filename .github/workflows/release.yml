@@ -114,6 +114,38 @@ jobs:
             --win-shortcut ^
             --dest installer
 
+      - name: Sign Windows installer
+        if: matrix.runner == 'windows-latest'
+        shell: pwsh
+        env:
+          CERT_BASE64: ${{ secrets.CODE_SIGN_CERT_BASE64 }}
+          CERT_PASS:   ${{ secrets.CODE_SIGN_PASSWORD }}
+        run: |
+          if (-not $env:CERT_BASE64) {
+            Write-Host "CODE_SIGN_CERT_BASE64 secret not set — skipping signing."
+            exit 0
+          }
+          # Write PFX to a temp file
+          $pfx = Join-Path $env:TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_BASE64))
+          # Locate signtool from the Windows SDK
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" `
+            -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*x64*' } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { Write-Error "signtool.exe not found"; exit 1 }
+          $installer = (Get-ChildItem installer\*.exe | Select-Object -First 1).FullName
+          & $signtool sign `
+            /fd  SHA256 `
+            /td  SHA256 `
+            /tr  http://timestamp.sectigo.com `
+            /f   $pfx `
+            /p   $env:CERT_PASS `
+            $installer
+          Remove-Item $pfx -Force
+          Write-Host "Signed: $installer"
+
       - name: Package with jpackage (Linux)
         if: matrix.runner == 'ubuntu-latest'
         run: |
