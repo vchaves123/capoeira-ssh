@@ -669,10 +669,15 @@ public class TerminalTab {
     private void openLogFile(SessionInfo info) {
         if (!info.logEnabled) return;
         try {
-            String dir = (info.logDir != null && !info.logDir.isBlank())
-                         ? info.logDir
-                         : System.getProperty("user.home") + "/.14bis/screen_captures";
-            Path logDir = Path.of(dir);
+            String defaultDir = System.getProperty("user.home") + "/.14bis/screen_captures";
+            Path   userHome   = Path.of(System.getProperty("user.home")).normalize().toAbsolutePath();
+            Path   logDir;
+            if (info.logDir != null && !info.logDir.isBlank()) {
+                Path candidate = Path.of(info.logDir).normalize().toAbsolutePath();
+                logDir = candidate.startsWith(userHome) ? candidate : Path.of(defaultDir);
+            } else {
+                logDir = Path.of(defaultDir);
+            }
             br.com.quatorzebis.ssh.storage.SecureFiles.createDirectories(logDir);
             String ts       = LocalDateTime.now().format(LOG_TS);
             String baseName = (info.logFileName != null && !info.logFileName.isBlank())

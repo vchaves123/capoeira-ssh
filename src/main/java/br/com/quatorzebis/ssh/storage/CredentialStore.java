@@ -152,7 +152,9 @@ public final class CredentialStore {
         for (CredentialEntry e : list) {
             sb.append("e.").append(e.id).append(".l=").append(esc(e.label))   .append('\n');
             sb.append("e.").append(e.id).append(".u=").append(esc(e.username)).append('\n');
-            sb.append("e.").append(e.id).append(".p=").append(esc(new String(e.password))).append('\n');
+            sb.append("e.").append(e.id).append(".p=");
+            escChars(e.password, sb);
+            sb.append('\n');
         }
         return sb.toString();
     }
@@ -180,9 +182,29 @@ public final class CredentialStore {
         return new ArrayList<>(map.values());
     }
 
+    /** Escape a String value for vault serialization. Order is critical: backslash first. */
     private static String esc(String s) {
         return s.replace("\\", "\\\\").replace("\n", "\\n").replace("=", "\\=");
     }
+
+    /**
+     * Escape a char[] password directly into sb — avoids creating an intermediate String.
+     * Same escaping rules as esc(): backslash first, then newline, then equals.
+     */
+    private static void escChars(char[] chars, StringBuilder sb) {
+        for (char c : chars) {
+            if      (c == '\\') { sb.append('\\'); sb.append('\\'); }
+            else if (c == '\n') { sb.append('\\'); sb.append('n');  }
+            else if (c == '=')  { sb.append('\\'); sb.append('=');  }
+            else                { sb.append(c); }
+        }
+    }
+
+    /**
+     * Unescape a vault-serialized value. Order is critical — must mirror esc() in reverse:
+     * \= → = first, then \n → newline, then \\ → \ last.
+     * Reversing this order would corrupt values containing literal backslash+equals.
+     */
     private static String unesc(String s) {
         return s.replace("\\=", "=").replace("\\n", "\n").replace("\\\\", "\\");
     }

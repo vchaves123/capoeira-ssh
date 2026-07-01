@@ -34,8 +34,10 @@ public class SshConnection {
         jsch = new JSch();
 
         // Known-hosts file — host keys are stored here and verified on every connection.
+        // Pre-create with owner-only permissions so JSch doesn't create it world-readable.
         Path knownHosts = Path.of(System.getProperty("user.home"), ".14bis", "known_hosts");
-        Files.createDirectories(knownHosts.getParent());
+        if (!Files.exists(knownHosts))
+            br.com.quatorzebis.ssh.storage.SecureFiles.write(knownHosts, new byte[0]);
         jsch.setKnownHosts(knownHosts.toString());
 
         if (info.authType == SessionInfo.AuthType.PRIVATE_KEY

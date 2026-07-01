@@ -5,6 +5,7 @@ import org.eclipse.swt.graphics.RGB;
 import java.io.*;
 import java.nio.file.*;
 import java.util.Properties;
+import java.io.ByteArrayOutputStream;
 
 public class AppearanceSettings {
 
@@ -45,8 +46,9 @@ public class AppearanceSettings {
         p.setProperty("fgColor",  fgColor.red + "," + fgColor.green + "," + fgColor.blue);
         p.setProperty("bgColor",  bgColor.red + "," + bgColor.green + "," + bgColor.blue);
         try {
-            Files.createDirectories(FILE.getParent());
-            try (OutputStream out = Files.newOutputStream(FILE)) { p.store(out, null); }
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            p.store(baos, null);
+            SecureFiles.write(FILE, baos.toByteArray());
         } catch (IOException ignored) {}
     }
 
