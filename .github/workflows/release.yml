@@ -53,7 +53,8 @@ jobs:
         run: |
           # GITHUB_REF_NAME is read as an env var (never inlined into the script), and
           # validated to a safe charset so the derived `app` output — which IS expanded
-          # via ${{ }} into later run: blocks — can't carry shell metacharacters.
+          # by the Actions expression templating into later run: blocks — cannot carry
+          # shell metacharacters.
           TAG="${GITHUB_REF_NAME:-v0.0.0}"
           if [[ ! "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
             echo "Refusing unsafe tag name: $TAG" >&2
