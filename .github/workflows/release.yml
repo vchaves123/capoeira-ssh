@@ -303,34 +303,62 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all installers
         uses: actions/download-artifact@v4
         with:
           path: installers
           merge-multiple: true
 
+      - name: Build release notes
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${{ needs.build.outputs.app-version }}"
+
+          {
+            echo "## 14bis SSH ${{ github.ref_name }}"
+            echo
+            echo "**Molho Ltda. — Copyright (C) 2026 Vicente Melo**"
+            echo
+            echo "### Downloads"
+            echo
+            echo "| Platform | File |"
+            echo "|----------|------|"
+            echo "| Windows (installer) | \`14bis-SSH-windows-${VERSION}.exe\` |"
+            echo "| Windows (portable, no install / no admin required — unzip and run \`14bis SSH.exe\`) | \`14bis-SSH-windows-portable-${VERSION}.zip\` |"
+            echo "| Linux (Debian/Ubuntu) | \`14bis-SSH-linux-${VERSION}.deb\` |"
+            echo "| Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | \`14bis-SSH-linux-${VERSION}.rpm\` |"
+            echo "| Linux (portable, no install — unpack and run \`bin/ssh-14bis\`) | \`14bis-SSH-linux-${VERSION}.tar.gz\` |"
+            echo "| macOS    | \`14bis-SSH-macos-${VERSION}.dmg\` |"
+            echo
+            echo "> Java is bundled — no separate installation required."
+            echo
+
+            # Extract this version's section from CHANGELOG.md (from "## [VERSION]" up
+            # to, but not including, the next "## [" heading).
+            SECTION=$(awk -v ver="[$VERSION]" '
+              substr($0,1,4) == "## [" { if (found) exit; if (index($0, ver)) { found=1; next } }
+              found && $0 == "---" { exit }
+              found { print }
+            ' CHANGELOG.md)
+
+            if [ -n "$SECTION" ]; then
+              echo "### What's new in this version"
+              echo
+              echo "$SECTION"
+            fi
+          } > release-notes.md
+
+          cat release-notes.md
+
       - name: Create release and upload assets
         uses: softprops/action-gh-release@v2
         with:
           name: "14bis SSH ${{ github.ref_name }}"
-          body: |
-            ## 14bis SSH ${{ github.ref_name }}
-
-            **Molho Ltda. — Copyright (C) 2026 Vicente Melo**
-
-            ### Downloads
-
-            | Platform | File |
-            |----------|------|
-            | Windows (installer) | `14bis-SSH-windows-${{ needs.build.outputs.app-version }}.exe` |
-            | Windows (portable, no install / no admin required — unzip and run `14bis SSH.exe`) | `14bis-SSH-windows-portable-${{ needs.build.outputs.app-version }}.zip` |
-            | Linux (Debian/Ubuntu) | `14bis-SSH-linux-${{ needs.build.outputs.app-version }}.deb` |
-            | Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | `14bis-SSH-linux-${{ needs.build.outputs.app-version }}.rpm` |
-            | Linux (portable, no install — unpack and run `bin/ssh-14bis`) | `14bis-SSH-linux-${{ needs.build.outputs.app-version }}.tar.gz` |
-            | macOS    | `14bis-SSH-macos-${{ needs.build.outputs.app-version }}.dmg` |
-
-            > Java is bundled — no separate installation required.
-
+          body_path: release-notes.md
           files: installers/*
           draft: false
           prerelease: false
