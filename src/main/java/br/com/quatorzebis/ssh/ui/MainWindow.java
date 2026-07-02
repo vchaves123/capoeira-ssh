@@ -243,7 +243,7 @@ public class MainWindow {
         Label lbl = new Label(dlg, SWT.CENTER);
         lbl.setText("14bis SSH Client\nVersion " + br.com.quatorzebis.ssh.BuildInfo.VERSION
             + "  (build #" + br.com.quatorzebis.ssh.BuildInfo.BUILD + ", " + br.com.quatorzebis.ssh.BuildInfo.DATE + ")"
-            + "\n\nxterm-256color terminal emulator built with SWT."
+            + "\n\nxterm-256color terminal emulator built with Java and SWT."
             + "\n\nCopyright (C) 2026 Vicente Melo — Molho Ltda.");
         lbl.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
 
@@ -253,6 +253,7 @@ public class MainWindow {
 
         Link link = new Link(dlg, SWT.NONE);
         link.setText(
+            "• <a href=\"https://adoptium.net/\">Eclipse Temurin (OpenJDK)</a> (GPLv2 + Classpath Exception)\n" +
             "• <a href=\"https://www.eclipse.org/swt/\">Eclipse SWT</a> (EPL 2.0)\n" +
             "• <a href=\"https://github.com/mwiede/jsch\">JSch — mwiede fork</a> (BSD-style)");
         link.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
