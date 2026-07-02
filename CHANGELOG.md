@@ -5,6 +5,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.2.0] — 2026-07-02
+
+### Added
+- **Configuration Setting dialog**: logging, terminal appearance, terminal type and Backspace key
+  are now grouped into a single reusable dialog with three scopes — global defaults (Home tab
+  → "Configuration Setting", applied to every new session), per-session (Session dialog →
+  "Configuration Setting…"), and per-terminal (tab context menu → "Settings…", affecting only
+  that live tab without touching the saved session).
+- **Redesigned session authentication**: the Username field is now a single editable combo — type
+  a username, or pick a previously saved vault credential from the dropdown, which auto-fills and
+  greys out the dependent fields. A "Use private key" checkbox reveals a key-file browser, and the
+  password field doubles as the key passphrase. A "Save Credential…" button stores either a
+  password- or key-based credential into the vault for reuse across sessions.
+- **Private-key credentials in the vault**: the Credential Manager now supports key-file
+  credentials (with an optional passphrase), not just user/password entries.
+- **First-connect password pre-fill**: a password typed while creating a new session pre-fills the
+  first Connect dialog and auto-connects, so it is no longer asked for twice. The value is kept
+  only in memory (a `char[]` zeroed after use) and never written to disk.
+- **Editable log file name**: when logging is enabled the file name is pre-filled and editable in
+  the exact `<timestamp>_<name>.log` format that will be written.
+- Per-version CHANGELOG section is now included automatically in the GitHub release notes.
+
+### Changed
+- The terminal tab context menu is simplified: the separate "Terminal Appearance…" and
+  "Log Settings…" items are replaced by one "Settings…" entry; logging is toggled by the "Enable"
+  checkbox inside it rather than a menu item.
+- The Home tab's "Default Appearance" button is now "Configuration Setting" and edits the global
+  defaults used for new sessions.
+- The credential vault is only unlocked when the user actually opens the Username dropdown to pick
+  a saved credential — not merely when focusing the field to type.
+
+### Fixed
+- Security audit of the pre-release changes (build 85) — 4 findings fixed: `TerminalEmulator`
+  `insertChars` (`CSI @`) and `scrollRegion` (`CSI S`/`T`) are now clamped so a malicious/MITM
+  server can't crash or freeze the session; the release workflow's GitHub Actions script-injection
+  surface is hardened (untrusted values passed via `env:` + tag charset validation); all Actions
+  are pinned to full commit SHAs.
+- Security audit of the authentication/settings redesign (build 97) — 5 findings fixed: the
+  manually-typed password `char[]` is captured only after a successful save and only on the
+  new-session path (no un-zeroed copy leaks on the edit or failed-save paths); editing a
+  vault-linked session while the vault stays locked now preserves the credential link instead of
+  silently downgrading to manual auth; `ConfigurationSettingsDialog` disposes its swatch `Color`
+  objects on close (native handle leak); the Username-combo dropdown-unlock zone is DPI-aware; and
+  `SessionDefaults` clamps `backspaceCode` to DEL/BS on load.
+
+---
+
 ## [1.1.0] — 2026-07-01
 
 ### Added
