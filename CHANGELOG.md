@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.0] — 2026-07-01
+
+### Added
+- **Session group renaming**: right-click a group in the session tree → "Rename Group" moves
+  its directory (and all sessions inside it) to the new name.
+- **Windows portable build**: a `.zip` (no installer, no admin rights required) alongside the
+  existing `.exe` — unzip and run `14bis SSH.exe` directly.
+- **Monospace font selection**: "Terminal Appearance" now has a font dropdown (global default
+  and per-session), listing only monospace fonts actually installed on the system.
+
+### Changed
+- Default terminal font size changed from 14pt to 12pt.
+- Default text colour changed from light gray to classic amber phosphor (#FFB000).
+- About dialog now also credits the bundled Java runtime (Eclipse Temurin/OpenJDK).
+- Removed references to SignPath Foundation from the README/SIGNING docs after the free
+  code-signing application was declined (project too new for their adoption requirements);
+  releases remain unsigned for now.
+
+---
+
 ## [1.0.9] — 2026-07-01
 
 ### Added
