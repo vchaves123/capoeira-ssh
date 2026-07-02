@@ -498,6 +498,12 @@ public class TerminalEmulator {
     }
 
     private void insertChars(int n) {
+        // Clamp to the remainder of the line — a remote-supplied count near INT_MAX
+        // would otherwise make `cursorCol + n` overflow to a negative value, the loop
+        // then index a large negative column and throw ArrayIndexOutOfBoundsException,
+        // killing the session. Mirrors the clamp in deleteChars().
+        n = Math.min(n, cols - cursorCol);
+        if (n <= 0) return;
         for (int c = cols - 1; c >= cursorCol + n; c--)
             activeBuffer[cursorRow][c].copyFrom(activeBuffer[cursorRow][c - n]);
         for (int c = cursorCol; c < cursorCol + n && c < cols; c++)
@@ -686,7 +692,14 @@ public class TerminalEmulator {
      * Negative = scroll down (new blank line at top).
      */
     private void scrollRegion(int n) {
+        // Clamp the repeat count to the scroll-region height: beyond that the region
+        // is already fully blanked and further iterations are no-ops. An unclamped
+        // remote-supplied count (up to ~2 billion via CSI S/T) would otherwise spin
+        // this O(rows*cols) loop for a very long time while holding the emulator's
+        // synchronized lock, freezing the UI thread. Mirrors insertLines/deleteLines.
+        int regionHeight = scrollBottom - scrollTop + 1;
         if (n > 0) {
+            n = Math.min(n, regionHeight);
             for (int i = 0; i < n; i++) {
                 // Feed scrollback only from primary buffer when the region covers the whole screen
                 if (!altBufferActive && scrollTop == 0 && scrollBottom == rows - 1) {
@@ -700,7 +713,7 @@ public class TerminalEmulator {
                 clearLineRange(scrollBottom, 0, cols);
             }
         } else {
-            n = -n;
+            n = Math.min(-n, regionHeight);
             for (int i = 0; i < n; i++) {
                 for (int r = scrollBottom; r > scrollTop; r--)
                     for (int c = 0; c < cols; c++) activeBuffer[r][c].copyFrom(activeBuffer[r - 1][c]);
