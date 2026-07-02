@@ -162,7 +162,7 @@ public class MainWindow {
         tab.setOnReconnectRequest(() -> reconnectTab(tab));
         tab.setOnStateChanged(this::refreshSelectionColor);
         if (info.appearFontSize > 0) {
-            tab.applyAppearance(info.appearFontSize,
+            tab.applyAppearance(info.appearFontName, info.appearFontSize,
                 new org.eclipse.swt.graphics.RGB(info.appearFgR, info.appearFgG, info.appearFgB),
                 new org.eclipse.swt.graphics.RGB(info.appearBgR, info.appearBgG, info.appearBgB));
         }
@@ -319,6 +319,7 @@ public class MainWindow {
             miDuplicate.addListener(SWT.Selection, ev -> {
                 br.com.quatorzebis.ssh.model.SessionInfo info = terminal.getSessionInfo();
                 int[] a = terminal.getAppearance();
+                info.appearFontName = terminal.getFontName();
                 info.appearFontSize = a[0];
                 info.appearFgR = a[1]; info.appearFgG = a[2]; info.appearFgB = a[3];
                 info.appearBgR = a[4]; info.appearBgG = a[5]; info.appearBgB = a[6];
@@ -332,11 +333,13 @@ public class MainWindow {
             miAppearance.addListener(SWT.Selection, ev -> {
                 int[] a = terminal.getAppearance();
                 TerminalAppearanceDialog dlg = new TerminalAppearanceDialog(shell,
+                    terminal.getFontName(),
                     a[0],
                     new org.eclipse.swt.graphics.RGB(a[1], a[2], a[3]),
                     new org.eclipse.swt.graphics.RGB(a[4], a[5], a[6]));
                 if (dlg.open()) {
-                    terminal.applyAppearance(dlg.getChosenFontSize(),
+                    terminal.applyAppearance(dlg.getChosenFontName(),
+                                             dlg.getChosenFontSize(),
                                              dlg.getChosenFgColor(),
                                              dlg.getChosenBgColor());
                 }

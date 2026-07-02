@@ -119,12 +119,13 @@ public class SessionsTab {
         btnAbout.addListener(SWT.Selection,  e -> onAbout.run());
         btnAppear.addListener(SWT.Selection, e -> {
             TerminalAppearanceDialog dlg = new TerminalAppearanceDialog(shell,
+                br.com.quatorzebis.ssh.storage.AppearanceSettings.getFontName(),
                 br.com.quatorzebis.ssh.storage.AppearanceSettings.getFontSize(),
                 br.com.quatorzebis.ssh.storage.AppearanceSettings.getFgColor(),
                 br.com.quatorzebis.ssh.storage.AppearanceSettings.getBgColor());
             if (dlg.open()) {
                 br.com.quatorzebis.ssh.storage.AppearanceSettings.set(
-                    dlg.getChosenFontSize(), dlg.getChosenFgColor(), dlg.getChosenBgColor());
+                    dlg.getChosenFontName(), dlg.getChosenFontSize(), dlg.getChosenFgColor(), dlg.getChosenBgColor());
             }
         });
 

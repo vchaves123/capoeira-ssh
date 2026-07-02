@@ -15,16 +15,18 @@ public class TerminalAppearanceDialog {
     private final Shell  parent;
     private boolean      confirmed = false;
 
-    private int  fontSize;
-    private RGB  fgColor;
-    private RGB  bgColor;
+    private String fontName;
+    private int    fontSize;
+    private RGB    fgColor;
+    private RGB    bgColor;
 
     public TerminalAppearanceDialog(Shell parent) {
-        this(parent, 14, new RGB(204, 204, 204), new RGB(0, 0, 0));
+        this(parent, MonoFonts.DEFAULT, 14, new RGB(204, 204, 204), new RGB(0, 0, 0));
     }
 
-    public TerminalAppearanceDialog(Shell parent, int fontSize, RGB fg, RGB bg) {
+    public TerminalAppearanceDialog(Shell parent, String fontName, int fontSize, RGB fg, RGB bg) {
         this.parent   = parent;
+        this.fontName = (fontName != null && !fontName.isBlank()) ? fontName : MonoFonts.DEFAULT;
         this.fontSize = fontSize;
         this.fgColor  = fg;
         this.bgColor  = bg;
@@ -35,7 +37,7 @@ public class TerminalAppearanceDialog {
         Shell dlg = new Shell(parent, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
         dlg.setText("Terminal Appearance");
         AppIcon.apply(dlg);
-        dlg.setSize(380, 300);
+        dlg.setSize(380, 340);
         center(dlg, parent);
 
         Display display = dlg.getDisplay();
@@ -45,6 +47,18 @@ public class TerminalAppearanceDialog {
         gl.marginHeight = 16;
         gl.verticalSpacing = 10;
         dlg.setLayout(gl);
+
+        // ── Font family ──────────────────────────────────────────────────────
+        Label lblFont = new Label(dlg, SWT.NONE);
+        lblFont.setText("Font:");
+
+        java.util.List<String> fontChoices = MonoFonts.available(display);
+        if (!fontChoices.contains(fontName)) fontChoices.add(0, fontName);
+        Combo fontCombo = new Combo(dlg, SWT.DROP_DOWN | SWT.READ_ONLY);
+        fontCombo.setItems(fontChoices.toArray(new String[0]));
+        int fontIdx = fontChoices.indexOf(fontName);
+        fontCombo.select(fontIdx >= 0 ? fontIdx : 0);
+        fontCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         // ── Font size ────────────────────────────────────────────────────────
         Label lblSize = new Label(dlg, SWT.NONE);
@@ -91,7 +105,6 @@ public class TerminalAppearanceDialog {
             // text
             Color fg = new Color(display, fgColor);
             gc.setForeground(fg);
-            String fontName = display.getFontList("Consolas", true).length > 0 ? "Consolas" : "Courier New";
             Font f = new Font(display, fontName, fontSize, SWT.NORMAL);
             gc.setFont(f);
             gc.drawString("  user@server:~$ ls -la", 4, 8, true);
@@ -116,6 +129,7 @@ public class TerminalAppearanceDialog {
                 refreshPreview.run();
             }
         });
+        fontCombo.addListener(SWT.Selection, e -> { fontName = fontCombo.getText(); refreshPreview.run(); });
         spinner.addListener(SWT.Selection, e -> { fontSize = spinner.getSelection(); refreshPreview.run(); });
         spinner.addListener(SWT.Modify,    e -> { fontSize = spinner.getSelection(); refreshPreview.run(); });
 
@@ -131,9 +145,13 @@ public class TerminalAppearanceDialog {
         dlg.setDefaultButton(btnOk);
 
         btnReset.addListener(SWT.Selection, e -> {
+            fontName = AppearanceSettings.getFontName();
             fontSize = AppearanceSettings.getFontSize();
             fgColor  = AppearanceSettings.getFgColor();
             bgColor  = AppearanceSettings.getBgColor();
+            int idx = fontCombo.indexOf(fontName);
+            if (idx < 0) { fontCombo.add(fontName, 0); idx = 0; }
+            fontCombo.select(idx);
             spinner.setSelection(fontSize);
             updateSwatch(display, swFg, fgColor);
             updateSwatch(display, swBg, bgColor);
@@ -153,6 +171,7 @@ public class TerminalAppearanceDialog {
         return confirmed;
     }
 
+    public String getChosenFontName() { return fontName; }
     public int  getChosenFontSize() { return fontSize; }
     public RGB  getChosenFgColor()  { return fgColor;  }
     public RGB  getChosenBgColor()  { return bgColor;  }

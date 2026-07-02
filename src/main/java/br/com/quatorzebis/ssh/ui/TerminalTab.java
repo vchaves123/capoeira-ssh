@@ -54,7 +54,8 @@ public class TerminalTab {
 
     private Color defaultBg;
     private Color defaultFg;
-    private int   termFontSize = 14;
+    private int   termFontSize = 12;
+    private String termFontName = MonoFonts.DEFAULT;
 
     private Image offscreenBuffer;
 
@@ -132,7 +133,7 @@ public class TerminalTab {
         tabItem.setControl(canvas);
 
         defaultBg = new Color(display, 0,   0,   0  );
-        defaultFg = new Color(display, 204, 204, 204);
+        defaultFg = new Color(display, 255, 176, 0  ); // classic amber phosphor
 
         initFont();
 
@@ -181,8 +182,7 @@ public class TerminalTab {
     // Font
     // -----------------------------------------------------------------------
     private void initFont() {
-        String fontName = display.getFontList("Consolas", true).length > 0
-                          ? "Consolas" : "Courier New";
+        String fontName = MonoFonts.resolve(display, termFontName);
         if (termFont != null && !termFont.isDisposed()) termFont.dispose();
         termFont = new Font(display, fontName, termFontSize, SWT.NORMAL);
 
@@ -1156,8 +1156,11 @@ public class TerminalTab {
         return new int[]{ termFontSize, fg.red, fg.green, fg.blue, bg.red, bg.green, bg.blue };
     }
 
-    public void applyAppearance(int newFontSize, org.eclipse.swt.graphics.RGB fg, org.eclipse.swt.graphics.RGB bg) {
+    public String getFontName() { return termFontName; }
+
+    public void applyAppearance(String newFontName, int newFontSize, org.eclipse.swt.graphics.RGB fg, org.eclipse.swt.graphics.RGB bg) {
         if (canvas.isDisposed()) return;
+        termFontName = (newFontName != null && !newFontName.isBlank()) ? newFontName : MonoFonts.DEFAULT;
         termFontSize = newFontSize;
         if (!defaultBg.isDisposed()) defaultBg.dispose();
         if (!defaultFg.isDisposed()) defaultFg.dispose();

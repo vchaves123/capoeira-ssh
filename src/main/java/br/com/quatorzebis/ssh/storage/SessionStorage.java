@@ -46,6 +46,7 @@ public final class SessionStorage {
         p.setProperty("group",        s.group        != null ? s.group        : "");
         p.setProperty("credentialId", s.credentialId != null ? s.credentialId : "");
         p.setProperty("appearFontSize", String.valueOf(s.appearFontSize));
+        p.setProperty("appearFontName", s.appearFontName != null ? s.appearFontName : "");
         p.setProperty("appearFg", s.appearFgR + "," + s.appearFgG + "," + s.appearFgB);
         p.setProperty("appearBg", s.appearBgR + "," + s.appearBgG + "," + s.appearBgB);
         p.setProperty("logEnabled",  String.valueOf(s.logEnabled));
@@ -169,6 +170,7 @@ public final class SessionStorage {
         s.group         = group;
         s.credentialId   = p.getProperty("credentialId", "");
         s.appearFontSize = parseInt(p.getProperty("appearFontSize", "0"));
+        s.appearFontName = p.getProperty("appearFontName", "");
         int[] fg = parseRgb(p.getProperty("appearFg", "204,204,204"));
         s.appearFgR = fg[0]; s.appearFgG = fg[1]; s.appearFgB = fg[2];
         int[] bg = parseRgb(p.getProperty("appearBg", "0,0,0"));

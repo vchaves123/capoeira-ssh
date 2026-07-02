@@ -188,6 +188,7 @@ public class SessionDialog {
         cmpAppear.setLayout(rlApp);
 
         int[] appFontSize = { editing != null ? editing.appearFontSize : 0 };
+        String[] appFontName = { editing != null && editing.appearFontName != null ? editing.appearFontName : "" };
         int[] appFg = { editing != null ? editing.appearFgR : 204,
                         editing != null ? editing.appearFgG : 204,
                         editing != null ? editing.appearFgB : 204 };
@@ -219,10 +220,12 @@ public class SessionDialog {
         btnAppear.moveAbove(swatchFg);
         btnAppear.addListener(SWT.Selection, e -> {
             int is = appFontSize[0] > 0 ? appFontSize[0] : 14;
+            String fn = appFontName[0].isBlank() ? br.com.quatorzebis.ssh.storage.AppearanceSettings.getFontName() : appFontName[0];
             org.eclipse.swt.graphics.RGB if2 = new org.eclipse.swt.graphics.RGB(appFg[0], appFg[1], appFg[2]);
             org.eclipse.swt.graphics.RGB ib  = new org.eclipse.swt.graphics.RGB(appBg[0], appBg[1], appBg[2]);
-            TerminalAppearanceDialog tad = new TerminalAppearanceDialog(dlg, is, if2, ib);
+            TerminalAppearanceDialog tad = new TerminalAppearanceDialog(dlg, fn, is, if2, ib);
             if (tad.open()) {
+                appFontName[0] = tad.getChosenFontName();
                 appFontSize[0] = tad.getChosenFontSize();
                 org.eclipse.swt.graphics.RGB fg2 = tad.getChosenFgColor();
                 org.eclipse.swt.graphics.RGB bg2 = tad.getChosenBgColor();
@@ -367,6 +370,7 @@ public class SessionDialog {
             }
 
             s.appearFontSize = appFontSize[0];
+            s.appearFontName = appFontName[0];
             s.appearFgR = appFg[0]; s.appearFgG = appFg[1]; s.appearFgB = appFg[2];
             s.appearBgR = appBg[0]; s.appearBgG = appBg[1]; s.appearBgB = appBg[2];
             s.logEnabled  = chkLog.getSelection();

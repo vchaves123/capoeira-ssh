@@ -20,6 +20,8 @@ public class SessionInfo {
     public String   credentialId = "";
     /** Terminal appearance — font size 0 means "use default". */
     public int      appearFontSize = 0;
+    /** Empty string means "use default". */
+    public String   appearFontName = "";
     public int      appearFgR = 204, appearFgG = 204, appearFgB = 204;
     public int      appearBgR = 0,   appearBgG = 0,   appearBgB = 0;
     /** Session logging. */

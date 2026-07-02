@@ -363,6 +363,7 @@ public class SessionTreePanel {
         copy.group          = src.group;
         copy.credentialId   = src.credentialId;
         copy.appearFontSize = src.appearFontSize;
+        copy.appearFontName = src.appearFontName;
         copy.appearFgR      = src.appearFgR; copy.appearFgG = src.appearFgG; copy.appearFgB = src.appearFgB;
         copy.appearBgR      = src.appearBgR; copy.appearBgG = src.appearBgG; copy.appearBgB = src.appearBgB;
 
