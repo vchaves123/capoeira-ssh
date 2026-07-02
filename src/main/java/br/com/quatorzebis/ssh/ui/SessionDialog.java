@@ -108,8 +108,10 @@ public class SessionDialog {
         };
         // Only prompt to unlock the vault when the user opens the dropdown list
         // (clicks the arrow) — not just when the text field gets focus for typing.
+        // The native arrow button scales with display DPI, so derive the zone from it
+        // (a fixed 20px band misses the arrow at 150–200% scaling).
         cmbUser.addListener(SWT.MouseDown, e -> {
-            int arrowZone = 20;
+            int arrowZone = Math.max(20, 20 * dlg.getDisplay().getDPI().x / 96);
             if (e.x < cmbUser.getSize().x - arrowZone) return;
             if (!store.isUnlocked() && new MasterPasswordDialog(dlg).open()) reloadCredItems.run();
         });
@@ -285,9 +287,28 @@ public class SessionDialog {
             s.group = gi <= 0 ? "" : cmbGroup.getItem(gi);
 
             String user = cmbUser.getText().trim();
-            if (user.isEmpty()) { alert(dlg, "Username is required."); return; }
 
-            if (lockedIdx[0] >= 0) {
+            // Editing a vault-linked session while the vault stayed locked (unlock cancelled, or
+            // the credential was deleted): the user could neither see nor change the credential,
+            // so preserve the original link instead of silently downgrading to manual auth and
+            // wiping credentialId. Guarded to the case where the auth fields still match what the
+            // pre-fill restored from the session — any edit to them signals a deliberate switch.
+            String  edUser    = editing != null && editing.username != null ? editing.username : "";
+            String  edKey     = editing != null && editing.keyPath  != null ? editing.keyPath  : "";
+            boolean edKeyMode = editing != null && editing.authType == SessionInfo.AuthType.PRIVATE_KEY;
+            boolean authUntouched =
+                user.equals(edUser)
+                && chkKey.getSelection() == edKeyMode
+                && (!chkKey.getSelection() || txtKey.getText().trim().equals(edKey))
+                && txtPwd.getCharCount() == 0;
+            boolean preserveLink =
+                lockedIdx[0] < 0 && editing != null
+                && editing.credentialId != null && !editing.credentialId.isBlank()
+                && authUntouched;
+
+            if (preserveLink) {
+                // s == editing: its authType/username/keyPath/credentialId are already correct.
+            } else if (lockedIdx[0] >= 0) {
                 List<CredentialEntry> cur = credsRef.get();
                 if (lockedIdx[0] >= cur.size()) { alert(dlg, "Please select a saved credential."); return; }
                 CredentialEntry ce = cur.get(lockedIdx[0]);
@@ -300,6 +321,7 @@ public class SessionDialog {
                 s.keyPath  = ceIsKey ? ce.keyPath  : "";
                 s.credentialId = ce.id;
             } else {
+                if (user.isEmpty()) { alert(dlg, "Username is required."); return; }
                 if (chkKey.getSelection()) {
                     String key = txtKey.getText().trim();
                     if (key.isEmpty()) { alert(dlg, "Key file is required."); return; }
@@ -311,13 +333,22 @@ public class SessionDialog {
                 }
                 s.username = user;
                 s.credentialId = "";
-                enteredPassword = txtPwd.getTextChars();
             }
 
             config[0].applyTo(s);
 
-            try { SessionStorage.save(s); result = s; dlg.dispose(); }
-            catch (IOException ex) { alert(dlg, "Failed to save session:\n" + ex.getMessage()); }
+            try {
+                SessionStorage.save(s);
+                result = s;
+                // Capture the just-typed password ONLY on the new-session manual path, and only
+                // after a successful save — so a failed/retried save never orphans an un-zeroed
+                // copy, and the edit path (which never consumes it) cannot leak it. The caller
+                // (openTerminal) zeroes this array after pre-filling the first Connect dialog.
+                if (editing == null && lockedIdx[0] < 0) enteredPassword = txtPwd.getTextChars();
+                dlg.dispose();
+            } catch (IOException ex) {
+                alert(dlg, "Failed to save session:\n" + ex.getMessage());
+            }
         });
 
         dlg.open();

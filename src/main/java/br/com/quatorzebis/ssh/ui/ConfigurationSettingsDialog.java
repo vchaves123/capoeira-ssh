@@ -134,6 +134,17 @@ public class ConfigurationSettingsDialog {
         };
         refreshAppear.run();
 
+        // SWT never auto-disposes application-created Colors; refreshAppear only frees the
+        // PREVIOUS swatch background, so free the final pair when the dialog closes.
+        dlg.addListener(SWT.Dispose, ev -> {
+            Display d = dlg.getDisplay();
+            for (Label sw : new Label[]{ swatchFg, swatchBg }) {
+                Color c = sw.getBackground();
+                if (c != null && !c.isDisposed() && !c.equals(d.getSystemColor(SWT.COLOR_WIDGET_BACKGROUND)))
+                    c.dispose();
+            }
+        });
+
         Button btnAppear = new Button(cmpAppear, SWT.PUSH);
         btnAppear.setText("Customise…");
         btnAppear.moveAbove(swatchFg);

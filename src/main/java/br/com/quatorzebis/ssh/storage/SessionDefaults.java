@@ -61,6 +61,9 @@ public final class SessionDefaults {
             c.logFileName = p.getProperty("logFileName", "");
             c.terminalType  = p.getProperty("terminalType", "xterm-256color");
             c.backspaceCode = Integer.parseInt(p.getProperty("backspaceCode", "127"));
+            // Match SessionStorage's clamp: only DEL (0x7F) or BS (0x08) are valid; anything
+            // else would be narrowed to an arbitrary byte and sent to the SSH server.
+            if (c.backspaceCode != 0x08 && c.backspaceCode != 0x7F) c.backspaceCode = 0x7F;
             current = c;
         } catch (Exception ignored) {}
     }
