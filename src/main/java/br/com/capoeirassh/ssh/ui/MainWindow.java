@@ -66,6 +66,8 @@ public class MainWindow {
         });
 
         shell.open();
+        br.com.capoeirassh.ssh.UpdateChecker.checkAsync(v ->
+            display.asyncExec(() -> { if (sessionsTab != null) sessionsTab.notifyUpdateAvailable(v); }));
         while (!shell.isDisposed()) {
             if (!display.readAndDispatch()) display.sleep();
         }
@@ -117,6 +119,7 @@ public class MainWindow {
                 }
                 terminalTabs.remove(t);
                 t.dispose();
+                reloadSessionsTab();
                 // If all terminal tabs closed, go back to Sessions tab
                 display.asyncExec(() -> {
                     if (!tabFolder.isDisposed() && tabFolder.getItemCount() <= 1) {
@@ -131,7 +134,11 @@ public class MainWindow {
 
         // Create the permanent Sessions tab
         sessionsTab = new SessionsTab(tabFolder, shell, this::openTerminal,
-                this::openCredentialManager, this::showAbout);
+                this::openCredentialManager, this::showAbout,
+                () -> terminalTabs.stream()
+                        .filter(t -> !t.isDisconnected())
+                        .map(t -> t.getSessionInfo().name)
+                        .collect(java.util.stream.Collectors.toSet()));
         tabFolder.setSelection(sessionsTab.getTabItem());
     }
 
@@ -169,15 +176,22 @@ public class MainWindow {
 
         TerminalTab tab = new TerminalTab(tabFolder, info, password);
         tab.setOnReconnectRequest(() -> reconnectTab(tab));
-        tab.setOnStateChanged(this::refreshSelectionColor);
+        tab.setOnStateChanged(() -> { refreshSelectionColor(); reloadSessionsTab(); });
         if (info.appearFontSize > 0) {
             tab.applyAppearance(info.appearFontName, info.appearFontSize,
                 new org.eclipse.swt.graphics.RGB(info.appearFgR, info.appearFgG, info.appearFgB),
                 new org.eclipse.swt.graphics.RGB(info.appearBgR, info.appearBgG, info.appearBgB));
         }
         terminalTabs.add(tab);
+        reloadSessionsTab();
         tabFolder.setSelection(tab.getTabItem());
         tab.getCanvas().setFocus();
+    }
+
+    private void reloadSessionsTab() {
+        if (sessionsTab != null && !sessionsTab.getTabItem().isDisposed()) {
+            display.asyncExec(sessionsTab::reload);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -221,6 +235,7 @@ public class MainWindow {
                 terminalTabs.remove(t);
                 t.dispose();
                 current.dispose();
+                reloadSessionsTab();
                 if (tabFolder.getItemCount() <= 1) showSessionsTab();
             });
     }
@@ -349,6 +364,7 @@ public class MainWindow {
                 terminalTabs.remove(terminal);
                 terminal.dispose();
                 item.dispose();
+                reloadSessionsTab();
                 if (tabFolder.getItemCount() <= 1) showSessionsTab();
             });
 

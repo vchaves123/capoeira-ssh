@@ -11,7 +11,9 @@ import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
 
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 
 /**
  * Permanent "Sessions" tab — A+B hybrid home screen.
@@ -41,24 +43,31 @@ public class SessionsTab {
     private final BiConsumer<SessionInfo, char[]> onConnect;
     private final Runnable onCredentials;
     private final Runnable onAbout;
+    private final Supplier<Set<String>> connectedNames;
 
     // Dynamic content
     private ScrolledComposite scrolled;
     private Composite innerComposite;
     private Label statSessions;
     private Label statGroups;
+    private Label statOnline;
     private Composite recentCardsRow;
     private Composite listContainer;
     private Text searchText;
+    private Composite aboutIconBox;
+    private boolean updateAvailable = false;
+    private String  updateVersion   = "";
 
     public SessionsTab(CTabFolder folder, Shell shell,
                        BiConsumer<SessionInfo, char[]> onConnect,
-                       Runnable onCredentials, Runnable onAbout) {
+                       Runnable onCredentials, Runnable onAbout,
+                       Supplier<Set<String>> connectedNames) {
 
         this.shell = shell;
         this.onConnect = onConnect;
         this.onCredentials = onCredentials;
         this.onAbout = onAbout;
+        this.connectedNames = connectedNames;
 
         tabItem = new CTabItem(folder, SWT.NONE);
         tabItem.setText("  Home  ");
@@ -93,7 +102,7 @@ public class SessionsTab {
         cSurface = new Color(d,  26,  24,  20);
         cGold    = new Color(d, 232, 184,  75);
         cTerra   = new Color(d, 192,  94,  26);
-        cGreen   = new Color(d, 126, 200, 164);
+        cGreen   = new Color(d,   0, 230, 118);  // #00E676 vivid green
         cAreia   = new Color(d, 240, 237, 230);
         cDim     = new Color(d, 106,  98,  88);
         cBorder  = new Color(d,  42,  38,  32);
@@ -155,10 +164,19 @@ public class SessionsTab {
         spacer.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
         // About icon (bottom)
-        Composite aboutIcon = createSidebarIcon(sidebar, display, "ℹ", false);
-        aboutIcon.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
-        aboutIcon.addListener(SWT.MouseUp, e -> onAbout.run());
-        for (Control c : aboutIcon.getChildren()) c.addListener(SWT.MouseUp, e -> onAbout.run());
+        aboutIconBox = createSidebarIcon(sidebar, display, "ℹ", false);
+        aboutIconBox.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
+        aboutIconBox.addListener(SWT.MouseUp, e -> onAbout.run());
+        for (Control c : aboutIconBox.getChildren()) c.addListener(SWT.MouseUp, e -> onAbout.run());
+
+        // Update badge overlay on the about icon
+        aboutIconBox.addListener(SWT.Paint, e -> {
+            if (!updateAvailable) return;
+            int sz = 8;
+            Rectangle b = aboutIconBox.getClientArea();
+            e.gc.setBackground(cGold);
+            e.gc.fillOval(b.width - sz - 2, 2, sz, sz);
+        });
     }
 
     private Composite createSidebarIcon(Composite parent, Display display, String emoji, boolean active) {
@@ -185,6 +203,7 @@ public class SessionsTab {
         Label lbl = new Label(box, SWT.CENTER);
         lbl.setText(emoji);
         lbl.setBackground(active ? cGoldHl : cSurface);
+        lbl.setForeground(active ? cGold : cAreia);
         lbl.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
         Font emojiFont = new Font(display, "Segoe UI Emoji", 14, SWT.NORMAL);
@@ -195,6 +214,11 @@ public class SessionsTab {
         if (!active) {
             box.setCursor(hand);
             lbl.setCursor(hand);
+
+            box.addListener(SWT.MouseEnter, e -> { box.setBackground(cMid); lbl.setBackground(cMid); box.redraw(); });
+            box.addListener(SWT.MouseExit,  e -> { box.setBackground(cSurface); lbl.setBackground(cSurface); box.redraw(); });
+            lbl.addListener(SWT.MouseEnter, e -> { box.setBackground(cMid); lbl.setBackground(cMid); box.redraw(); });
+            lbl.addListener(SWT.MouseExit,  e -> { box.setBackground(cSurface); lbl.setBackground(cSurface); box.redraw(); });
         }
 
         return box;
@@ -332,9 +356,9 @@ public class SessionsTab {
         Font lblSmFont = new Font(display, "Arial", 8, SWT.NORMAL);
         statsRow.addDisposeListener(e -> lblSmFont.dispose());
 
-        statSessions = buildStatBox(statsRow, display, "0", "SESSIONS", cGold, numFont, lblSmFont);
+        statSessions = buildStatBox(statsRow, display, "0", "SESSIONS", cGold,  numFont, lblSmFont);
         statGroups   = buildStatBox(statsRow, display, "0", "GROUPS",   cTerra, numFont, lblSmFont);
-        buildStatBox(statsRow, display, "0", "ONLINE", cGreen, numFont, lblSmFont);
+        statOnline   = buildStatBox(statsRow, display, "0", "ONLINE",   cGreen, numFont, lblSmFont);
     }
 
     /** Creates one stat box and returns the Label that holds the number. */
@@ -432,6 +456,8 @@ public class SessionsTab {
         List<String> groups;
         try { groups = SessionStorage.loadGroups(); } catch (Exception ex) { groups = List.of(); }
 
+        Set<String> online = connectedNames != null ? connectedNames.get() : Set.of();
+
         Display display = shell.getDisplay();
 
         // Update stats
@@ -439,6 +465,8 @@ public class SessionsTab {
             statSessions.setText(String.valueOf(sessions.size()));
         if (statGroups != null && !statGroups.isDisposed())
             statGroups.setText(String.valueOf(groups.size()));
+        if (statOnline != null && !statOnline.isDisposed())
+            statOnline.setText(String.valueOf(online.size()));
 
         // Rebuild recent cards
         if (recentCardsRow != null && !recentCardsRow.isDisposed()) {
@@ -459,7 +487,7 @@ public class SessionsTab {
         if (listContainer != null && !listContainer.isDisposed()) {
             for (Control c : listContainer.getChildren()) c.dispose();
             for (SessionInfo s : sessions) {
-                buildListRow(listContainer, display, s);
+                buildListRow(listContainer, display, s, online.contains(s.name));
             }
             listContainer.layout(true, true);
         }
@@ -505,6 +533,7 @@ public class SessionsTab {
         topRow.setLayout(topGl);
 
         Canvas dot = new Canvas(topRow, SWT.NONE);
+        dot.setBackground(cSurface);
         GridData gdDot = new GridData(SWT.LEFT, SWT.CENTER, false, false);
         gdDot.widthHint = 7; gdDot.heightHint = 7;
         dot.setLayoutData(gdDot);
@@ -550,14 +579,9 @@ public class SessionsTab {
             buildGroupBadge(card, display, session.group);
         }
 
-        // Double-click card → connect
-        Listener connectListener = e -> {
-            if (e.type == SWT.MouseDoubleClick) onConnect.accept(session, null);
-        };
-        card.addListener(SWT.MouseDoubleClick, connectListener);
-        for (Control c : card.getChildren()) {
-            c.addListener(SWT.MouseDoubleClick, ev -> onConnect.accept(session, null));
-        }
+        // Single-click card → connect
+        Listener connectListener = e -> onConnect.accept(session, null);
+        addClickRecursive(card, connectListener);
     }
 
     private void buildAddCard(Composite parent, Display display) {
@@ -645,7 +669,7 @@ public class SessionsTab {
     // -----------------------------------------------------------------------
     // Session list row
     // -----------------------------------------------------------------------
-    private void buildListRow(Composite parent, Display display, SessionInfo session) {
+    private void buildListRow(Composite parent, Display display, SessionInfo session, boolean isOnline) {
         Composite row = new Composite(parent, SWT.NONE);
         row.setBackground(cBg);
         row.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
@@ -657,12 +681,20 @@ public class SessionsTab {
         gl.horizontalSpacing = 10;
         row.setLayout(gl);
 
-        // Hover effect
+        // Hover effect — guard MouseExit against moves into child controls
         row.addListener(SWT.MouseEnter, e -> { row.setBackground(cSurface); refreshChildren(row, cSurface); });
-        row.addListener(SWT.MouseExit,  e -> { row.setBackground(cBg);      refreshChildren(row, cBg);      });
+        row.addListener(SWT.MouseExit, e -> {
+            Point cursor = row.getDisplay().getCursorLocation();
+            Point local  = row.toControl(cursor);
+            if (!row.getClientArea().contains(local)) {
+                row.setBackground(cBg);
+                refreshChildren(row, cBg);
+            }
+        });
 
         // Avatar (28x28 rounded square)
         Canvas avatar = new Canvas(row, SWT.NONE);
+        avatar.setBackground(cBg);
         GridData gdAv = new GridData(SWT.LEFT, SWT.CENTER, false, false);
         gdAv.widthHint = 28; gdAv.heightHint = 28;
         avatar.setLayoutData(gdAv);
@@ -718,11 +750,12 @@ public class SessionsTab {
 
         // Status dot
         Canvas statusDot = new Canvas(row, SWT.NONE);
+        statusDot.setBackground(cBg);
         GridData gdSd = new GridData(SWT.CENTER, SWT.CENTER, false, false);
         gdSd.widthHint = 6; gdSd.heightHint = 6;
         statusDot.setLayoutData(gdSd);
         statusDot.addListener(SWT.Paint, e -> {
-            e.gc.setBackground(cGrey);
+            e.gc.setBackground(isOnline ? cGreen : cGrey);
             e.gc.fillOval(0, 0, 6, 6);
         });
 
@@ -733,10 +766,9 @@ public class SessionsTab {
         arrow.setForeground(cDark);
         arrow.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
 
-        // Double-click → connect
-        Listener dblConnect = e -> onConnect.accept(session, null);
-        row.addListener(SWT.MouseDoubleClick, dblConnect);
-        for (Control c : row.getChildren()) c.addListener(SWT.MouseDoubleClick, dblConnect);
+        // Single-click anywhere on the row → connect
+        Listener connectClick = e -> onConnect.accept(session, null);
+        addClickRecursive(row, connectClick);
 
         // Right-click context menu
         Menu menu = new Menu(row);
@@ -767,6 +799,13 @@ public class SessionsTab {
         }
     }
 
+    private void addClickRecursive(Control ctrl, Listener listener) {
+        ctrl.addListener(SWT.MouseUp, e -> { if (e.button == 1) listener.handleEvent(e); });
+        if (ctrl instanceof Composite) {
+            for (Control c : ((Composite) ctrl).getChildren()) addClickRecursive(c, listener);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Search / filter
     // -----------------------------------------------------------------------
@@ -779,8 +818,9 @@ public class SessionsTab {
             if (!(data instanceof SessionInfo)) continue;
             SessionInfo s = (SessionInfo) data;
             boolean match = q.isEmpty()
-                || (s.name != null && s.name.toLowerCase().contains(q))
-                || (s.host != null && s.host.toLowerCase().contains(q));
+                || (s.name  != null && s.name.toLowerCase().contains(q))
+                || (s.host  != null && s.host.toLowerCase().contains(q))
+                || (s.group != null && s.group.toLowerCase().contains(q));
             c.setVisible(match);
             ((GridData) c.getLayoutData()).exclude = !match;
         }
@@ -842,4 +882,14 @@ public class SessionsTab {
     public CTabItem getTabItem() { return tabItem; }
 
     public void reload(Runnable ignored) { reload(); }
+
+    public void notifyUpdateAvailable(String version) {
+        if (aboutIconBox == null || aboutIconBox.isDisposed()) return;
+        updateAvailable = true;
+        updateVersion   = version;
+        aboutIconBox.setToolTipText("Update available: v" + version + " — click About to download");
+        for (Control c : aboutIconBox.getChildren())
+            c.setToolTipText(aboutIconBox.getToolTipText());
+        aboutIconBox.redraw();
+    }
 }
