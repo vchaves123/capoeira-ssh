@@ -14,7 +14,7 @@ public class AppearanceSettings {
 
     private static int    fontSize = 12;
     private static String fontName = "Consolas";
-    private static RGB fgColor  = new RGB(255, 176, 0);   // classic amber phosphor
+    private static RGB fgColor  = new RGB(232, 184, 75);  // Ouro #E8B84B
     private static RGB bgColor  = new RGB(0,   0,   0  );
 
     static { load(); }
