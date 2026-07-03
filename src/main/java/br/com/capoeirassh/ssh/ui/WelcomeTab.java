@@ -11,6 +11,13 @@ import br.com.capoeirassh.ssh.BuildInfo;
 
 public class WelcomeTab {
 
+    // Capoeira palette
+    private static final int[] C_BG     = {15,  15,  15};   // Breu     #0f0f0f
+    private static final int[] C_GOLD   = {232, 184, 75};   // Ouro     #E8B84B
+    private static final int[] C_TERRA  = {192, 94,  26};   // Terracota #C05E1A
+    private static final int[] C_AREIA  = {240, 237, 230};  // Areia    #f0ede6
+    private static final int[] C_DIM    = {106, 98,  88};   // warm grey
+
     private final CTabItem tabItem;
 
     public WelcomeTab(CTabFolder folder, Runnable onNewSession) {
@@ -19,37 +26,44 @@ public class WelcomeTab {
 
         Display display = folder.getDisplay();
 
+        Color bg    = new Color(display, C_BG[0],    C_BG[1],    C_BG[2]);
+        Color gold  = new Color(display, C_GOLD[0],  C_GOLD[1],  C_GOLD[2]);
+        Color terra = new Color(display, C_TERRA[0], C_TERRA[1], C_TERRA[2]);
+        Color areia = new Color(display, C_AREIA[0], C_AREIA[1], C_AREIA[2]);
+        Color dim   = new Color(display, C_DIM[0],   C_DIM[1],   C_DIM[2]);
+
         Composite root = new Composite(folder, SWT.NONE);
-        root.setBackground(display.getSystemColor(SWT.COLOR_BLACK));
+        root.setBackground(bg);
         root.setLayout(new GridLayout(1, false));
+        root.addDisposeListener(e -> {
+            bg.dispose(); gold.dispose(); terra.dispose(); areia.dispose(); dim.dispose();
+        });
 
-        // Vertical spacer
-        spacer(root, 40);
+        spacer(root, bg, 40);
 
-        // Title
+        // Title — Ouro
         Label title = new Label(root, SWT.CENTER);
         title.setText("Capoeira SSH Client");
-        title.setBackground(display.getSystemColor(SWT.COLOR_BLACK));
-        title.setForeground(new Color(display, 102, 204, 255));
-        GridData gdTitle = new GridData(SWT.CENTER, SWT.CENTER, true, false);
-        title.setLayoutData(gdTitle);
+        title.setBackground(bg);
+        title.setForeground(gold);
+        title.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
         Font titleFont = new Font(display, "Consolas", 22, SWT.BOLD);
         title.setFont(titleFont);
         title.addDisposeListener(e -> titleFont.dispose());
 
-        spacer(root, 16);
+        spacer(root, bg, 10);
 
-        // Subtitle
+        // Subtitle — Terracota
         Label sub = new Label(root, SWT.CENTER);
-        sub.setText("xterm-256color terminal emulator  —  build #" + BuildInfo.BUILD);
-        sub.setBackground(display.getSystemColor(SWT.COLOR_BLACK));
-        sub.setForeground(new Color(display, 140, 140, 140));
+        sub.setText("xterm-256color terminal emulator");
+        sub.setBackground(bg);
+        sub.setForeground(terra);
         sub.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
         Font subFont = new Font(display, "Consolas", 11, SWT.NORMAL);
         sub.setFont(subFont);
         sub.addDisposeListener(e -> subFont.dispose());
 
-        spacer(root, 40);
+        spacer(root, bg, 40);
 
         // Instructions
         String[] lines = {
@@ -72,32 +86,29 @@ public class WelcomeTab {
         for (String line : lines) {
             Label lbl = new Label(root, SWT.NONE);
             lbl.setText(line);
-            lbl.setBackground(display.getSystemColor(SWT.COLOR_BLACK));
+            lbl.setBackground(bg);
             boolean isHeading = !line.isBlank() && !line.startsWith(" ") && !line.startsWith("─");
-            lbl.setForeground(isHeading
-                ? new Color(display, 102, 204, 255)
-                : new Color(display, 204, 204, 204));
+            lbl.setForeground(isHeading ? gold : areia);
             lbl.setFont(monoFont);
             lbl.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
         }
         root.addDisposeListener(e -> monoFont.dispose());
 
-        spacer(root, 32);
+        spacer(root, bg, 32);
 
-        // Filler to push version label to the bottom
+        // Filler
         Label filler = new Label(root, SWT.NONE);
-        filler.setBackground(display.getSystemColor(SWT.COLOR_BLACK));
+        filler.setBackground(bg);
         filler.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, true));
 
-        // Version label — bottom-right
+        // Version — dim warm grey
         Label lblVersion = new Label(root, SWT.RIGHT);
         lblVersion.setText("v" + BuildInfo.VERSION + "  build #" + BuildInfo.BUILD + "  —  " + BuildInfo.DATE);
-        lblVersion.setBackground(display.getSystemColor(SWT.COLOR_BLACK));
-        lblVersion.setForeground(new Color(display, 120, 120, 120));
+        lblVersion.setBackground(bg);
+        lblVersion.setForeground(dim);
         Font versionFont = new Font(display, "Consolas", 10, SWT.NORMAL);
         lblVersion.setFont(versionFont);
         GridData gdVer = new GridData(SWT.FILL, SWT.CENTER, true, false);
-        gdVer.horizontalIndent = 0;
         gdVer.verticalIndent = 4;
         lblVersion.setLayoutData(gdVer);
         lblVersion.addDisposeListener(e -> versionFont.dispose());
@@ -107,9 +118,9 @@ public class WelcomeTab {
 
     public CTabItem getTabItem() { return tabItem; }
 
-private static void spacer(Composite parent, int height) {
+    private static void spacer(Composite parent, Color bg, int height) {
         Label gap = new Label(parent, SWT.NONE);
-        gap.setBackground(parent.getDisplay().getSystemColor(SWT.COLOR_BLACK));
+        gap.setBackground(bg);
         GridData gd = new GridData(SWT.FILL, SWT.CENTER, true, false);
         gd.heightHint = height;
         gap.setLayoutData(gd);
