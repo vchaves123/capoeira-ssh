@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh;
+package br.com.capoeirassh.ssh;
 
 import br.com.capoeirassh.ssh.storage.SecureFiles;
 import br.com.capoeirassh.ssh.ui.MainWindow;

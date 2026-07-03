@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.ssh;
+package br.com.capoeirassh.ssh.ssh;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
 import com.jcraft.jsch.*;

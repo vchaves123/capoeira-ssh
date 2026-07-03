@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.terminal;
+package br.com.capoeirassh.ssh.terminal;
 
 public final class TerminalCell {
 

@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.model;
+package br.com.capoeirassh.ssh.model;
 
 /**
  * Logging / appearance / terminal-type / backspace-key settings shared by

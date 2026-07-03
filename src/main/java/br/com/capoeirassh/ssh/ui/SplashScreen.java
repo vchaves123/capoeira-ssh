@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.ui;
+package br.com.capoeirassh.ssh.ui;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.*;

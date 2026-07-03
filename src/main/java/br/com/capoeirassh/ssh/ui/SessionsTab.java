@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.ui;
+package br.com.capoeirassh.ssh.ui;
 
 import br.com.capoeirassh.ssh.BuildInfo;
 import br.com.capoeirassh.ssh.UpdateChecker;

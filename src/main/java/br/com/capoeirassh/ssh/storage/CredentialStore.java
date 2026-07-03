@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.storage;
+package br.com.capoeirassh.ssh.storage;
 
 import br.com.capoeirassh.ssh.model.CredentialEntry;
 

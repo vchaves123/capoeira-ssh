@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.model;
+package br.com.capoeirassh.ssh.model;
 
 import java.util.UUID;
 

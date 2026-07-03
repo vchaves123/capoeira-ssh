@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh;
+package br.com.capoeirassh.ssh;
 
 import javax.imageio.ImageIO;
 import java.awt.*;

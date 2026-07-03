@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.storage;
+package br.com.capoeirassh.ssh.storage;
 
 import org.eclipse.swt.graphics.RGB;
 

@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh;
+package br.com.capoeirassh.ssh;
 
 import java.io.IOException;
 import java.io.InputStream;

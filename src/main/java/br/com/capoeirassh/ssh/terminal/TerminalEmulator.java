@@ -1,4 +1,4 @@
-﻿package br.com.capoeirassh.ssh.terminal;
+package br.com.capoeirassh.ssh.terminal;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
