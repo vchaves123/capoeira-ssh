@@ -126,52 +126,98 @@ public class IconExporter {
         d.writeByte((v >> 24) & 0xFF);
     }
 
+    // ── Capoeira brand palette ────────────────────────────────────────────────
+    private static final Color C_BG        = new Color(26,  24,  20);   // Noite #1a1814
+    private static final Color C_GOLD      = new Color(232, 184, 75);   // Ouro  #E8B84B
+    private static final Color C_TERRACOTA = new Color(192, 94,  26);   // Terracota #C05E1A
+    private static final Color C_RING      = new Color(232, 184, 75, 110);
+
     public static BufferedImage buildIcon(int sz) {
         BufferedImage img = new BufferedImage(sz, sz, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,   RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,      RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,    RenderingHints.VALUE_STROKE_PURE);
 
-        int r = Math.max(2, sz / 8);
+        int r = Math.max(3, sz * 18 / 100);
 
-        // Outer bezel — dark charcoal
-        g.setColor(new Color(22, 27, 34));
+        // Rounded background — Noite
+        g.setColor(C_BG);
         g.fill(new RoundRectangle2D.Float(0, 0, sz, sz, r * 2, r * 2));
 
-        // Inner screen area
-        int pad = Math.max(1, sz / 10);
-        g.setColor(new Color(13, 17, 23));
-        g.fill(new RoundRectangle2D.Float(pad, pad, sz - pad * 2, sz - pad * 2, r, r));
+        float cx = sz / 2f, cy = sz / 2f;
+        float radius = sz * 0.40f;   // roda ring radius
 
-        // Top-edge teal highlight
-        g.setColor(new Color(0, 200, 160));
-        g.drawLine(pad + r, pad, sz - pad - r, pad);
+        // Dashed roda ring
+        if (sz >= 32) {
+            float dash = sz * 0.07f;
+            g.setColor(C_RING);
+            g.setStroke(new BasicStroke(Math.max(0.8f, sz / 48f),
+                    BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
+                    1f, new float[]{dash, dash * 0.8f}, 0));
+            g.draw(new java.awt.geom.Ellipse2D.Float(cx - radius, cy - radius, radius * 2, radius * 2));
+        }
 
-        // Prompt ">" in bright green
-        int fontSize = Math.max(6, sz * 5 / 16);
-        g.setFont(new Font("Monospaced", Font.BOLD, fontSize));
-        FontMetrics fm = g.getFontMetrics();
-        g.setColor(new Color(0, 255, 140));
-        int tx = pad + Math.max(1, sz / 8);
-        int ty = sz / 2 - fm.getHeight() / 2 - Math.max(1, sz / 16) + fm.getAscent();
-        g.drawString(">", tx, ty);
+        // 6 spectator dots around the ring
+        if (sz >= 24) {
+            g.setColor(new Color(232, 184, 75, 140));
+            int dotR = Math.max(1, sz / 22);
+            for (int i = 0; i < 6; i++) {
+                double angle = Math.toRadians(i * 60 - 90);
+                float dx = cx + (float)(radius * Math.cos(angle));
+                float dy = cy + (float)(radius * Math.sin(angle));
+                g.fillOval(Math.round(dx - dotR), Math.round(dy - dotR), dotR * 2, dotR * 2);
+            }
+        }
 
-        // Cursor underscore — white
-        int strW = fm.stringWidth(">");
-        int cx   = tx + strW + Math.max(1, sz / 16);
-        int cy   = ty + Math.max(1, sz / 16);
-        int cw   = Math.max(2, sz / 5);
-        int lw   = Math.max(1, sz / 16);
-        g.setColor(new Color(220, 220, 220));
-        g.setStroke(new BasicStroke(lw));
-        g.drawLine(cx, cy, cx + cw, cy);
+        // Stroke width for figures
+        float sw = Math.max(1f, sz / 16f);
+        g.setStroke(new BasicStroke(sw, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 
-        // Subtle scan-line
-        int sl = pad + (sz - pad * 2) * 2 / 3;
-        g.setColor(new Color(255, 255, 255, 18));
-        g.drawLine(pad + 1, sl, sz - pad - 1, sl);
+        // ── Player A (gold) — left, ginga leaning right ───────────────────
+        float u = sz / 80f;   // scale unit (icon is designed on 80px grid)
+        drawStickFigure(g, C_GOLD, u,
+            28, 26,   // head cx,cy
+            28, 31, 32, 44,   // torso
+            30, 37, 40, 34,   // arm forward
+            29, 36, 19, 32,   // arm back
+            32, 44, 26, 56,   // leg front upper
+            26, 56, 21, 63,   // leg front lower
+            32, 44, 36, 56,   // leg back upper
+            36, 56, 32, 63);  // leg back lower
+
+        // ── Player B (terracota) — right, mirror facing A ─────────────────
+        drawStickFigure(g, C_TERRACOTA, u,
+            52, 26,
+            52, 31, 48, 44,
+            50, 37, 40, 34,
+            51, 36, 61, 32,
+            48, 44, 54, 56,
+            54, 56, 59, 63,
+            48, 44, 44, 56,
+            44, 56, 48, 63);
 
         g.dispose();
         return img;
+    }
+
+    private static void drawStickFigure(Graphics2D g, Color color, float u,
+            float hx, float hy,
+            float t1x, float t1y, float t2x, float t2y,
+            float af1x, float af1y, float af2x, float af2y,
+            float ab1x, float ab1y, float ab2x, float ab2y,
+            float lf1x, float lf1y, float lf2x, float lf2y,
+            float lf3x, float lf3y, float lf4x, float lf4y,
+            float lb1x, float lb1y, float lb2x, float lb2y,
+            float lb3x, float lb3y, float lb4x, float lb4y) {
+        float headR = u * 4.5f;
+        g.setColor(color);
+        g.fill(new java.awt.geom.Ellipse2D.Float(hx * u - headR, hy * u - headR, headR * 2, headR * 2));
+        g.draw(new java.awt.geom.Line2D.Float(t1x*u,  t1y*u,  t2x*u,  t2y*u));
+        g.draw(new java.awt.geom.Line2D.Float(af1x*u, af1y*u, af2x*u, af2y*u));
+        g.draw(new java.awt.geom.Line2D.Float(ab1x*u, ab1y*u, ab2x*u, ab2y*u));
+        g.draw(new java.awt.geom.Line2D.Float(lf1x*u, lf1y*u, lf2x*u, lf2y*u));
+        g.draw(new java.awt.geom.Line2D.Float(lf3x*u, lf3y*u, lf4x*u, lf4y*u));
+        g.draw(new java.awt.geom.Line2D.Float(lb1x*u, lb1y*u, lb2x*u, lb2y*u));
+        g.draw(new java.awt.geom.Line2D.Float(lb3x*u, lb3y*u, lb4x*u, lb4y*u));
     }
 }
