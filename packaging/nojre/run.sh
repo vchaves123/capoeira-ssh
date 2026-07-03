@@ -1,5 +1,5 @@
-#!/bin/sh
-# Launches 14bis SSH using a Java runtime already installed on this machine
+﻿#!/bin/sh
+# Launches Capoeira SSH using a Java runtime already installed on this machine
 # (this bundle ships no JRE). Requires Java 21 or newer.
 set -e
 
@@ -49,4 +49,4 @@ if [ ! -f "$SWT_JAR" ]; then
     exit 1
 fi
 
-exec java $EXTRA_OPTS -cp "$LIB_DIR/*:$SWT_JAR" br.com.quatorzebis.ssh.Main
+exec java $EXTRA_OPTS -cp "$LIB_DIR/*:$SWT_JAR" br.com.capoeirassh.ssh.Main

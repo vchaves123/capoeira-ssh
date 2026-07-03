@@ -1,4 +1,4 @@
-# Code Signing — 14bis SSH
+﻿# Code Signing — Capoeira SSH
 
 The Windows installer is signed automatically by GitHub Actions when a code-signing
 certificate is configured as repository secrets. Without a certificate the build
@@ -23,12 +23,12 @@ the Microsoft Store will reject the submission).
    | `CODE_SIGN_CERT_BASE64`  | base64 string from step 3          |
    | `CODE_SIGN_PASSWORD`     | PFX password                       |
 
-5. The next release will automatically sign `14bis-SSH-windows.exe`.
+5. The next release will automatically sign `capoeira-ssh-windows.exe`.
 
 ## Verifying a signed installer
 
 ```powershell
-Get-AuthenticodeSignature .\14bis-SSH-windows.exe | Select-Object Status, SignerCertificate
+Get-AuthenticodeSignature .\capoeira-ssh-windows.exe | Select-Object Status, SignerCertificate
 ```
 
 Expected output: `Status = Valid`, certificate subject shows "Molho Ltda."

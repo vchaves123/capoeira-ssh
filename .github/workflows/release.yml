@@ -1,4 +1,4 @@
-name: Build & Release
+﻿name: Build & Release
 
 on:
   push:
@@ -20,19 +20,19 @@ jobs:
             os-label:   Windows
             mvn-profile: windows
             pkg-type:   exe
-            asset-name: 14bis-SSH-windows.exe
+            asset-name: capoeira-ssh-windows.exe
 
           - runner:     ubuntu-latest
             os-label:   Linux
             mvn-profile: linux
             pkg-type:   deb+rpm
-            asset-name: 14bis-SSH-linux
+            asset-name: capoeira-ssh-linux
 
           - runner:     macos-latest
             os-label:   macOS (Apple Silicon)
             mvn-profile: macos-arm
             pkg-type:   dmg
-            asset-name: 14bis-SSH-macos.dmg
+            asset-name: capoeira-ssh-macos.dmg
 
     steps:
       - name: Checkout
@@ -72,9 +72,9 @@ jobs:
         run: |
           jpackage ^
             --input target ^
-            --name "14bis SSH" ^
-            --main-jar 14bis-ssh-${{ steps.ver.outputs.jar }}.jar ^
-            --main-class br.com.quatorzebis.ssh.Main ^
+            --name "Capoeira SSH" ^
+            --main-jar capoeira-ssh-${{ steps.ver.outputs.jar }}.jar ^
+            --main-class br.com.capoeirassh.ssh.Main ^
             --type exe ^
             --app-version ${{ steps.ver.outputs.app }} ^
             --vendor "Molho Ltda." ^
@@ -86,7 +86,7 @@ jobs:
             --win-menu ^
             --win-shortcut ^
             --dest installer
-          for %%f in (installer\*.exe) do ren "%%f" "14bis-SSH-windows-${{ steps.ver.outputs.app }}.exe"
+          for %%f in (installer\*.exe) do ren "%%f" "capoeira-ssh-windows-${{ steps.ver.outputs.app }}.exe"
 
       - name: Sign Windows installer
         if: matrix.runner == 'windows-latest'
@@ -126,9 +126,9 @@ jobs:
         run: |
           jpackage ^
             --input target ^
-            --name "14bis SSH" ^
-            --main-jar 14bis-ssh-${{ steps.ver.outputs.jar }}.jar ^
-            --main-class br.com.quatorzebis.ssh.Main ^
+            --name "Capoeira SSH" ^
+            --main-jar capoeira-ssh-${{ steps.ver.outputs.jar }}.jar ^
+            --main-class br.com.capoeirassh.ssh.Main ^
             --type app-image ^
             --app-version ${{ steps.ver.outputs.app }} ^
             --vendor "Molho Ltda." ^
@@ -156,7 +156,7 @@ jobs:
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1 -ExpandProperty FullName
           if (-not $signtool) { Write-Error "signtool.exe not found"; exit 1 }
-          $exe = (Get-ChildItem "installer-portable\14bis SSH\14bis SSH.exe").FullName
+          $exe = (Get-ChildItem "installer-portable\Capoeira SSH\Capoeira SSH.exe").FullName
           & $signtool sign `
             /fd  SHA256 `
             /td  SHA256 `
@@ -171,8 +171,8 @@ jobs:
         if: matrix.runner == 'windows-latest'
         shell: pwsh
         run: |
-          Compress-Archive -Path "installer-portable\14bis SSH\*" `
-            -DestinationPath "installer\14bis-SSH-windows-portable-${{ steps.ver.outputs.app }}.zip"
+          Compress-Archive -Path "installer-portable\Capoeira SSH\*" `
+            -DestinationPath "installer\capoeira-ssh-windows-portable-${{ steps.ver.outputs.app }}.zip"
 
       - name: Install rpmbuild (Linux)
         if: matrix.runner == 'ubuntu-latest'
@@ -183,9 +183,9 @@ jobs:
         run: |
           jpackage \
             --input target \
-            --name "ssh-14bis" \
-            --main-jar 14bis-ssh-${{ steps.ver.outputs.jar }}.jar \
-            --main-class br.com.quatorzebis.ssh.Main \
+            --name "capoeira-ssh" \
+            --main-jar capoeira-ssh-${{ steps.ver.outputs.jar }}.jar \
+            --main-class br.com.capoeirassh.ssh.Main \
             --type deb \
             --app-version ${{ steps.ver.outputs.app }} \
             --vendor "Molho Ltda." \
@@ -194,16 +194,16 @@ jobs:
             --icon target/app-icon.png \
             --linux-shortcut \
             --dest installer
-          mv installer/*.deb installer/14bis-SSH-linux-${{ steps.ver.outputs.app }}.deb
+          mv installer/*.deb installer/capoeira-ssh-linux-${{ steps.ver.outputs.app }}.deb
 
       - name: Package with jpackage (Linux RPM)
         if: matrix.runner == 'ubuntu-latest'
         run: |
           jpackage \
             --input target \
-            --name "ssh-14bis" \
-            --main-jar 14bis-ssh-${{ steps.ver.outputs.jar }}.jar \
-            --main-class br.com.quatorzebis.ssh.Main \
+            --name "capoeira-ssh" \
+            --main-jar capoeira-ssh-${{ steps.ver.outputs.jar }}.jar \
+            --main-class br.com.capoeirassh.ssh.Main \
             --type rpm \
             --app-version ${{ steps.ver.outputs.app }} \
             --vendor "Molho Ltda." \
@@ -212,16 +212,16 @@ jobs:
             --icon target/app-icon.png \
             --linux-shortcut \
             --dest installer
-          mv installer/*.rpm installer/14bis-SSH-linux-${{ steps.ver.outputs.app }}.rpm
+          mv installer/*.rpm installer/capoeira-ssh-linux-${{ steps.ver.outputs.app }}.rpm
 
       - name: Package with jpackage (Linux portable tar.gz)
         if: matrix.runner == 'ubuntu-latest'
         run: |
           jpackage \
             --input target \
-            --name "ssh-14bis" \
-            --main-jar 14bis-ssh-${{ steps.ver.outputs.jar }}.jar \
-            --main-class br.com.quatorzebis.ssh.Main \
+            --name "capoeira-ssh" \
+            --main-jar capoeira-ssh-${{ steps.ver.outputs.jar }}.jar \
+            --main-class br.com.capoeirassh.ssh.Main \
             --type app-image \
             --app-version ${{ steps.ver.outputs.app }} \
             --vendor "Molho Ltda." \
@@ -229,7 +229,7 @@ jobs:
             --description "Lightweight SSH terminal client" \
             --icon target/app-icon.png \
             --dest installer-appimage
-          tar -C installer-appimage -czf installer/14bis-SSH-linux-${{ steps.ver.outputs.app }}.tar.gz "ssh-14bis"
+          tar -C installer-appimage -czf installer/capoeira-ssh-linux-${{ steps.ver.outputs.app }}.tar.gz "capoeira-ssh"
 
       - name: Package no-JRE bundle (all platforms, built once)
         if: matrix.runner == 'ubuntu-latest'
@@ -238,12 +238,12 @@ jobs:
           VER="${{ steps.ver.outputs.app }}"
           JARVER="${{ steps.ver.outputs.jar }}"
           SWT_VER="$(mvn help:evaluate -Dexpression=swt.version -q -DforceStdout -B)"
-          STAGE="stage-nojre/14bis-ssh"
+          STAGE="stage-nojre/capoeira-ssh"
           mkdir -p "$STAGE/lib/swt"
 
           # App code only (no bundled SWT/JSch) — the "original-" jar the shade plugin leaves
           # behind before shading in this platform's SWT.
-          cp "target/original-14bis-ssh-${JARVER}.jar" "$STAGE/lib/14bis-ssh-${JARVER}.jar"
+          cp "target/original-capoeira-ssh-${JARVER}.jar" "$STAGE/lib/capoeira-ssh-${JARVER}.jar"
 
           mvn dependency:copy -q -B \
             -Dartifact=com.github.mwiede:jsch:0.2.21 \
@@ -266,7 +266,7 @@ jobs:
           cp packaging/nojre/run.sh packaging/nojre/run.bat packaging/nojre/README.txt "$STAGE/"
           chmod +x "$STAGE/run.sh"
 
-          tar -C stage-nojre -czf "installer/14bis-SSH-nojre-multiplatform-${VER}.tar.gz" "14bis-ssh"
+          tar -C stage-nojre -czf "installer/capoeira-ssh-nojre-multiplatform-${VER}.tar.gz" "capoeira-ssh"
 
       - name: Convert icon to ICNS (macOS)
         if: matrix.runner == 'macos-latest'
@@ -283,9 +283,9 @@ jobs:
         run: |
           jpackage \
             --input target \
-            --name "14bis SSH" \
-            --main-jar 14bis-ssh-${{ steps.ver.outputs.jar }}.jar \
-            --main-class br.com.quatorzebis.ssh.Main \
+            --name "Capoeira SSH" \
+            --main-jar capoeira-ssh-${{ steps.ver.outputs.jar }}.jar \
+            --main-class br.com.capoeirassh.ssh.Main \
             --type dmg \
             --app-version ${{ steps.ver.outputs.app }} \
             --vendor "Molho Ltda." \
@@ -293,7 +293,7 @@ jobs:
             --description "Lightweight SSH terminal client" \
             --icon target/app-icon.icns \
             --dest installer
-          mv installer/*.dmg installer/14bis-SSH-macos-${{ steps.ver.outputs.app }}.dmg
+          mv installer/*.dmg installer/capoeira-ssh-macos-${{ steps.ver.outputs.app }}.dmg
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -330,7 +330,7 @@ jobs:
           VERSION="$APP_VERSION"
 
           {
-            echo "## 14bis SSH $REF_NAME"
+            echo "## Capoeira SSH $REF_NAME"
             echo
             echo "**Molho Ltda. — Copyright (C) 2026 Vicente Melo**"
             echo
@@ -338,17 +338,17 @@ jobs:
             echo
             echo "| Platform | File |"
             echo "|----------|------|"
-            echo "| Windows (installer) | \`14bis-SSH-windows-${VERSION}.exe\` |"
-            echo "| Windows (portable, no install / no admin required — unzip and run \`14bis SSH.exe\`) | \`14bis-SSH-windows-portable-${VERSION}.zip\` |"
-            echo "| Linux (Debian/Ubuntu) | \`14bis-SSH-linux-${VERSION}.deb\` |"
-            echo "| Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | \`14bis-SSH-linux-${VERSION}.rpm\` |"
-            echo "| Linux (portable, no install — unpack and run \`bin/ssh-14bis\`) | \`14bis-SSH-linux-${VERSION}.tar.gz\` |"
-            echo "| macOS    | \`14bis-SSH-macos-${VERSION}.dmg\` |"
-            echo "| Any OS (Windows/Linux/macOS, x86_64/aarch64) — requires Java 21+ already installed, run \`run.bat\`/\`run.sh\` | \`14bis-SSH-nojre-multiplatform-${VERSION}.tar.gz\` |"
+            echo "| Windows (installer) | \`capoeira-ssh-windows-${VERSION}.exe\` |"
+            echo "| Windows (portable, no install / no admin required — unzip and run \`Capoeira SSH.exe\`) | \`capoeira-ssh-windows-portable-${VERSION}.zip\` |"
+            echo "| Linux (Debian/Ubuntu) | \`capoeira-ssh-linux-${VERSION}.deb\` |"
+            echo "| Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | \`capoeira-ssh-linux-${VERSION}.rpm\` |"
+            echo "| Linux (portable, no install — unpack and run \`bin/capoeira-ssh\`) | \`capoeira-ssh-linux-${VERSION}.tar.gz\` |"
+            echo "| macOS    | \`capoeira-ssh-macos-${VERSION}.dmg\` |"
+            echo "| Any OS (Windows/Linux/macOS, x86_64/aarch64) — requires Java 21+ already installed, run \`run.bat\`/\`run.sh\` | \`capoeira-ssh-nojre-multiplatform-${VERSION}.tar.gz\` |"
             echo
             echo "> Java is bundled in every installer/portable build above — no separate installation"
             echo "> required. The \`nojre\` bundle is the exception: it ships no runtime, for users who"
-            echo "> want to run 14bis SSH on a Java 21+ they already manage themselves."
+            echo "> want to run Capoeira SSH on a Java 21+ they already manage themselves."
             echo
 
             # Extract this version's section from CHANGELOG.md (from "## [VERSION]" up
@@ -371,7 +371,7 @@ jobs:
       - name: Create release and upload assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          name: "14bis SSH ${{ github.ref_name }}"
+          name: "Capoeira SSH ${{ github.ref_name }}"
           body_path: release-notes.md
           files: installers/*
           draft: false

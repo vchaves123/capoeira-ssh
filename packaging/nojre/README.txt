@@ -1,4 +1,4 @@
-14bis SSH — no-JRE bundle
+﻿Capoeira SSH — no-JRE bundle
 =========================
 
 This package contains the application and all its libraries (for every

@@ -1,7 +1,7 @@
-@echo off
+﻿@echo off
 setlocal enabledelayedexpansion
 
-rem Launches 14bis SSH using a Java runtime already installed on this machine
+rem Launches Capoeira SSH using a Java runtime already installed on this machine
 rem (this bundle ships no JRE). Requires Java 21 or newer.
 
 set SCRIPT_DIR=%~dp0
@@ -42,4 +42,4 @@ set LAUNCHER=java
 where javaw >nul 2>&1
 if not errorlevel 1 set LAUNCHER=javaw
 
-start "" "%LAUNCHER%" -cp "%LIB_DIR%\*;%SWT_JAR%" br.com.quatorzebis.ssh.Main
+start "" "%LAUNCHER%" -cp "%LIB_DIR%\*;%SWT_JAR%" br.com.capoeirassh.ssh.Main
