@@ -36,5 +36,10 @@ if not exist "%SWT_JAR%" (
     exit /b 1
 )
 
-java -cp "%LIB_DIR%\*;%SWT_JAR%" br.com.quatorzebis.ssh.Main
-if errorlevel 1 pause
+rem javaw has no console window of its own, so launching it lets this cmd.exe window
+rem close immediately instead of staying open (and blank) for the app's whole lifetime.
+set LAUNCHER=java
+where javaw >nul 2>&1
+if not errorlevel 1 set LAUNCHER=javaw
+
+start "" "%LAUNCHER%" -cp "%LIB_DIR%\*;%SWT_JAR%" br.com.quatorzebis.ssh.Main

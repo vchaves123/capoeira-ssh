@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.3.1] — 2026-07-02
+
+### Fixed
+- No-JRE bundle: `run.bat` launched the app with `java.exe`, leaving a console window open (blank,
+  doing nothing) for the app's entire lifetime. Now launches with `javaw.exe` (falling back to
+  `java.exe` only if `javaw` isn't found), so the console window closes immediately.
+- Renamed the bundle to `14bis-SSH-nojre-multiplatform-<version>.tar.gz` to make clear it targets
+  every supported OS/architecture, not just one.
+
+---
+
 ## [1.3.0] — 2026-07-02
 
 ### Added

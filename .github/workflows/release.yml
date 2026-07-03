@@ -266,7 +266,7 @@ jobs:
           cp packaging/nojre/run.sh packaging/nojre/run.bat packaging/nojre/README.txt "$STAGE/"
           chmod +x "$STAGE/run.sh"
 
-          tar -C stage-nojre -czf "installer/14bis-SSH-nojre-${VER}.tar.gz" "14bis-ssh"
+          tar -C stage-nojre -czf "installer/14bis-SSH-nojre-multiplatform-${VER}.tar.gz" "14bis-ssh"
 
       - name: Convert icon to ICNS (macOS)
         if: matrix.runner == 'macos-latest'
@@ -344,7 +344,7 @@ jobs:
             echo "| Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | \`14bis-SSH-linux-${VERSION}.rpm\` |"
             echo "| Linux (portable, no install — unpack and run \`bin/ssh-14bis\`) | \`14bis-SSH-linux-${VERSION}.tar.gz\` |"
             echo "| macOS    | \`14bis-SSH-macos-${VERSION}.dmg\` |"
-            echo "| Any OS (Windows/Linux/macOS, x86_64/aarch64) — requires Java 21+ already installed, run \`run.bat\`/\`run.sh\` | \`14bis-SSH-nojre-${VERSION}.tar.gz\` |"
+            echo "| Any OS (Windows/Linux/macOS, x86_64/aarch64) — requires Java 21+ already installed, run \`run.bat\`/\`run.sh\` | \`14bis-SSH-nojre-multiplatform-${VERSION}.tar.gz\` |"
             echo
             echo "> Java is bundled in every installer/portable build above — no separate installation"
             echo "> required. The \`nojre\` bundle is the exception: it ships no runtime, for users who"
