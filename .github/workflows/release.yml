@@ -63,45 +63,8 @@ jobs:
           echo "app=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "jar=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout -B)" >> "$GITHUB_OUTPUT"
 
-      - name: Convert icon to ICO (Windows)
-        if: matrix.runner == 'windows-latest'
-        shell: pwsh
-        run: |
-          Add-Type -AssemblyName System.Drawing
-          $src = [System.Drawing.Image]::FromFile("$PWD\target\app-icon.png")
-          $sizes = @(16,32,48,256)
-          $ms = New-Object System.IO.MemoryStream
-          $bw = New-Object System.IO.BinaryWriter($ms)
-          $bw.Write([uint16]0)       # reserved
-          $bw.Write([uint16]1)       # type = ICO
-          $bw.Write([uint16]$sizes.Count)
-          $images = @()
-          foreach ($sz in $sizes) {
-            $bmp = New-Object System.Drawing.Bitmap($sz, $sz)
-            $g = [System.Drawing.Graphics]::FromImage($bmp)
-            $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $g.DrawImage($src, 0, 0, $sz, $sz)
-            $g.Dispose()
-            $tmp = New-Object System.IO.MemoryStream
-            $bmp.Save($tmp, [System.Drawing.Imaging.ImageFormat]::Png)
-            $images += $tmp.ToArray()
-            $bmp.Dispose()
-          }
-          $offset = 6 + $sizes.Count * 16
-          for ($i = 0; $i -lt $sizes.Count; $i++) {
-            $sz = $sizes[$i]; $data = $images[$i]
-            $bw.Write([byte]$(if ($sz -eq 256) { 0 } else { $sz }))
-            $bw.Write([byte]$(if ($sz -eq 256) { 0 } else { $sz }))
-            $bw.Write([byte]0); $bw.Write([byte]0)
-            $bw.Write([uint16]1); $bw.Write([uint16]32)
-            $bw.Write([uint32]$data.Length)
-            $bw.Write([uint32]$offset)
-            $offset += $data.Length
-          }
-          foreach ($data in $images) { $bw.Write($data) }
-          $bw.Flush()
-          [System.IO.File]::WriteAllBytes("$PWD\target\app-icon.ico", $ms.ToArray())
-          $src.Dispose()
+      # target/app-icon.ico is produced by IconExporter during `mvn package` (with BMP/DIB
+      # entries for the small sizes so the Windows shell renders the launcher icon).
 
       - name: Package with jpackage (Windows)
         if: matrix.runner == 'windows-latest'

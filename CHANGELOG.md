@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.2.1] — 2026-07-02
+
+### Fixed
+- **Windows launcher/desktop icon**: the custom app icon was not being applied to the Windows
+  `.exe` — Explorer, the desktop shortcut, and the taskbar all showed the generic default jpackage
+  launcher icon. The `.ico` was built with PNG-compressed data for every size, but the Windows
+  shell only decodes PNG-in-ICO at 256×256 and requires classic BMP/DIB for the small sizes
+  (16/32/48); jpackage copies the icon bytes into the launcher verbatim without re-encoding, so the
+  small icons were unrenderable and Windows fell back to the default. `IconExporter` now generates
+  the `.ico` directly in Java with BMP/DIB entries for 16/32/48 (correct `BITMAPINFOHEADER` with a
+  doubled height and AND mask) and PNG for 256, replacing the hand-rolled PowerShell conversion in
+  the release workflow. Verified end-to-end locally against a `jpackage` app-image.
+
+> If Explorer still shows the old icon after installing 1.2.1, clear the Windows icon cache once
+> (`ie4uinit.exe -show`) or recreate the shortcut — the embedded exe icon is now correct.
+
+---
+
 ## [1.2.0] — 2026-07-02
 
 ### Added
