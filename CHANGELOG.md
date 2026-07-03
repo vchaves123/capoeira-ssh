@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.3.0] — 2026-07-02
+
+### Added
+- **No-JRE bundle** (`14bis-SSH-nojre-<version>.tar.gz`): a single, platform-independent archive
+  for users who want to run 14bis SSH on a Java runtime they already manage (21+), instead of the
+  bundled-JRE installers/portable builds. Unlike those (one build per OS/arch, each with SWT
+  compiled in), this bundle ships the application as a thin jar plus every supported SWT native
+  build (Windows/Linux/macOS × x86_64/aarch64) under `lib/swt/`, and `run.bat`/`run.sh` scripts
+  that detect the current OS/architecture and put only the matching SWT jar on the classpath. One
+  download works everywhere Java 21+ is available.
+
+---
+
 ## [1.2.1] — 2026-07-02
 
 ### Fixed
