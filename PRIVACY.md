@@ -1,20 +1,20 @@
-# Privacy Policy — 14bis SSH
+﻿# Privacy Policy — Capoeira SSH
 
 **Last updated: July 1, 2026**
 
-14bis SSH ("the App") is a desktop SSH terminal client developed by Vicente Melo / Molho Ltda.
+Capoeira SSH ("the App") is a desktop SSH terminal client developed by Vicente Melo / Molho Ltda.
 This policy explains what data the App handles and how.
 
 ## Summary
 
-**14bis SSH does not collect, transmit, or sell any personal data to the developer.**
+**Capoeira SSH does not collect, transmit, or sell any personal data to the developer.**
 All application data is stored locally on your device. The only network connections the App
 makes are (1) the SSH connections you explicitly configure to your own servers, and (2) an
 anonymous check against GitHub's public API to see if a newer version is available.
 
 ## Data Stored Locally
 
-All data created and used by the App is stored on your own computer, under `~/.14bis/`
+All data created and used by the App is stored on your own computer, under `~/.capoeira/`
 (or the equivalent user profile folder on Windows/macOS), and is never sent to the developer:
 
 - **Saved sessions** (host, port, username, terminal preferences) — stored as local files.
@@ -69,5 +69,5 @@ project's [CHANGELOG](CHANGELOG.md), with the "Last updated" date above revised 
 ## Contact
 
 Questions about this policy or the App can be raised via
-[GitHub Issues](https://github.com/vchaves123/14bis-SSH/issues) or by contacting
+[GitHub Issues](https://github.com/vchaves123/capoeira-ssh/issues) or by contacting
 Vicente Melo / Molho Ltda.

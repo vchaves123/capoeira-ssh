@@ -1,8 +1,8 @@
-# 14bis SSH
+﻿# Capoeira SSH
 
 A lightweight SSH terminal client with a built-in xterm-256color emulator, built with Java and SWT.
 
-![14bis SSH](docs/screenshot.png)
+![Capoeira SSH](docs/screenshot.png)
 
 <details>
 <summary>More screenshots</summary>
@@ -45,20 +45,20 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 ### From source
 
 ```bash
-git clone https://github.com/vchaves123/14bis-SSH.git
-cd 14bis-SSH
+git clone https://github.com/vchaves123/capoeira-ssh.git
+cd capoeira-ssh
 mvn package
-java -jar target/14bis-ssh-*.jar
+java -jar target/capoeira-ssh-*.jar
 ```
 
 Maven and Java 17+ must be installed.
 
 ## Data storage
 
-All application data is stored under `~/.14bis/`:
+All application data is stored under `~/.capoeira/`:
 
 ```
-~/.14bis/
+~/.capoeira/
 ├── sessions/          # saved session files
 ├── screen_captures/   # terminal text captures (when logging is enabled)
 └── log/               # application log (app.log)

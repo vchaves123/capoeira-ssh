@@ -1,6 +1,6 @@
-# Changelog
+﻿# Changelog
 
-All notable changes to 14bis SSH are documented here.  
+All notable changes to Capoeira SSH are documented here.  
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
@@ -11,7 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - No-JRE bundle: `run.bat` launched the app with `java.exe`, leaving a console window open (blank,
   doing nothing) for the app's entire lifetime. Now launches with `javaw.exe` (falling back to
   `java.exe` only if `javaw` isn't found), so the console window closes immediately.
-- Renamed the bundle to `14bis-SSH-nojre-multiplatform-<version>.tar.gz` to make clear it targets
+- Renamed the bundle to `capoeira-ssh-nojre-multiplatform-<version>.tar.gz` to make clear it targets
   every supported OS/architecture, not just one.
 
 ---
@@ -19,8 +19,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.3.0] — 2026-07-02
 
 ### Added
-- **No-JRE bundle** (`14bis-SSH-nojre-<version>.tar.gz`): a single, platform-independent archive
-  for users who want to run 14bis SSH on a Java runtime they already manage (21+), instead of the
+- **No-JRE bundle** (`capoeira-ssh-nojre-<version>.tar.gz`): a single, platform-independent archive
+  for users who want to run Capoeira SSH on a Java runtime they already manage (21+), instead of the
   bundled-JRE installers/portable builds. Unlike those (one build per OS/arch, each with SWT
   compiled in), this bundle ships the application as a thin jar plus every supported SWT native
   build (Windows/Linux/macOS × x86_64/aarch64) under `lib/swt/`, and `run.bat`/`run.sh` scripts
@@ -100,7 +100,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Session group renaming**: right-click a group in the session tree → "Rename Group" moves
   its directory (and all sessions inside it) to the new name.
 - **Windows portable build**: a `.zip` (no installer, no admin rights required) alongside the
-  existing `.exe` — unzip and run `14bis SSH.exe` directly.
+  existing `.exe` — unzip and run `Capoeira SSH.exe` directly.
 - **Monospace font selection**: "Terminal Appearance" now has a font dropdown (global default
   and per-session), listing only monospace fonts actually installed on the system.
 
@@ -124,7 +124,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   parsed, with encoding auto-detection (UTF-8/UTF-16/Windows-1252) and support for bookmark
   subfolders (`[Bookmarks_1]`, `[Bookmarks_2]`, ...).
 - Session tree now supports **dragging multiple selected sessions** at once into another group.
-- Release asset filenames now include the version (e.g. `14bis-SSH-windows-1.0.9.exe`).
+- Release asset filenames now include the version (e.g. `capoeira-ssh-windows-1.0.9.exe`).
 - Linux releases now also ship `.rpm` (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) and a portable
   `.tar.gz` build alongside the existing `.deb`.
 
@@ -140,8 +140,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.0.8] — 2026-07-01
 
 ### Fixed
-- Windows/macOS release assets were named `14bis.SSH-<version>.exe`/`.dmg` (jpackage's default
-  naming) instead of the documented `14bis-SSH-windows.exe`/`14bis-SSH-macos.dmg`. Now renamed
+- Windows/macOS release assets were named `capoeira.SSH-<version>.exe`/`.dmg` (jpackage's default
+  naming) instead of the documented `capoeira-ssh-windows.exe`/`capoeira-ssh-macos.dmg`. Now renamed
   after packaging, consistent with the Linux asset naming.
 - The "+ Session"/"+ Group"/refresh toolbar buttons on the session tree panel were nearly
   invisible on Linux (GTK draws native toolbar button labels using the system theme, ignoring the
@@ -156,7 +156,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Linux `.rpm` package**: built via `jpackage --type rpm` alongside the existing `.deb`, for
   RHEL, Oracle Linux, AlmaLinux, Rocky Linux, SUSE/openSUSE, and other RPM-based distributions.
 - **Linux portable `.tar.gz`**: a self-contained, JRE-bundled build (`jpackage --type app-image`)
-  that can be unpacked anywhere and run directly via `bin/ssh-14bis`, with no installation or
+  that can be unpacked anywhere and run directly via `bin/capoeira-ssh`, with no installation or
   package manager required.
 
 ---
@@ -184,7 +184,7 @@ independent reviewers. Eight confirmed issues, all fixed:
   an imported session file) could redirect log writes outside the intended sandbox. Now re-verified
   against the real (symlink-resolved) path, falling back to the default log directory otherwise.
 - **MEDIUM — `SessionStorage.sanitize()`**: a group named `"."` or `".."` resolved outside the
-  intended `sessions/<group>` directory into `~/.14bis` itself. Now falls back to a safe name.
+  intended `sessions/<group>` directory into `~/.capoeira` itself. Now falls back to a safe name.
 - **MEDIUM — `TerminalEmulator` OSC buffer**: a malicious server that never sends the OSC/DCS
   terminator could grow the payload buffer without bound toward `OutOfMemoryError`. Capped at 8KB.
 - **MEDIUM — `TerminalEmulator.insertLines()`/`deleteLines()`**: `CSI L`/`M` accepted an unbounded
@@ -263,7 +263,7 @@ independent reviewers. Eight confirmed issues, all fixed:
     so the password char array is zeroed even when key derivation throws.
 - Version numbers in `BuildInfo.java` and `pom.xml` were out of sync with the GitHub release tag;
   all three are now kept aligned.
-- `run.bat`: JAR filename detected by glob (`14bis-ssh-*.jar`) instead of a hardcoded version
+- `run.bat`: JAR filename detected by glob (`capoeira-ssh-*.jar`) instead of a hardcoded version
   string — the script no longer breaks after a version bump.
 
 ---
@@ -301,7 +301,7 @@ _No code changes — tag created to mark the first publicly announced release._
 - Sessions tab no longer has a close button; terminal tabs keep their individual close (×) button.
 - GitHub Actions release workflow builds native installers for Windows (`.exe`), Linux (`.deb`),
   and macOS (`.dmg`) in parallel with `fail-fast: false`.
-- Linux package renamed to `ssh-14bis` (jpackage DEB validator requires names that start with a
+- Linux package renamed to `capoeira-ssh` (jpackage DEB validator requires names that start with a
   letter, not a digit).
 
 ### Changed
