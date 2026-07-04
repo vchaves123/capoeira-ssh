@@ -163,6 +163,13 @@ public class SessionsTab {
         spacer.setBackground(cSurface);
         spacer.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
+        // Import icon
+        Composite importIcon = createSidebarIcon(sidebar, display, "⬇", false);
+        importIcon.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
+        importIcon.setToolTipText("Import sessions");
+        importIcon.addListener(SWT.MouseUp, e -> openImport());
+        for (Control c : importIcon.getChildren()) c.addListener(SWT.MouseUp, e -> openImport());
+
         // About icon (bottom)
         aboutIconBox = createSidebarIcon(sidebar, display, "ℹ", false);
         aboutIconBox.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
@@ -865,6 +872,23 @@ public class SessionsTab {
             }
             reload();
         }
+    }
+
+    private void openImport() {
+        ImportSessionsDialog dlg = new ImportSessionsDialog(shell);
+        java.util.List<SessionInfo> imported = dlg.open();
+        if (imported == null || imported.isEmpty()) return;
+        for (SessionInfo s : imported) {
+            try {
+                br.com.capoeirassh.ssh.storage.SessionStorage.save(s);
+            } catch (Exception ex) {
+                MessageBox err = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+                err.setText("Import error");
+                err.setMessage("Could not save \"" + s.name + "\": " + ex.getMessage());
+                err.open();
+            }
+        }
+        reload();
     }
 
     private void openSettings() {
