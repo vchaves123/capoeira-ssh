@@ -48,13 +48,17 @@ public class MainWindow {
         shell = new Shell(display, SWT.SHELL_TRIM);
         shell.setText("Capoeira SSH");
         shell.setLayout(new FillLayout());
-        shell.setSize(1000, 650);
-        centerOnScreen();
 
         AppIcon.apply(shell);
 
         buildContent();
         setupGlobalKeyFilter();
+
+        // Size to content on first launch, respecting a minimum
+        shell.pack();
+        Point packed = shell.getSize();
+        shell.setSize(Math.max(packed.x, 780), Math.max(packed.y, 520));
+        centerOnScreen();
 
         shell.addListener(SWT.Close, e -> {
             long active = terminalTabs.stream().filter(t -> !t.isDisconnected()).count();
