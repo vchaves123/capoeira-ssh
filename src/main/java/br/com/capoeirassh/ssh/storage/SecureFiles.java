@@ -88,11 +88,35 @@ public final class SecureFiles {
         }
     }
 
+    /**
+     * Restrict a file to the owner only on Windows. java.io.File.setReadable/Writable does
+     * not touch NTFS ACLs (setReadable(false,..) is a silent no-op there), so we use icacls
+     * to remove inherited ACEs (/inheritance:r) and grant the owner Full control (/grant:r).
+     * Arguments are passed to icacls directly (no shell), so the path is not interpolated.
+     * Falls back to the legacy best-effort DOS-attribute calls if icacls is unavailable.
+     */
     private static void restrictWindows(Path path) {
+        try {
+            String owner = Files.getOwner(path).getName();   // e.g. "MACHINE\\user"
+            Process p = new ProcessBuilder("icacls", path.toString(),
+                    "/inheritance:r", "/grant:r", owner + ":F")
+                .redirectErrorStream(true)
+                .start();
+            p.getInputStream().readAllBytes();   // drain output so the process can exit
+            if (p.waitFor() == 0) return;
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            // fall through to best-effort legacy restriction
+        }
+        legacyRestrict(path);
+    }
+
+    /** Best-effort fallback: DOS read-only attribute toggling (does not manage NTFS ACLs). */
+    private static void legacyRestrict(Path path) {
         java.io.File f = path.toFile();
-        f.setReadable(false, false);   // revoke everyone
+        f.setReadable(false, false);
         f.setWritable(false, false);
-        f.setReadable(true,  true);    // grant owner only
+        f.setReadable(true,  true);
         f.setWritable(true,  true);
     }
 }

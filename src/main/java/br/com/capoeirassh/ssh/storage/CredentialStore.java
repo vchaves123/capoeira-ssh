@@ -55,9 +55,16 @@ public final class CredentialStore {
 
     private CredentialStore() {
         lockTimer.scheduleAtFixedRate(() -> {
-            if (masterKey != null && lastAccessMs > 0
-                    && System.currentTimeMillis() - lastAccessMs >= INACTIVITY_MS) {
-                lock();
+            boolean locked = false;
+            synchronized (this) {
+                if (masterKey != null && lastAccessMs > 0
+                        && System.currentTimeMillis() - lastAccessMs >= INACTIVITY_MS) {
+                    lock();
+                    locked = true;
+                }
+            }
+            // Fire the callback outside the monitor — it may hop to the UI thread.
+            if (locked) {
                 Runnable cb = onLockCallback;
                 if (cb != null) cb.run();
             }
@@ -75,7 +82,7 @@ public final class CredentialStore {
 
     public static CredentialStore getInstance() { return INSTANCE; }
 
-    public boolean isUnlocked()   { return masterKey != null; }
+    public synchronized boolean isUnlocked()   { return masterKey != null; }
     public boolean vaultExists()  { return Files.exists(VAULT); }
 
     // -----------------------------------------------------------------------
@@ -83,7 +90,7 @@ public final class CredentialStore {
     // -----------------------------------------------------------------------
 
     /** Create a brand-new vault with the given master password. Zeroes the array after use. */
-    public void create(char[] masterPassword) throws Exception {
+    public synchronized void create(char[] masterPassword) throws Exception {
         this.salt      = randomBytes(SALT_LEN);
         this.masterKey = deriveKey(masterPassword, salt);
         Arrays.fill(masterPassword, '\0');
@@ -95,7 +102,7 @@ public final class CredentialStore {
      * Unlock an existing vault. Zeroes the array after use.
      * @throws AEADBadTagException if the master password is wrong.
      */
-    public void unlock(char[] masterPassword) throws Exception {
+    public synchronized void unlock(char[] masterPassword) throws Exception {
         byte[] raw  = Files.readAllBytes(VAULT);
         int    off  = 0;
 
@@ -132,7 +139,12 @@ public final class CredentialStore {
         if (cb != null) cb.run();
     }
 
-    public void lock() {
+    public synchronized void lock() {
+        // Zero cached secrets before dropping them so no plaintext password lingers
+        // on the heap after the vault is locked (defends against a later heap dump).
+        for (CredentialEntry e : entries) {
+            if (e.password != null) Arrays.fill(e.password, '\0');
+        }
         masterKey = null;
         entries   = new ArrayList<>();
         salt      = null;
@@ -142,25 +154,25 @@ public final class CredentialStore {
     // CRUD
     // -----------------------------------------------------------------------
 
-    public List<CredentialEntry> getAll() {
+    public synchronized List<CredentialEntry> getAll() {
         touch();
-        return Collections.unmodifiableList(entries);
+        return List.copyOf(entries);
     }
 
-    public CredentialEntry findById(String id) {
+    public synchronized CredentialEntry findById(String id) {
         if (id == null || id.isBlank()) return null;
         touch();
         return entries.stream().filter(e -> e.id.equals(id)).findFirst().orElse(null);
     }
 
-    public void addOrUpdate(CredentialEntry e) throws Exception {
+    public synchronized void addOrUpdate(CredentialEntry e) throws Exception {
         touch();
         entries.removeIf(x -> x.id.equals(e.id));
         entries.add(e);
         persist();
     }
 
-    public void delete(String id) throws Exception {
+    public synchronized void delete(String id) throws Exception {
         touch();
         entries.removeIf(e -> e.id.equals(id));
         persist();
@@ -170,7 +182,7 @@ public final class CredentialStore {
     // Persistence
     // -----------------------------------------------------------------------
 
-    private void persist() throws Exception {
+    private synchronized void persist() throws Exception {
         if (masterKey == null) throw new IllegalStateException("Vault is locked.");
         byte[] iv    = randomBytes(IV_LEN);
         Cipher aes   = Cipher.getInstance("AES/GCM/NoPadding");
@@ -217,7 +229,7 @@ public final class CredentialStore {
      *
      * @return map of original ID → final ID (same when no conflict, new UUID on conflict)
      */
-    public Map<String, String> mergeCredentials(List<br.com.capoeirassh.ssh.model.CredentialEntry> incoming)
+    public synchronized Map<String, String> mergeCredentials(List<br.com.capoeirassh.ssh.model.CredentialEntry> incoming)
             throws Exception {
         if (masterKey == null) throw new IllegalStateException("Vault is locked.");
         Set<String> usedLabels = entries.stream()
@@ -372,12 +384,26 @@ public final class CredentialStore {
     }
 
     /**
-     * Unescape a vault-serialized value. Order is critical — must mirror esc() in reverse:
-     * \= → = first, then \n → newline, then \\ → \ last.
-     * Reversing this order would corrupt values containing literal backslash+equals.
+     * Unescape a vault-serialized value in a single left-to-right pass — mirrors esc()
+     * exactly (same logic as unescChars()). Chained String.replace() is NOT a correct
+     * inverse: an earlier de-escape can produce a sequence the next replace re-matches
+     * (e.g. a literal backslash+'n' would wrongly become backslash+newline).
      */
     private static String unesc(String s) {
-        return s.replace("\\=", "=").replace("\\n", "\n").replace("\\\\", "\\");
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char next = s.charAt(i + 1);
+                if (next == '\\' || next == 'n' || next == '=') {
+                    out.append(next == 'n' ? '\n' : next);
+                    i++;
+                    continue;
+                }
+            }
+            out.append(c);
+        }
+        return out.toString();
     }
 
     // -----------------------------------------------------------------------
