@@ -94,7 +94,37 @@ public class SessionsTab {
         root.setLayout(rootLayout);
 
         Listener delFilter = e -> {
-            if (e.keyCode == SWT.DEL && !selectedIds.isEmpty()) deleteSelectedSessions();
+            if (e.keyCode == SWT.DEL && !selectedIds.isEmpty()) {
+                deleteSelectedSessions();
+            } else if ((e.keyCode == SWT.ARROW_DOWN || e.keyCode == SWT.ARROW_UP) && !sessionOrder.isEmpty()) {
+                int cur = selectedIds.size() == 1
+                        ? indexOfId(selectedIds.iterator().next()) : -1;
+                int next = e.keyCode == SWT.ARROW_DOWN
+                        ? (cur < sessionOrder.size() - 1 ? cur + 1 : 0)
+                        : (cur > 0 ? cur - 1 : sessionOrder.size() - 1);
+                String nextId = sessionOrder.get(next).id;
+                clearSelectionVisuals();
+                selectedIds.clear();
+                selectedIds.add(nextId);
+                lastClickedId = nextId;
+                applyRowColor(nextId, cSelected);
+                // Scroll the row into view
+                Composite row = rowById.get(nextId);
+                if (row != null && !row.isDisposed() && scrolled != null && !scrolled.isDisposed()) {
+                    Point origin = scrolled.getOrigin();
+                    Rectangle rowBounds = row.getBounds();
+                    Rectangle visible  = scrolled.getClientArea();
+                    if (rowBounds.y < origin.y)
+                        scrolled.setOrigin(origin.x, rowBounds.y);
+                    else if (rowBounds.y + rowBounds.height > origin.y + visible.height)
+                        scrolled.setOrigin(origin.x, rowBounds.y + rowBounds.height - visible.height);
+                }
+                e.doit = false;
+            } else if (e.keyCode == SWT.CR && selectedIds.size() == 1) {
+                String id = selectedIds.iterator().next();
+                sessionOrder.stream().filter(s -> s.id.equals(id)).findFirst()
+                        .ifPresent(s -> onConnect.accept(s, null));
+            }
         };
         display.addFilter(SWT.KeyDown, delFilter);
         root.addDisposeListener(e -> { disposeColors(); display.removeFilter(SWT.KeyDown, delFilter); });
