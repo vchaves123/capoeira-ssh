@@ -1192,8 +1192,9 @@ public class TerminalTab {
         });
     }
 
-    public CTabItem getTabItem() { return tabItem; }
-    public Canvas   getCanvas()  { return canvas;  }
+    public CTabItem getTabItem()  { return tabItem;  }
+    public Canvas   getCanvas()   { return canvas;   }
+    public String   getTabTitle() { return tabTitle; }
 
     public boolean isLogging()   { return logStream != null; }
 

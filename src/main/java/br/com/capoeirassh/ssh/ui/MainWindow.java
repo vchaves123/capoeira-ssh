@@ -356,7 +356,13 @@ public class MainWindow {
                 info.appearFontSize = a[0];
                 info.appearFgR = a[1]; info.appearFgG = a[2]; info.appearFgB = a[3];
                 info.appearBgR = a[4]; info.appearBgG = a[5]; info.appearBgB = a[6];
+                String currentTitle = terminal.getTabTitle();
                 openTerminal(info);
+                // Preserve the renamed tab title on the new tab
+                if (!currentTitle.equals(info.label())) {
+                    TerminalTab newTab = terminalTabs.get(terminalTabs.size() - 1);
+                    newTab.rename(currentTitle);
+                }
             });
 
             new MenuItem(menu, SWT.SEPARATOR);
