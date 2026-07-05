@@ -76,6 +76,7 @@ public class SshConnection {
             ? info.terminalType : "xterm-256color";
         channel.setPtyType(ptyType);
         channel.setPtySize(80, 24, 640, 480);
+        channel.setTerminalMode(buildPtyModes());
 
         input  = channel.getInputStream();
         output = channel.getOutputStream();
@@ -107,6 +108,49 @@ public class SshConnection {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /**
+     * Builds SSH terminal modes (RFC 4254 §8) for a sane PTY initial state.
+     * Each entry: opcode (1 byte) + value (4 bytes big-endian). Ends with 0x00.
+     */
+    private static byte[] buildPtyModes() {
+        int[][] modes = {
+            {  1,   3 },   // VINTR  = Ctrl+C
+            {  2,  28 },   // VQUIT  = Ctrl+\
+            {  3, 127 },   // VERASE = DEL
+            {  4,  21 },   // VKILL  = Ctrl+U
+            {  5,   4 },   // VEOF   = Ctrl+D
+            {  8,  17 },   // VSTART = Ctrl+Q
+            {  9,  19 },   // VSTOP  = Ctrl+S
+            { 10,  26 },   // VSUSP  = Ctrl+Z
+            { 12,  18 },   // VREPRINT = Ctrl+R
+            { 13,  23 },   // VWERASE  = Ctrl+W
+            { 14,  22 },   // VLNEXT   = Ctrl+V
+            { 36,   1 },   // ICRNL  = 1
+            { 38,   1 },   // IXON   = 1
+            { 50,   1 },   // ISIG   = 1
+            { 51,   1 },   // ICANON = 1
+            { 53,   1 },   // ECHO   = 1
+            { 54,   1 },   // ECHOE  = 1
+            { 55,   1 },   // ECHOK  = 1
+            { 59,   1 },   // IEXTEN = 1
+            { 61,   1 },   // ECHOKE = 1
+            { 70,   1 },   // OPOST  = 1
+            { 72,   1 },   // ONLCR  = 1
+            { 91,   1 },   // CS8    = 1
+        };
+        byte[] buf = new byte[modes.length * 5 + 1];
+        int i = 0;
+        for (int[] m : modes) {
+            buf[i++] = (byte) m[0];
+            buf[i++] = (byte) ((m[1] >> 24) & 0xFF);
+            buf[i++] = (byte) ((m[1] >> 16) & 0xFF);
+            buf[i++] = (byte) ((m[1] >>  8) & 0xFF);
+            buf[i++] = (byte)  (m[1]        & 0xFF);
+        }
+        buf[i] = 0x00; // TTY_OP_END
+        return buf;
+    }
 
     /** Convert char[] to UTF-8 bytes without creating an intermediate String. */
     private static byte[] toBytes(char[] chars) {
