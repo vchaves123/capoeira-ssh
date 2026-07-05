@@ -61,6 +61,13 @@ public class SessionsTab {
     private boolean updateAvailable = false;
     private String  updateVersion   = "";
 
+    // Multi-selection state (ALL SESSIONS list)
+    private final java.util.LinkedHashSet<String> selectedIds = new java.util.LinkedHashSet<>();
+    private final java.util.List<SessionInfo>     sessionOrder = new java.util.ArrayList<>();
+    private String lastClickedId = null;
+    private final java.util.Map<String, Composite> rowById = new java.util.HashMap<>();
+    private Color cSelected;
+
     public SessionsTab(CTabFolder folder, Shell shell,
                        BiConsumer<SessionInfo, char[]> onConnect,
                        Runnable onCredentials, Runnable onAbout,
@@ -86,7 +93,11 @@ public class SessionsTab {
         rootLayout.horizontalSpacing = 0; rootLayout.verticalSpacing = 0;
         root.setLayout(rootLayout);
 
-        root.addDisposeListener(e -> disposeColors());
+        Listener delFilter = e -> {
+            if (e.keyCode == SWT.DEL && !selectedIds.isEmpty()) deleteSelectedSessions();
+        };
+        display.addFilter(SWT.KeyDown, delFilter);
+        root.addDisposeListener(e -> { disposeColors(); display.removeFilter(SWT.KeyDown, delFilter); });
 
         buildSidebar(root, display);
         buildMain(root, display);
@@ -114,11 +125,12 @@ public class SessionsTab {
         cGrey    = new Color(d,  85,  85,  85);
         cDark    = new Color(d,  51,  51,  51);
         cGoldHl  = new Color(d,  45,  37,  12);   // approximate #E8B84B22
+        cSelected = new Color(d,  30,  45,  60);   // dark blue tint for selection
     }
 
     private void disposeColors() {
         Color[] colors = { cBg, cSurface, cGold, cTerra, cGreen, cAreia,
-                           cDim, cBorder, cMid, cBlack, cGrey, cDark, cGoldHl };
+                           cDim, cBorder, cMid, cBlack, cGrey, cDark, cGoldHl, cSelected };
         for (Color c : colors) { if (c != null && !c.isDisposed()) c.dispose(); }
     }
 
@@ -503,6 +515,11 @@ public class SessionsTab {
         // Rebuild list
         if (listContainer != null && !listContainer.isDisposed()) {
             for (Control c : listContainer.getChildren()) c.dispose();
+            selectedIds.clear();
+            lastClickedId = null;
+            sessionOrder.clear();
+            sessionOrder.addAll(sessions);
+            rowById.clear();
             for (SessionInfo s : sessions) {
                 buildListRow(listContainer, display, s, online.contains(s.name));
             }
@@ -577,7 +594,7 @@ public class SessionsTab {
         connectLnk.addDisposeListener(e -> lnkF.dispose());
         connectLnk.setCursor(display.getSystemCursor(SWT.CURSOR_HAND));
         connectLnk.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
-        connectLnk.addListener(SWT.MouseUp, e -> onConnect.accept(session, null));
+        connectLnk.addListener(SWT.MouseDoubleClick, e -> onConnect.accept(session, null));
 
         // Host
         Label hostLbl = new Label(card, SWT.NONE);
@@ -596,9 +613,8 @@ public class SessionsTab {
             buildGroupBadge(card, display, session.group);
         }
 
-        // Single-click card → connect
-        Listener connectListener = e -> onConnect.accept(session, null);
-        addClickRecursive(card, connectListener);
+        // Double-click card → connect
+        addDoubleClickRecursive(card, session);
     }
 
     private void buildAddCard(Composite parent, Display display) {
@@ -698,14 +714,22 @@ public class SessionsTab {
         gl.horizontalSpacing = 10;
         row.setLayout(gl);
 
-        // Hover effect — guard MouseExit against moves into child controls
-        row.addListener(SWT.MouseEnter, e -> { row.setBackground(cSurface); refreshChildren(row, cSurface); });
+        rowById.put(session.id, row);
+
+        // Hover / selection background
+        Color normalBg = selectedIds.contains(session.id) ? cSelected : cBg;
+        row.setBackground(normalBg);
+        refreshChildren(row, normalBg);
+
+        row.addListener(SWT.MouseEnter, e -> {
+            if (!selectedIds.contains(session.id)) { row.setBackground(cSurface); refreshChildren(row, cSurface); }
+        });
         row.addListener(SWT.MouseExit, e -> {
             Point cursor = row.getDisplay().getCursorLocation();
             Point local  = row.toControl(cursor);
             if (!row.getClientArea().contains(local)) {
-                row.setBackground(cBg);
-                refreshChildren(row, cBg);
+                Color bg = selectedIds.contains(session.id) ? cSelected : cBg;
+                row.setBackground(bg); refreshChildren(row, bg);
             }
         });
 
@@ -783,27 +807,49 @@ public class SessionsTab {
         arrow.setForeground(cDark);
         arrow.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
 
-        // Single-click anywhere on the row → connect
-        Listener connectClick = e -> onConnect.accept(session, null);
-        addClickRecursive(row, connectClick);
+        // Single-click → select / Ctrl+click → toggle / Shift+click → range
+        // Double-click → connect
+        addSelectionClickRecursive(row, session);
 
-        // Right-click context menu
+        // Right-click context menu (rebuilt dynamically at show time)
         Menu menu = new Menu(row);
-        MenuItem miConnect = new MenuItem(menu, SWT.PUSH);
-        miConnect.setText("Connect");
-        miConnect.addListener(SWT.Selection, e -> onConnect.accept(session, null));
+        menu.addListener(SWT.Show, e -> {
+            for (MenuItem it : menu.getItems()) it.dispose();
 
-        new MenuItem(menu, SWT.SEPARATOR);
+            int selCount = selectedIds.size();
+            boolean multiSelected = selCount > 1 && selectedIds.contains(session.id);
 
-        MenuItem miEdit = new MenuItem(menu, SWT.PUSH);
-        miEdit.setText("Edit");
-        miEdit.addListener(SWT.Selection, e -> editSession(session));
+            if (!multiSelected) {
+                // Ensure the right-clicked session is selected
+                if (!selectedIds.contains(session.id)) {
+                    clearSelectionVisuals();
+                    selectedIds.clear();
+                    selectedIds.add(session.id);
+                    lastClickedId = session.id;
+                    applyRowColor(session.id, cSelected);
+                }
 
-        new MenuItem(menu, SWT.SEPARATOR);
+                MenuItem miConnect = new MenuItem(menu, SWT.PUSH);
+                miConnect.setText("Connect");
+                miConnect.addListener(SWT.Selection, ev -> onConnect.accept(session, null));
 
-        MenuItem miDelete = new MenuItem(menu, SWT.PUSH);
-        miDelete.setText("Delete");
-        miDelete.addListener(SWT.Selection, e -> deleteSession(session));
+                new MenuItem(menu, SWT.SEPARATOR);
+
+                MenuItem miEdit = new MenuItem(menu, SWT.PUSH);
+                miEdit.setText("Edit");
+                miEdit.addListener(SWT.Selection, ev -> editSession(session));
+
+                new MenuItem(menu, SWT.SEPARATOR);
+
+                MenuItem miDelete = new MenuItem(menu, SWT.PUSH);
+                miDelete.setText("Delete");
+                miDelete.addListener(SWT.Selection, ev -> deleteSession(session));
+            } else {
+                MenuItem miDeleteAll = new MenuItem(menu, SWT.PUSH);
+                miDeleteAll.setText("Delete " + selCount + " sessions");
+                miDeleteAll.addListener(SWT.Selection, ev -> deleteSelectedSessions());
+            }
+        });
 
         row.setMenu(menu);
         for (Control c : row.getChildren()) c.setMenu(menu);
@@ -816,11 +862,93 @@ public class SessionsTab {
         }
     }
 
+    private void addDoubleClickRecursive(Control ctrl, SessionInfo session) {
+        ctrl.addListener(SWT.MouseDoubleClick, e -> { if (e.button == 1) onConnect.accept(session, null); });
+        if (ctrl instanceof Composite)
+            for (Control c : ((Composite) ctrl).getChildren()) addDoubleClickRecursive(c, session);
+    }
+
     private void addClickRecursive(Control ctrl, Listener listener) {
         ctrl.addListener(SWT.MouseUp, e -> { if (e.button == 1) listener.handleEvent(e); });
         if (ctrl instanceof Composite) {
             for (Control c : ((Composite) ctrl).getChildren()) addClickRecursive(c, listener);
         }
+    }
+
+    private void addSelectionClickRecursive(Control ctrl, SessionInfo session) {
+        ctrl.addListener(SWT.MouseDown, e -> {
+            if (e.button != 1) return;
+            boolean ctrl_ = (e.stateMask & SWT.CTRL)  != 0;
+            boolean shift = (e.stateMask & SWT.SHIFT) != 0;
+            if (ctrl_) {
+                if (selectedIds.contains(session.id)) {
+                    selectedIds.remove(session.id);
+                    applyRowColor(session.id, cBg);
+                } else {
+                    selectedIds.add(session.id);
+                    applyRowColor(session.id, cSelected);
+                    lastClickedId = session.id;
+                }
+            } else if (shift && lastClickedId != null) {
+                int from = indexOfId(lastClickedId);
+                int to   = indexOfId(session.id);
+                if (from >= 0 && to >= 0) {
+                    clearSelectionVisuals();
+                    selectedIds.clear();
+                    int lo = Math.min(from, to), hi = Math.max(from, to);
+                    for (int i = lo; i <= hi; i++) {
+                        String id = sessionOrder.get(i).id;
+                        selectedIds.add(id);
+                        applyRowColor(id, cSelected);
+                    }
+                }
+            } else {
+                clearSelectionVisuals();
+                selectedIds.clear();
+                selectedIds.add(session.id);
+                applyRowColor(session.id, cSelected);
+                lastClickedId = session.id;
+            }
+        });
+        ctrl.addListener(SWT.MouseDoubleClick, e -> {
+            if (e.button == 1) onConnect.accept(session, null);
+        });
+        if (ctrl instanceof Composite) {
+            for (Control c : ((Composite) ctrl).getChildren())
+                addSelectionClickRecursive(c, session);
+        }
+    }
+
+    private int indexOfId(String id) {
+        for (int i = 0; i < sessionOrder.size(); i++)
+            if (sessionOrder.get(i).id.equals(id)) return i;
+        return -1;
+    }
+
+    private void applyRowColor(String id, Color color) {
+        Composite row = rowById.get(id);
+        if (row != null && !row.isDisposed()) { row.setBackground(color); refreshChildren(row, color); }
+    }
+
+    private void clearSelectionVisuals() {
+        for (String id : selectedIds) applyRowColor(id, cBg);
+    }
+
+    private void deleteSelectedSessions() {
+        if (selectedIds.isEmpty()) return;
+        int count = selectedIds.size();
+        MessageBox mb = new MessageBox(shell, SWT.ICON_QUESTION | SWT.YES | SWT.NO);
+        mb.setText("Delete Sessions");
+        mb.setMessage("Delete " + count + " selected session" + (count == 1 ? "" : "s") + "?");
+        if (mb.open() != SWT.YES) return;
+        for (String id : new java.util.ArrayList<>(selectedIds)) {
+            sessionOrder.stream().filter(s -> s.id.equals(id)).findFirst().ifPresent(s -> {
+                try { SessionStorage.delete(s); } catch (Exception ignored) {}
+            });
+        }
+        selectedIds.clear();
+        lastClickedId = null;
+        reload();
     }
 
     // -----------------------------------------------------------------------
