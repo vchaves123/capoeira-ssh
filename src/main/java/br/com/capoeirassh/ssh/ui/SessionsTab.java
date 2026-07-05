@@ -208,19 +208,13 @@ public class SessionsTab {
         spacer.setBackground(cSurface);
         spacer.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
-        // Export icon
-        Composite exportIcon = createSidebarIcon(sidebar, display, "⬆", false);
-        exportIcon.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
-        exportIcon.setToolTipText("Export backup");
-        exportIcon.addListener(SWT.MouseUp, e -> openExport());
-        for (Control c : exportIcon.getChildren()) c.addListener(SWT.MouseUp, e -> openExport());
-
-        // Import icon
-        Composite importIcon = createSidebarIcon(sidebar, display, "⬇", false);
-        importIcon.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
-        importIcon.setToolTipText("Import sessions");
-        importIcon.addListener(SWT.MouseUp, e -> openImportMenu(importIcon));
-        for (Control c : importIcon.getChildren()) c.addListener(SWT.MouseUp, e -> openImportMenu(importIcon));
+        // Unified import/export icon
+        Composite ioIcon = createSidebarIcon(sidebar, display, "⇅", false);
+        ioIcon.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
+        ioIcon.setToolTipText("Import / Export");
+        Runnable openIoMenu = () -> openImportExportMenu(ioIcon);
+        ioIcon.addListener(SWT.MouseUp, e -> openIoMenu.run());
+        for (Control c : ioIcon.getChildren()) c.addListener(SWT.MouseUp, e -> openIoMenu.run());
 
         // About icon (bottom)
         aboutIconBox = createSidebarIcon(sidebar, display, "ℹ", false);
@@ -869,6 +863,10 @@ public class SessionsTab {
                 miEdit.setText("Edit");
                 miEdit.addListener(SWT.Selection, ev -> editSession(session));
 
+                MenuItem miDup = new MenuItem(menu, SWT.PUSH);
+                miDup.setText("Duplicate");
+                miDup.addListener(SWT.Selection, ev -> duplicateSession(session));
+
                 new MenuItem(menu, SWT.SEPARATOR);
 
                 MenuItem miDelete = new MenuItem(menu, SWT.PUSH);
@@ -1025,6 +1023,36 @@ public class SessionsTab {
         }
     }
 
+    private void duplicateSession(SessionInfo source) {
+        SessionInfo clone = new SessionInfo();
+        clone.id            = java.util.UUID.randomUUID().toString();
+        clone.name          = source.name.isBlank() ? "(copy)" : source.name + " (copy)";
+        clone.host          = source.host;
+        clone.port          = source.port;
+        clone.username      = source.username;
+        clone.keyPath       = source.keyPath;
+        clone.group         = source.group;
+        clone.credentialId  = source.credentialId;
+        clone.authType      = source.authType;
+        clone.appearFontName = source.appearFontName;
+        clone.appearFontSize = source.appearFontSize;
+        clone.appearFgR     = source.appearFgR;
+        clone.appearFgG     = source.appearFgG;
+        clone.appearFgB     = source.appearFgB;
+        clone.appearBgR     = source.appearBgR;
+        clone.appearBgG     = source.appearBgG;
+        clone.appearBgB     = source.appearBgB;
+        clone.logEnabled    = source.logEnabled;
+        clone.logDir        = source.logDir;
+        clone.logFileName   = source.logFileName;
+        clone.terminalType  = source.terminalType;
+        clone.backspaceCode = source.backspaceCode;
+        SessionDialog dlg = new SessionDialog(shell, "");
+        dlg.setEditing(clone);
+        SessionInfo saved = dlg.open();
+        if (saved != null) reload();
+    }
+
     private void deleteSession(SessionInfo session) {
         MessageBox mb = new MessageBox(shell, SWT.ICON_QUESTION | SWT.YES | SWT.NO);
         mb.setText("Delete Session");
@@ -1060,17 +1088,23 @@ public class SessionsTab {
     }
 
     // -----------------------------------------------------------------------
-    // Import menu (PuTTY/MobaXterm  OR  Capoeira backup)
+    // Unified Import / Export menu
     // -----------------------------------------------------------------------
-    private void openImportMenu(Composite anchor) {
+    private void openImportExportMenu(Composite anchor) {
         Menu menu = new Menu(shell, SWT.POP_UP);
 
+        MenuItem miExport = new MenuItem(menu, SWT.PUSH);
+        miExport.setText("Export backup...");
+        miExport.addListener(SWT.Selection, e -> openExport());
+
+        new MenuItem(menu, SWT.SEPARATOR);
+
         MenuItem miLegacy = new MenuItem(menu, SWT.PUSH);
-        miLegacy.setText("From PuTTY / MobaXterm...");
+        miLegacy.setText("Import from PuTTY / MobaXterm...");
         miLegacy.addListener(SWT.Selection, e -> openImport());
 
         MenuItem miBackup = new MenuItem(menu, SWT.PUSH);
-        miBackup.setText("From Capoeira backup...");
+        miBackup.setText("Import from Capoeira backup...");
         miBackup.addListener(SWT.Selection, e -> openImportBackup());
 
         Point loc = anchor.toDisplay(anchor.getSize().x, anchor.getSize().y);
