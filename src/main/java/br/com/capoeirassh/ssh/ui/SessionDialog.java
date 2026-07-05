@@ -268,6 +268,29 @@ public class SessionDialog {
             if (idx >= 0) cmbGroup.select(idx);
         }
         updateKeyRow.run();
+
+        // Reverse-DNS lookup: fires in background when host field loses focus so the
+        // result is ready (or timed out) by the time the user clicks Save.
+        final java.util.concurrent.atomic.AtomicReference<String> reverseDnsRef =
+            new java.util.concurrent.atomic.AtomicReference<>(null);
+        final String[] lastLookedUpHost = {null};
+        Runnable startDnsLookup = () -> {
+            String h = txtHost.getText().trim();
+            if (h.isEmpty() || h.equals(lastLookedUpHost[0])) return;
+            lastLookedUpHost[0] = h;
+            reverseDnsRef.set(null);
+            Thread t = new Thread(() -> {
+                try {
+                    reverseDnsRef.set(java.net.InetAddress.getByName(h).getCanonicalHostName());
+                } catch (Exception ignored) {}
+            }, "rdns-lookup");
+            t.setDaemon(true);
+            t.start();
+        };
+        txtHost.addListener(SWT.FocusOut, e -> startDnsLookup.run());
+        // In edit mode the host is already filled — start the lookup immediately.
+        if (editing != null && !editing.host.isBlank()) startDnsLookup.run();
+
         dlg.pack();
         dlg.setSize(Math.max(dlg.getSize().x, 460), dlg.getSize().y);
         center(dlg, parent);
@@ -337,6 +360,13 @@ public class SessionDialog {
             }
 
             config[0].applyTo(s);
+
+            if (s.name.isEmpty()) {
+                String u = !user.isEmpty() ? user : s.username;
+                String fqdn = reverseDnsRef.get();
+                String displayHost = (fqdn != null && !fqdn.equals(host)) ? fqdn : host;
+                s.name = (u.isEmpty() ? "" : u + "@") + displayHost;
+            }
 
             try {
                 SessionStorage.save(s);
