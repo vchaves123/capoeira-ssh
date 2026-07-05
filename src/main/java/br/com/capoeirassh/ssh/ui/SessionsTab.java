@@ -1,6 +1,7 @@
 package br.com.capoeirassh.ssh.ui;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
+import br.com.capoeirassh.ssh.storage.BackupBundle;
 import br.com.capoeirassh.ssh.storage.SessionStorage;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CTabFolder;
@@ -10,6 +11,8 @@ import org.eclipse.swt.graphics.*;
 import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
 
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -163,12 +166,19 @@ public class SessionsTab {
         spacer.setBackground(cSurface);
         spacer.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
+        // Export icon
+        Composite exportIcon = createSidebarIcon(sidebar, display, "⬆", false);
+        exportIcon.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
+        exportIcon.setToolTipText("Export backup");
+        exportIcon.addListener(SWT.MouseUp, e -> openExport());
+        for (Control c : exportIcon.getChildren()) c.addListener(SWT.MouseUp, e -> openExport());
+
         // Import icon
         Composite importIcon = createSidebarIcon(sidebar, display, "⬇", false);
         importIcon.setLayoutData(new GridData(SWT.CENTER, SWT.BOTTOM, true, false));
         importIcon.setToolTipText("Import sessions");
-        importIcon.addListener(SWT.MouseUp, e -> openImport());
-        for (Control c : importIcon.getChildren()) c.addListener(SWT.MouseUp, e -> openImport());
+        importIcon.addListener(SWT.MouseUp, e -> openImportMenu(importIcon));
+        for (Control c : importIcon.getChildren()) c.addListener(SWT.MouseUp, e -> openImportMenu(importIcon));
 
         // About icon (bottom)
         aboutIconBox = createSidebarIcon(sidebar, display, "ℹ", false);
@@ -889,6 +899,216 @@ public class SessionsTab {
             }
         }
         reload();
+    }
+
+    // -----------------------------------------------------------------------
+    // Import menu (PuTTY/MobaXterm  OR  Capoeira backup)
+    // -----------------------------------------------------------------------
+    private void openImportMenu(Composite anchor) {
+        Menu menu = new Menu(shell, SWT.POP_UP);
+
+        MenuItem miLegacy = new MenuItem(menu, SWT.PUSH);
+        miLegacy.setText("From PuTTY / MobaXterm...");
+        miLegacy.addListener(SWT.Selection, e -> openImport());
+
+        MenuItem miBackup = new MenuItem(menu, SWT.PUSH);
+        miBackup.setText("From Capoeira backup...");
+        miBackup.addListener(SWT.Selection, e -> openImportBackup());
+
+        Point loc = anchor.toDisplay(anchor.getSize().x, anchor.getSize().y);
+        menu.setLocation(loc);
+        menu.setVisible(true);
+    }
+
+    // -----------------------------------------------------------------------
+    // Export backup
+    // -----------------------------------------------------------------------
+    private void openExport() {
+        Shell dlg = new Shell(shell, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
+        dlg.setText("Export Capoeira Backup");
+        AppIcon.apply(dlg);
+        GridLayout gl = new GridLayout(2, false);
+        gl.marginWidth = 16; gl.marginHeight = 12; gl.verticalSpacing = 8;
+        dlg.setLayout(gl);
+
+        bLabel(dlg, "Backup password:");
+        Text txtPwd  = PasswordField.create(dlg, bFill());
+        bLabel(dlg, "Confirm password:");
+        Text txtPwd2 = PasswordField.create(dlg, bFill());
+
+        new Label(dlg, SWT.NONE);
+        Button chkVault = new Button(dlg, SWT.CHECK);
+        boolean vaultUnlocked = br.com.capoeirassh.ssh.storage.CredentialStore.getInstance().isUnlocked();
+        chkVault.setText(vaultUnlocked
+                ? "Include credentials vault"
+                : "Include credentials vault  (unlock vault first)");
+        chkVault.setEnabled(vaultUnlocked);
+        chkVault.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+
+        new Label(dlg, SWT.NONE);
+        Composite btns = new Composite(dlg, SWT.NONE);
+        btns.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
+        RowLayout rl = new RowLayout(SWT.HORIZONTAL); rl.spacing = 8;
+        btns.setLayout(rl);
+        Button btnExport = new Button(btns, SWT.PUSH); btnExport.setText("  Export…  ");
+        Button btnCancel = new Button(btns, SWT.PUSH); btnCancel.setText("  Cancel  ");
+        dlg.setDefaultButton(btnExport);
+
+        btnCancel.addListener(SWT.Selection, e -> dlg.dispose());
+        btnExport.addListener(SWT.Selection, e -> {
+            char[] pw  = txtPwd.getTextChars();
+            char[] pw2 = txtPwd2.getTextChars();
+            if (pw.length == 0) {
+                Arrays.fill(pw2, '\0');
+                bAlert(dlg, "Please enter a backup password.");
+                return;
+            }
+            if (!Arrays.equals(pw, pw2)) {
+                Arrays.fill(pw, '\0'); Arrays.fill(pw2, '\0');
+                bAlert(dlg, "Passwords do not match.");
+                return;
+            }
+            Arrays.fill(pw2, '\0');
+
+            FileDialog fd = new FileDialog(dlg, SWT.SAVE);
+            fd.setText("Save Capoeira Backup");
+            fd.setFilterExtensions(new String[]{ "*.capoeira-backup", "*.*" });
+            fd.setFilterNames(new String[]{ "Capoeira backup (*.capoeira-backup)", "All files (*.*)" });
+            fd.setFileName("capoeira-backup.capoeira-backup");
+            fd.setOverwrite(true);
+            String path = fd.open();
+            if (path == null) { Arrays.fill(pw, '\0'); return; }
+
+            try {
+                BackupBundle.export(Path.of(path), pw, chkVault.getSelection());
+                dlg.dispose();
+                MessageBox ok = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
+                ok.setText("Export successful");
+                ok.setMessage("Backup saved to:\n" + path);
+                ok.open();
+            } catch (Exception ex) {
+                bAlert(dlg, "Export failed:\n" + ex.getMessage());
+            } finally {
+                Arrays.fill(pw, '\0');
+            }
+        });
+
+        dlg.pack();
+        dlg.setSize(Math.max(dlg.getSize().x, 380), dlg.getSize().y);
+        Rectangle pb = shell.getBounds();
+        Point     sz = dlg.getSize();
+        dlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
+        dlg.open();
+        Display d = shell.getDisplay();
+        while (!dlg.isDisposed()) { if (!d.readAndDispatch()) d.sleep(); }
+    }
+
+    // -----------------------------------------------------------------------
+    // Import from Capoeira backup
+    // -----------------------------------------------------------------------
+    private void openImportBackup() {
+        FileDialog fd = new FileDialog(shell, SWT.OPEN);
+        fd.setText("Open Capoeira Backup");
+        fd.setFilterExtensions(new String[]{ "*.capoeira-backup", "*.*" });
+        fd.setFilterNames(new String[]{ "Capoeira backup (*.capoeira-backup)", "All files (*.*)" });
+        String path = fd.open();
+        if (path == null) return;
+
+        // Password prompt
+        Shell pwDlg = new Shell(shell, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
+        pwDlg.setText("Import Backup – Password");
+        AppIcon.apply(pwDlg);
+        GridLayout gl = new GridLayout(2, false);
+        gl.marginWidth = 16; gl.marginHeight = 12; gl.verticalSpacing = 8;
+        pwDlg.setLayout(gl);
+
+        bLabel(pwDlg, "Backup password:");
+        Text txtPwd = PasswordField.create(pwDlg, bFill());
+
+        new Label(pwDlg, SWT.NONE);
+        Composite btns = new Composite(pwDlg, SWT.NONE);
+        btns.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
+        RowLayout rl = new RowLayout(SWT.HORIZONTAL); rl.spacing = 8;
+        btns.setLayout(rl);
+        Button btnOk     = new Button(btns, SWT.PUSH); btnOk.setText("  Import  ");
+        Button btnCancel = new Button(btns, SWT.PUSH); btnCancel.setText("  Cancel  ");
+        pwDlg.setDefaultButton(btnOk);
+
+        btnCancel.addListener(SWT.Selection, e -> pwDlg.dispose());
+        btnOk.addListener(SWT.Selection, e -> {
+            char[] pw = txtPwd.getTextChars();
+            BackupBundle.ImportResult result;
+            try {
+                result = BackupBundle.importBundle(Path.of(path), pw);
+            } catch (Exception ex) {
+                Arrays.fill(pw, '\0');
+                bAlert(pwDlg, "Import failed:\n" + ex.getMessage());
+                return;
+            } finally {
+                Arrays.fill(pw, '\0');
+            }
+            pwDlg.dispose();
+
+            // Merge credentials (if any) and build credentialId remap
+            java.util.Map<String, String> credRemap = java.util.Collections.emptyMap();
+            int credImported = 0;
+            if (!result.credentials().isEmpty()) {
+                br.com.capoeirassh.ssh.storage.CredentialStore cs =
+                        br.com.capoeirassh.ssh.storage.CredentialStore.getInstance();
+                if (cs.isUnlocked()) {
+                    try {
+                        credRemap = cs.mergeCredentials(result.credentials());
+                        credImported = credRemap.size();
+                    } catch (Exception ex) {
+                        bAlert(shell, "Could not merge credentials:\n" + ex.getMessage());
+                    }
+                } else {
+                    bAlert(shell, result.credentials().size()
+                        + " credential(s) in this backup were skipped because the vault is locked.\n"
+                        + "Unlock your vault and import again to include them.");
+                }
+            }
+
+            // Remap sessions' credentialId, then save
+            final java.util.Map<String, String> remap = credRemap;
+            int saved = 0, failed = 0;
+            for (SessionInfo s : result.sessions()) {
+                if (!s.credentialId.isEmpty() && remap.containsKey(s.credentialId))
+                    s.credentialId = remap.get(s.credentialId);
+                try { SessionStorage.save(s); saved++; }
+                catch (Exception ex) { failed++; }
+            }
+            final int credCount = credImported;
+
+            reload();
+
+            StringBuilder msg = new StringBuilder();
+            msg.append(saved).append(" session").append(saved == 1 ? "" : "s").append(" imported.");
+            if (failed > 0) msg.append("\n").append(failed).append(" could not be saved.");
+            if (credCount > 0) msg.append("\n").append(credCount).append(" credential").append(credCount == 1 ? "" : "s").append(" merged into vault.");
+            MessageBox ok = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
+            ok.setText("Import complete"); ok.setMessage(msg.toString()); ok.open();
+        });
+
+        pwDlg.pack();
+        pwDlg.setSize(Math.max(pwDlg.getSize().x, 320), pwDlg.getSize().y);
+        Rectangle pb = shell.getBounds();
+        Point     sz = pwDlg.getSize();
+        pwDlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
+        pwDlg.open();
+        Display d = shell.getDisplay();
+        while (!pwDlg.isDisposed()) { if (!d.readAndDispatch()) d.sleep(); }
+    }
+
+    // Small helpers for the dialog builders above
+    private static void  bLabel(Composite p, String t) {
+        Label l = new Label(p, SWT.NONE); l.setText(t);
+        l.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+    }
+    private static GridData bFill() { return new GridData(SWT.FILL, SWT.CENTER, true, false); }
+    private static void bAlert(Shell parent, String msg) {
+        MessageBox mb = new MessageBox(parent, SWT.ICON_WARNING | SWT.OK);
+        mb.setMessage(msg); mb.open();
     }
 
     private void openSettings() {

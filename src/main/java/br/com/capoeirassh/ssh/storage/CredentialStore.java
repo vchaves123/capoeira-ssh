@@ -11,6 +11,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.stream.Collectors;
 import java.security.SecureRandom;
 import java.security.spec.KeySpec;
 import java.util.*;
@@ -163,6 +164,56 @@ public final class CredentialStore {
         System.arraycopy(ciph,   0, out, off, ciph.length);
 
         SecureFiles.write(VAULT, out);
+    }
+
+    // -----------------------------------------------------------------------
+    // Serialization (plaintext inside the vault)
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Package-private API used by BackupBundle
+    // -----------------------------------------------------------------------
+
+    /**
+     * Merge incoming credential entries into the unlocked vault.
+     * Entries whose label already exists get a " (imported)" suffix and a new ID.
+     *
+     * @return map of original ID → final ID (same when no conflict, new UUID on conflict)
+     */
+    public Map<String, String> mergeCredentials(List<br.com.capoeirassh.ssh.model.CredentialEntry> incoming)
+            throws Exception {
+        if (masterKey == null) throw new IllegalStateException("Vault is locked.");
+        Set<String> usedLabels = entries.stream()
+                .map(e -> e.label.toLowerCase())
+                .collect(Collectors.toCollection(java.util.HashSet::new));
+
+        Map<String, String> remap = new java.util.LinkedHashMap<>();
+        for (br.com.capoeirassh.ssh.model.CredentialEntry imp : incoming) {
+            String origId = imp.id;
+            imp.id = UUID.randomUUID().toString();
+            remap.put(origId, imp.id);
+            if (usedLabels.contains(imp.label.toLowerCase())) {
+                imp.label = imp.label + " (imported)";
+            }
+            usedLabels.add(imp.label.toLowerCase());
+            entries.add(imp);
+        }
+        persist();
+        return remap;
+    }
+
+    /** Serialize entries to a char[] suitable for embedding in a backup bundle. */
+    static char[] exportEntries(List<br.com.capoeirassh.ssh.model.CredentialEntry> list) {
+        StringBuilder sb = serialize(list);
+        char[] out = new char[sb.length()];
+        sb.getChars(0, sb.length(), out, 0);
+        wipe(sb);
+        return out;
+    }
+
+    /** Parse entries from a char[] previously produced by exportEntries(). */
+    static List<br.com.capoeirassh.ssh.model.CredentialEntry> parseEntries(char[] chars) {
+        return deserialize(chars);
     }
 
     // -----------------------------------------------------------------------
