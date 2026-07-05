@@ -84,11 +84,15 @@ public class SessionDialog {
 
         Label lblKeyFile = label(dlg, "Key file:");
         Composite cmpKey = new Composite(dlg, SWT.NONE);
-        cmpKey.setLayoutData(fill());
+        GridData gdKey = fill();
+        gdKey.widthHint = 280;   // cap the key-path row so long paths don't stretch the dialog
+        cmpKey.setLayoutData(gdKey);
         GridLayout gk = new GridLayout(2, false); gk.marginWidth = 0; gk.marginHeight = 0;
         cmpKey.setLayout(gk);
-        Text txtKey = new Text(cmpKey, SWT.BORDER | SWT.READ_ONLY);
+        Text txtKey = new Text(cmpKey, SWT.BORDER | SWT.READ_ONLY | SWT.SINGLE);
         txtKey.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        // Show full path in tooltip when truncated
+        txtKey.addListener(SWT.Modify, e -> txtKey.setToolTipText(txtKey.getText()));
         Button btnBrowse = new Button(cmpKey, SWT.PUSH); btnBrowse.setText("…");
 
         Label lblPwd = label(dlg, "Password:");
@@ -99,23 +103,20 @@ public class SessionDialog {
         btnSaveCred.setText("Save Credential…");
         btnSaveCred.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
 
+        final String LOCKED_ITEM = "🔒  Vault is locked — click to unlock";
         Runnable reloadCredItems = () -> {
             List<CredentialEntry> creds = store.isUnlocked() ? store.getAll() : List.of();
             credsRef.set(creds);
             String currentText = cmbUser.getText();
             cmbUser.removeAll();
-            for (CredentialEntry ce : creds) cmbUser.add(ce.toString());
+            if (!store.isUnlocked()) {
+                cmbUser.add(LOCKED_ITEM);
+            } else {
+                for (CredentialEntry ce : creds) cmbUser.add(ce.toString());
+            }
             cmbUser.setText(currentText);
         };
-        // Only prompt to unlock the vault when the user opens the dropdown list
-        // (clicks the arrow) — not just when the text field gets focus for typing.
-        // The native arrow button scales with display DPI, so derive the zone from it
-        // (a fixed 20px band misses the arrow at 150–200% scaling).
-        cmbUser.addListener(SWT.MouseDown, e -> {
-            int arrowZone = Math.max(20, 20 * dlg.getDisplay().getDPI().x / 96);
-            if (e.x < cmbUser.getSize().x - arrowZone) return;
-            if (!store.isUnlocked() && new MasterPasswordDialog(dlg).open()) reloadCredItems.run();
-        });
+        reloadCredItems.run();
 
         Runnable updateKeyRow = () -> {
             boolean useKey = chkKey.getSelection();
@@ -123,10 +124,13 @@ public class SessionDialog {
             cmpKey.setVisible(useKey);
             ((GridData) lblKeyFile.getLayoutData()).exclude = !useKey;
             ((GridData) cmpKey.getLayoutData()).exclude = !useKey;
-            lblPwd.setText(useKey ? "Passphrase (optional):" : "Password:");
+            lblPwd.setText(useKey ? "Passphrase:" : "Password:");
+            txtPwd.setMessage(useKey ? "(optional)" : "");
+            // Keep the current width fixed — only recompute height
+            int fixedWidth = dlg.getSize().x;
             dlg.layout(true, true);
-            dlg.pack();
-            dlg.setSize(Math.max(dlg.getSize().x, 460), dlg.getSize().y);
+            int newHeight = dlg.computeSize(fixedWidth, SWT.DEFAULT).y;
+            dlg.setSize(fixedWidth, newHeight);
             center(dlg, parent);
         };
 
@@ -136,8 +140,10 @@ public class SessionDialog {
             List<CredentialEntry> creds = credsRef.get();
             if (lockedIdx[0] < 0 || lockedIdx[0] >= creds.size()) return;
             CredentialEntry ce = creds.get(lockedIdx[0]);
-            lockedUsername[0] = ce.username;
-            cmbUser.setText(ce.username);
+            // Show the credential label (falls back to username when label is blank)
+            String display = ce.toString();
+            lockedUsername[0] = display;
+            cmbUser.setText(display);
             boolean useKey = ce.keyPath != null && !ce.keyPath.isBlank();
             chkKey.setSelection(useKey);
             txtKey.setText(useKey ? ce.keyPath : "");
@@ -155,6 +161,26 @@ public class SessionDialog {
 
         cmbUser.addListener(SWT.Selection, e -> {
             int idx = cmbUser.getSelectionIndex();
+            // Locked-vault sentinel item selected → prompt unlock
+            if (!store.isUnlocked()) {
+                cmbUser.setText("");
+                if (new MasterPasswordDialog(dlg).open()) {
+                    reloadCredItems.run();
+                    // Reopen the dropdown showing the now-populated credentials
+                    Display d = dlg.getDisplay();
+                    d.asyncExec(() -> {
+                        if (cmbUser.isDisposed()) return;
+                        cmbUser.setFocus();
+                        Event down = new Event(); down.type = SWT.KeyDown;
+                        down.keyCode = SWT.ARROW_DOWN; down.stateMask = SWT.ALT;
+                        d.post(down);
+                        Event up = new Event(); up.type = SWT.KeyUp;
+                        up.keyCode = SWT.ARROW_DOWN;
+                        d.post(up);
+                    });
+                }
+                return;
+            }
             List<CredentialEntry> creds = credsRef.get();
             if (idx < 0 || idx >= creds.size()) return;
             lockedIdx[0] = idx;
