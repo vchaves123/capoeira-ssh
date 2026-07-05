@@ -888,7 +888,7 @@ public class SessionsTab {
                 miEdit.addListener(SWT.Selection, ev -> editSession(session));
 
                 MenuItem miDup = new MenuItem(menu, SWT.PUSH);
-                miDup.setText("Duplicate");
+                miDup.setText("Copy");
                 miDup.addListener(SWT.Selection, ev -> duplicateSession(session));
 
                 new MenuItem(menu, SWT.SEPARATOR);
