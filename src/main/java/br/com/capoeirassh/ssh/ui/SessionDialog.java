@@ -5,6 +5,7 @@ import br.com.capoeirassh.ssh.model.SessionInfo;
 import br.com.capoeirassh.ssh.storage.CredentialStore;
 import br.com.capoeirassh.ssh.storage.SessionStorage;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
@@ -291,6 +292,24 @@ public class SessionDialog {
         // In edit mode the host is already filled — start the lookup immediately.
         if (editing != null && !editing.host.isBlank()) startDnsLookup.run();
 
+        // Host + port validation: red background and disabled Save on invalid input.
+        Display dsp = dlg.getDisplay();
+        Color colorErrBg = new Color(dsp, 255, 205, 205);
+        dlg.addListener(SWT.Dispose, e -> colorErrBg.dispose());
+        Runnable validateFields = () -> {
+            String h = txtHost.getText().trim();
+            boolean hostBad = !h.isEmpty() && !isHostValid(h);
+            txtHost.setBackground(hostBad ? colorErrBg : null);
+
+            boolean portBad = !isPortValid(txtPort.getText());
+            txtPort.setBackground(portBad ? colorErrBg : null);
+
+            btnSave.setEnabled(!hostBad && !portBad);
+        };
+        txtHost.addListener(SWT.Modify, e -> validateFields.run());
+        txtPort.addListener(SWT.Modify, e -> validateFields.run());
+        validateFields.run();
+
         dlg.pack();
         dlg.setSize(Math.max(dlg.getSize().x, 460), dlg.getSize().y);
         center(dlg, parent);
@@ -414,6 +433,43 @@ public class SessionDialog {
     private static int parsePort(String s) {
         try { return Integer.parseInt(s.trim()); } catch (NumberFormatException e) { return 22; }
     }
+    private static boolean isHostValid(String host) {
+        if (host == null || host.isEmpty()) return false;
+        // Anything that contains only digits and dots is treated as an IPv4 attempt.
+        // It must be exactly 4 dot-separated groups, each 0-255.
+        if (host.matches("[0-9.]+")) {
+            String[] parts = host.split("\\.", -1);
+            if (parts.length != 4) return false;
+            for (String oct : parts) {
+                if (oct.isEmpty()) return false;
+                try {
+                    int v = Integer.parseInt(oct);
+                    if (v < 0 || v > 255) return false;
+                } catch (NumberFormatException e) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        // IPv6 with brackets, e.g. [::1]
+        if (host.startsWith("[") && host.endsWith("]"))
+            return host.substring(1, host.length() - 1).matches("[0-9a-fA-F:]+");
+        // IPv6 without brackets
+        if (host.contains(":"))
+            return host.matches("[0-9a-fA-F:]+");
+        // Hostname / FQDN: labels of [a-z0-9-] separated by dots
+        return host.matches("[a-zA-Z0-9]([a-zA-Z0-9\\-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9\\-]*[a-zA-Z0-9])?)*");
+    }
+
+    private static boolean isPortValid(String port) {
+        try {
+            int v = Integer.parseInt(port.trim());
+            return v >= 1 && v <= 65535;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
     private static void alert(Shell parent, String msg) {
         MessageBox mb = new MessageBox(parent, SWT.ICON_WARNING | SWT.OK); mb.setMessage(msg); mb.open();
     }
