@@ -6,7 +6,7 @@
 
     <groupId>br.com.capoeirassh</groupId>
     <artifactId>capoeira-ssh</artifactId>
-    <version>1.4.1</version>
+    <version>1.4.2</version>
     <packaging>jar</packaging>
     <name>Capoeira SSH Client</name>
 
@@ -171,3 +171,4 @@
         </plugins>
     </build>
 </project>
+
