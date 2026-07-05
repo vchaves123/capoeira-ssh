@@ -280,11 +280,12 @@ public class SessionDialog {
             if (host.isEmpty()) { alert(dlg, "Host is required."); return; }
 
             SessionInfo s = editing != null ? editing : new SessionInfo();
+            String oldGroup = editing != null ? editing.group : null;
             s.name  = txtName.getText().trim();
             s.host  = host;
             s.port  = parsePort(txtPort.getText());
-            int gi  = cmbGroup.getSelectionIndex();
-            s.group = gi <= 0 ? "" : cmbGroup.getItem(gi);
+            String groupText = cmbGroup.getText().trim();
+            s.group = (groupText.isEmpty() || groupText.equals("(none)")) ? "" : groupText;
 
             String user = cmbUser.getText().trim();
 
@@ -339,6 +340,13 @@ public class SessionDialog {
 
             try {
                 SessionStorage.save(s);
+                // Delete old file if group changed during edit
+                if (oldGroup != null && !oldGroup.equals(s.group)) {
+                    SessionInfo ghost = new SessionInfo();
+                    ghost.id    = s.id;
+                    ghost.group = oldGroup;
+                    try { SessionStorage.delete(ghost); } catch (IOException ignored) {}
+                }
                 result = s;
                 // Capture the just-typed password ONLY on the new-session manual path, and only
                 // after a successful save — so a failed/retried save never orphans an un-zeroed

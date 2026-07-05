@@ -518,6 +518,7 @@ public class TerminalTab {
         Runnable blink = new Runnable() {
             @Override public void run() {
                 if (closed || canvas.isDisposed()) return;
+                if (disconnected) { cursorBlink = false; canvas.redraw(); return; }
                 cursorBlink = !cursorBlink;
                 canvas.redraw();
                 display.timerExec(500, this);
@@ -1113,6 +1114,7 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     public void reconnect(char[] password) {
         disconnected = false;
+        startCursorBlink();
         display.asyncExec(() -> {
             if (!tabItem.isDisposed()) {
                 tabItem.setText(textNormal);
