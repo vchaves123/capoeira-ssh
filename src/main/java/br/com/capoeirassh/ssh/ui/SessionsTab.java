@@ -903,8 +903,13 @@ public class SessionsTab {
             }
         });
 
-        row.setMenu(menu);
-        for (Control c : row.getChildren()) c.setMenu(menu);
+        setMenuRecursive(row, menu);
+    }
+
+    private void setMenuRecursive(Control ctrl, Menu menu) {
+        ctrl.setMenu(menu);
+        if (ctrl instanceof Composite)
+            for (Control c : ((Composite) ctrl).getChildren()) setMenuRecursive(c, menu);
     }
 
     private void refreshChildren(Composite comp, Color bg) {
