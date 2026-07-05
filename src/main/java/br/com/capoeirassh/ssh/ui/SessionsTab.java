@@ -334,7 +334,8 @@ public class SessionsTab {
         buildAllSessionsSection(innerComposite, display);
 
         scrolled.setContent(innerComposite);
-        scrolled.setMinSize(innerComposite.computeSize(SWT.DEFAULT, SWT.DEFAULT));
+        int cw0 = scrolled.getClientArea().width;
+        scrolled.setMinSize(innerComposite.computeSize(cw0 > 0 ? cw0 : SWT.DEFAULT, SWT.DEFAULT));
     }
 
     // -----------------------------------------------------------------------
@@ -582,7 +583,8 @@ public class SessionsTab {
         // Update scroll size
         if (scrolled != null && !scrolled.isDisposed() && innerComposite != null && !innerComposite.isDisposed()) {
             innerComposite.layout(true, true);
-            scrolled.setMinSize(innerComposite.computeSize(SWT.DEFAULT, SWT.DEFAULT));
+            int cw = scrolled.getClientArea().width;
+            scrolled.setMinSize(innerComposite.computeSize(cw > 0 ? cw : SWT.DEFAULT, SWT.DEFAULT));
         }
     }
 
@@ -1028,7 +1030,8 @@ public class SessionsTab {
         }
         listContainer.layout(true, true);
         if (scrolled != null && !scrolled.isDisposed() && innerComposite != null && !innerComposite.isDisposed()) {
-            scrolled.setMinSize(innerComposite.computeSize(SWT.DEFAULT, SWT.DEFAULT));
+            int cw = scrolled.getClientArea().width;
+            scrolled.setMinSize(innerComposite.computeSize(cw > 0 ? cw : SWT.DEFAULT, SWT.DEFAULT));
         }
     }
 
