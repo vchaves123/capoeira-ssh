@@ -63,7 +63,7 @@ public final class BackupBundle {
                 if (cs.isUnlocked()) {
                     char[] credChars = CredentialStore.exportEntries(cs.getAll());
                     try {
-                        byte[] credBytes = new String(credChars).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                        byte[] credBytes = utf8Bytes(credChars);
                         zip.putNextEntry(new ZipEntry("credentials.dat"));
                         zip.write(credBytes);
                         zip.closeEntry();
@@ -99,7 +99,7 @@ public final class BackupBundle {
                 byte[] data = zip.readAllBytes();
 
                 if (name.equals("credentials.dat")) {
-                    char[] chars = new String(data, java.nio.charset.StandardCharsets.UTF_8).toCharArray();
+                    char[] chars = utf8Chars(data);
                     Arrays.fill(data, (byte) 0);
                     try {
                         credentials.addAll(CredentialStore.parseEntries(chars));
@@ -168,6 +168,27 @@ public final class BackupBundle {
         return new SecretKeySpec(raw, "AES");
     }
 
+    // ── Secret-safe UTF-8 conversion (no intermediate immutable String) ───────
+    // credentials.dat holds every saved password in plaintext; converting it via
+    // new String(...) would leave an unzeroable copy on the heap until GC, defeating
+    // the char[]/zeroing discipline the vault code maintains. Use zeroable buffers.
+
+    private static byte[] utf8Bytes(char[] chars) {
+        java.nio.ByteBuffer bb = java.nio.charset.StandardCharsets.UTF_8.encode(java.nio.CharBuffer.wrap(chars));
+        byte[] out = new byte[bb.remaining()];
+        bb.get(out);
+        if (bb.hasArray()) Arrays.fill(bb.array(), (byte) 0);
+        return out;
+    }
+
+    private static char[] utf8Chars(byte[] bytes) {
+        java.nio.CharBuffer cb = java.nio.charset.StandardCharsets.UTF_8.decode(java.nio.ByteBuffer.wrap(bytes));
+        char[] out = new char[cb.remaining()];
+        cb.get(out);
+        if (cb.hasArray()) Arrays.fill(cb.array(), '\0');
+        return out;
+    }
+
     // ── Paths ─────────────────────────────────────────────────────────────────
 
     private static Path sessionsRoot() {
@@ -178,9 +199,17 @@ public final class BackupBundle {
 
     private static SessionInfo fromProps(Properties p, String rel) {
         SessionInfo s = new SessionInfo();
-        // ID is derived from filename, not the stored "id" property (same as SessionStorage)
-        String fname = rel.contains("/") ? rel.substring(rel.lastIndexOf('/') + 1) : rel;
-        s.id = fname.endsWith(".session") ? fname.substring(0, fname.length() - ".session".length()) : fname;
+        // ID is derived from filename, not the stored "id" property (same as SessionStorage).
+        // Take the basename splitting on BOTH separators — a malicious bundle can use '\' to
+        // smuggle traversal past a '/'-only split, and '\' is a path separator on Windows.
+        String fname = rel;
+        int slash = Math.max(fname.lastIndexOf('/'), fname.lastIndexOf('\\'));
+        if (slash >= 0) fname = fname.substring(slash + 1);
+        String id = fname.endsWith(".session")
+                ? fname.substring(0, fname.length() - ".session".length()) : fname;
+        // Reject anything that isn't a clean id (path separators, drive letters, '.', '..',
+        // blank) so it can never escape the sessions/ dir — fall back to a fresh UUID.
+        s.id = isSafeId(id) ? id : UUID.randomUUID().toString();
         s.name      = p.getProperty("name",     "");
         s.host      = p.getProperty("host",     "");
         s.port      = def(p.getProperty("port",     "22"),  22);
@@ -202,6 +231,13 @@ public final class BackupBundle {
         try { s.authType = SessionInfo.AuthType.valueOf(p.getProperty("authType", "PASSWORD")); }
         catch (Exception e) { s.authType = SessionInfo.AuthType.PASSWORD; }
         return s;
+    }
+
+    /** True only for a clean single-segment id — no path separators, drive letters, '.' or '..'. */
+    private static boolean isSafeId(String id) {
+        return id != null && !id.isBlank()
+            && !id.equals(".") && !id.equals("..")
+            && id.matches("[\\w.-]+");   // no '/', '\', ':' etc.
     }
 
     private static int def(String s, int d) {
