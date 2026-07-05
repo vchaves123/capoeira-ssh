@@ -11,6 +11,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.security.SecureRandom;
 import java.security.spec.KeySpec;
@@ -37,11 +38,40 @@ public final class CredentialStore {
     private static final int    IV_LEN   = 12;
     private static final int    PBKDF2_ITER = 120_000;
 
+    private static final long INACTIVITY_MS = 5 * 60 * 1000L; // 5 minutes
+
     private List<CredentialEntry> entries   = new ArrayList<>();
     private SecretKey             masterKey = null;
     private byte[]                salt      = null;
 
-    private CredentialStore() {}
+    private volatile long    lastAccessMs  = 0;
+    private volatile Runnable onLockCallback = null;
+    private final ScheduledExecutorService lockTimer =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "vault-autolock");
+                t.setDaemon(true);
+                return t;
+            });
+
+    private CredentialStore() {
+        lockTimer.scheduleAtFixedRate(() -> {
+            if (masterKey != null && lastAccessMs > 0
+                    && System.currentTimeMillis() - lastAccessMs >= INACTIVITY_MS) {
+                lock();
+                Runnable cb = onLockCallback;
+                if (cb != null) cb.run();
+            }
+        }, 30, 30, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Register a callback invoked whenever the vault changes lock state
+     * (auto-lock from background thread, or unlock from any thread).
+     * The callback may be called from a non-UI thread — use asyncExec if updating SWT widgets.
+     */
+    public void setOnLockCallback(Runnable callback) { this.onLockCallback = callback; }
+
+    private void touch() { lastAccessMs = System.currentTimeMillis(); }
 
     public static CredentialStore getInstance() { return INSTANCE; }
 
@@ -87,6 +117,7 @@ public final class CredentialStore {
 
         this.salt      = fileSalt;
         this.masterKey = key;
+        touch();
         // Decode straight to char[] — never materialize the whole plaintext vault
         // (every saved password) as an immutable String, which can't be zeroed
         // and would otherwise linger on the heap until GC.
@@ -97,6 +128,8 @@ public final class CredentialStore {
         } finally {
             Arrays.fill(plainChars, '\0');
         }
+        Runnable cb = onLockCallback;
+        if (cb != null) cb.run();
     }
 
     public void lock() {
@@ -110,21 +143,25 @@ public final class CredentialStore {
     // -----------------------------------------------------------------------
 
     public List<CredentialEntry> getAll() {
+        touch();
         return Collections.unmodifiableList(entries);
     }
 
     public CredentialEntry findById(String id) {
         if (id == null || id.isBlank()) return null;
+        touch();
         return entries.stream().filter(e -> e.id.equals(id)).findFirst().orElse(null);
     }
 
     public void addOrUpdate(CredentialEntry e) throws Exception {
+        touch();
         entries.removeIf(x -> x.id.equals(e.id));
         entries.add(e);
         persist();
     }
 
     public void delete(String id) throws Exception {
+        touch();
         entries.removeIf(e -> e.id.equals(id));
         persist();
     }

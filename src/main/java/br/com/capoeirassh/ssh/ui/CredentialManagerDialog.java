@@ -57,6 +57,9 @@ public class CredentialManagerDialog {
         Button btnNew    = btn(cmpBtns, "New");
         Button btnEdit   = btn(cmpBtns, "Edit");
         Button btnDelete = btn(cmpBtns, "Delete");
+        new Label(cmpBtns, SWT.SEPARATOR | SWT.HORIZONTAL)
+                .setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        Button btnLock   = btn(cmpBtns, "🔒 Lock vault");
 
         // Close button row
         new Label(dlg, SWT.NONE);
@@ -109,6 +112,8 @@ public class CredentialManagerDialog {
             try { store.delete(ce.id); } catch (Exception ex) { error(dlg, ex.getMessage()); }
             refresh.run();
         });
+
+        btnLock.addListener(SWT.Selection, e -> { store.lock(); dlg.dispose(); });
 
         btnClose.addListener(SWT.Selection, e -> dlg.dispose());
 

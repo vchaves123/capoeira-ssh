@@ -191,11 +191,35 @@ public class SessionsTab {
         Composite sessionsIcon = createSidebarIcon(sidebar, display, "🖥", true);
         sessionsIcon.setLayoutData(new GridData(SWT.CENTER, SWT.TOP, true, false));
 
-        // Credentials icon
-        Composite credsIcon = createSidebarIcon(sidebar, display, "🔑", false);
+        // Credentials icon — emoji reflects vault lock state
+        br.com.capoeirassh.ssh.storage.CredentialStore cs =
+                br.com.capoeirassh.ssh.storage.CredentialStore.getInstance();
+        Composite credsIcon = createSidebarIcon(sidebar, display,
+                cs.isUnlocked() ? "🔓" : "🔒", false);
         credsIcon.setLayoutData(new GridData(SWT.CENTER, SWT.TOP, true, false));
+        credsIcon.setToolTipText("Credentials vault");
         credsIcon.addListener(SWT.MouseUp, e -> onCredentials.run());
         for (Control c : credsIcon.getChildren()) c.addListener(SWT.MouseUp, e -> onCredentials.run());
+
+        // Keep reference to the label inside credsIcon for live updates
+        Label credsLbl = (Label) credsIcon.getChildren()[0];
+
+        // Direct update — must be called from the UI thread
+        Runnable applyCredsIcon = () -> {
+            if (credsLbl.isDisposed()) return;
+            boolean unlocked = cs.isUnlocked();
+            credsLbl.setText(unlocked ? "🔓" : "🔒");
+            credsIcon.setToolTipText(unlocked ? "Credentials vault (unlocked)" : "Credentials vault (locked)");
+            credsLbl.redraw();
+            credsIcon.redraw();
+        };
+
+        // Callback fires from any thread (auto-lock = background, unlock = UI) → always asyncExec
+        cs.setOnLockCallback(() -> display.asyncExec(applyCredsIcon));
+
+        // Refresh icon after credentials dialog closes (unlock may have happened)
+        credsIcon.addListener(SWT.MouseUp, e -> applyCredsIcon.run());
+        for (Control c : credsIcon.getChildren()) c.addListener(SWT.MouseUp, e -> applyCredsIcon.run());
 
         // Settings icon
         Composite settingsIcon = createSidebarIcon(sidebar, display, "⚙", false);
