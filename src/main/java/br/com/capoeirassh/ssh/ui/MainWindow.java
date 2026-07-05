@@ -95,7 +95,9 @@ public class MainWindow {
         tabFolder.addSelectionListener(new org.eclipse.swt.events.SelectionAdapter() {
             @Override
             public void widgetSelected(org.eclipse.swt.events.SelectionEvent e) {
-                CTabItem sel = tabFolder.getSelection();
+                // Use e.item (the event's new selection) rather than tabFolder.getSelection(),
+                // which can be stale on Windows when setSelection() is called programmatically.
+                CTabItem sel = (CTabItem) e.item;
                 terminalTabs.stream()
                     .filter(t -> t.getTabItem() == sel)
                     .findFirst()
@@ -189,6 +191,9 @@ public class MainWindow {
         terminalTabs.add(tab);
         reloadSessionsTab();
         tabFolder.setSelection(tab.getTabItem());
+        // Re-assert correct selection colour after all pending asyncExec callbacks
+        // (e.g. a prior disconnected tab's onStateChanged) have had a chance to run.
+        display.asyncExec(this::refreshSelectionColor);
         tab.getCanvas().setFocus();
     }
 
