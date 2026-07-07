@@ -49,6 +49,7 @@ public class TerminalTab {
     // Rendering
     // -----------------------------------------------------------------------
     private Font  termFont;
+    private Font  termFontBold;   // cached bold variant, rebuilt on font/size change
     private int   charWidth;
     private int   charHeight;
 
@@ -184,6 +185,8 @@ public class TerminalTab {
     private void initFont() {
         String fontName = MonoFonts.resolve(display, termFontName);
         if (termFont != null && !termFont.isDisposed()) termFont.dispose();
+        if (termFontBold != null && !termFontBold.isDisposed()) termFontBold.dispose();
+        termFontBold = null;   // rebuilt lazily in render() for the new font/size
         termFont = new Font(display, fontName, termFontSize, SWT.NORMAL);
 
         GC gc = new GC(display);
@@ -432,11 +435,14 @@ public class TerminalTab {
                         gc.setForeground(cfg != null ? cfg : defaultFg);
 
                         if (cell.bold) {
-                            Font boldFont = new Font(display, termFont.getFontData()[0].getName(), termFontSize, SWT.BOLD);
-                            gc.setFont(boldFont);
+                            // Reuse a cached bold font — creating and disposing a native Font per
+                            // bold cell per frame let a hostile server churn GDI/X11 font handles
+                            // and freeze the whole UI thread.
+                            if (termFontBold == null || termFontBold.isDisposed())
+                                termFontBold = new Font(display, termFont.getFontData()[0].getName(), termFontSize, SWT.BOLD);
+                            gc.setFont(termFontBold);
                             gc.drawString(String.valueOf(cell.character), px, py, true);
                             gc.setFont(termFont);
-                            boldFont.dispose();
                         } else {
                             gc.drawString(String.valueOf(cell.character), px, py, true);
                         }
@@ -1186,6 +1192,7 @@ public class TerminalTab {
             if (boldTabFont       != null && !boldTabFont.isDisposed())       boldTabFont.dispose();
             if (colorActivityBlue != null && !colorActivityBlue.isDisposed()) colorActivityBlue.dispose();
             if (colorDisconnectedRed != null && !colorDisconnectedRed.isDisposed()) colorDisconnectedRed.dispose();
+            if (termFontBold != null && !termFontBold.isDisposed()) termFontBold.dispose();
             if (!termFont.isDisposed())  termFont.dispose();
             if (!defaultBg.isDisposed()) defaultBg.dispose();
             if (!defaultFg.isDisposed()) defaultFg.dispose();

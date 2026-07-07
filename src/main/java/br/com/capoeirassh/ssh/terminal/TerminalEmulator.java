@@ -19,6 +19,10 @@ public class TerminalEmulator {
     public static final int MAX_SCROLLBACK = 10_000;
     /** Caps OSC/DCS/PM/APC string payload growth if a server never sends the terminator. */
     private static final int MAX_OSC_LEN   = 8_192;
+    /** Caps CSI parameter count so a hostile server streaming endless ';' can't OOM the JVM. */
+    private static final int MAX_CSI_PARAMS = 32;
+    /** Caps a single CSI parameter value so a long digit run can't overflow int. */
+    private static final int MAX_CSI_PARAM_VALUE = 65_535;
 
     private static final int[] PALETTE = buildPalette();
 
@@ -324,10 +328,14 @@ public class TerminalEmulator {
         if (b >= '0' && b <= '9') {
             if (params.isEmpty()) params.add(0);
             int idx = params.size() - 1;
-            params.set(idx, params.get(idx) * 10 + (b - '0'));
+            // Clamp accumulation so a long digit run can't overflow int into a negative value.
+            params.set(idx, (int) Math.min((long) params.get(idx) * 10 + (b - '0'), MAX_CSI_PARAM_VALUE));
             return;
         }
-        if (b == ';') { params.add(0); return; }
+        // Cap the parameter list — a hostile server streaming endless ';' must not grow it
+        // without bound (would exhaust the heap and crash the whole app). Real terminals
+        // ignore excess parameters, so dropping them past the cap is spec-compatible.
+        if (b == ';') { if (params.size() < MAX_CSI_PARAMS) params.add(0); return; }
 
         state = State.NORMAL;
 
