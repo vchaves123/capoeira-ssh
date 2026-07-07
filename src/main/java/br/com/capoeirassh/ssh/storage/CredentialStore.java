@@ -33,16 +33,19 @@ public final class CredentialStore {
 
     private static final Path   VAULT   = Path.of(System.getProperty("user.home"), ".capoeira", "credentials.vault");
     private static final byte[] MAGIC   = {0x44, 0x4D, 0x53, 0x4C};
-    private static final int    VERSION = 1;
+    private static final int    VERSION = 2;            // v2 header self-describes KDF params
     private static final int    SALT_LEN = 16;
     private static final int    IV_LEN   = 12;
-    private static final int    PBKDF2_ITER = 120_000;
+    private static final int    KDF_PBKDF2   = 1;        // KDF-algo id stored in the v2 header
+    private static final int    LEGACY_ITER  = 120_000;  // v1 files: iteration count was implicit
+    private static final int    CURRENT_ITER = 600_000;  // OWASP-2023 baseline; new/migrated files
 
     private static final long INACTIVITY_MS = 5 * 60 * 1000L; // 5 minutes
 
     private List<CredentialEntry> entries   = new ArrayList<>();
     private SecretKey             masterKey = null;
     private byte[]                salt      = null;
+    private int                   iterations = LEGACY_ITER; // KDF iterations of the loaded key
 
     private volatile long    lastAccessMs  = 0;
     private volatile Runnable onLockCallback = null;
@@ -91,10 +94,11 @@ public final class CredentialStore {
 
     /** Create a brand-new vault with the given master password. Zeroes the array after use. */
     public synchronized void create(char[] masterPassword) throws Exception {
-        this.salt      = randomBytes(SALT_LEN);
-        this.masterKey = deriveKey(masterPassword, salt);
+        this.salt       = randomBytes(SALT_LEN);
+        this.iterations = CURRENT_ITER;
+        this.masterKey  = deriveKey(masterPassword, salt, CURRENT_ITER);
         Arrays.fill(masterPassword, '\0');
-        this.entries   = new ArrayList<>();
+        this.entries    = new ArrayList<>();
         persist();
     }
 
@@ -103,37 +107,72 @@ public final class CredentialStore {
      * @throws AEADBadTagException if the master password is wrong.
      */
     public synchronized void unlock(char[] masterPassword) throws Exception {
-        byte[] raw  = Files.readAllBytes(VAULT);
-        int    off  = 0;
-
-        for (byte b : MAGIC) {
-            if (raw[off++] != b) throw new Exception("Not a Capoeira vault file.");
-        }
-        int ver = raw[off++] & 0xFF;
-        if (ver != VERSION) throw new Exception("Unsupported vault version: " + ver);
-
-        byte[] fileSalt = Arrays.copyOfRange(raw, off, off + SALT_LEN); off += SALT_LEN;
-        byte[] iv       = Arrays.copyOfRange(raw, off, off + IV_LEN);   off += IV_LEN;
-        byte[] cipher   = Arrays.copyOfRange(raw, off, raw.length);
-
-        SecretKey key = deriveKey(masterPassword, fileSalt);
-        Arrays.fill(masterPassword, '\0');
-        Cipher aes    = Cipher.getInstance("AES/GCM/NoPadding");
-        aes.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
-        byte[] plain  = aes.doFinal(cipher);   // throws AEADBadTagException on wrong key
-
-        this.salt      = fileSalt;
-        this.masterKey = key;
-        touch();
-        // Decode straight to char[] — never materialize the whole plaintext vault
-        // (every saved password) as an immutable String, which can't be zeroed
-        // and would otherwise linger on the heap until GC.
-        char[] plainChars = bytesToChars(plain);
-        Arrays.fill(plain, (byte) 0);
         try {
-            this.entries = deserialize(plainChars);
+            byte[] raw = Files.readAllBytes(VAULT);
+            if (raw.length < 5) throw new Exception("Not a Capoeira vault file.");
+            int off = 0;
+            for (byte b : MAGIC) {
+                if (raw[off++] != b) throw new Exception("Not a Capoeira vault file.");
+            }
+            int ver = raw[off++] & 0xFF;
+            int iter;
+            if (ver == 1) {                       // legacy: KDF params were implicit
+                iter = LEGACY_ITER;
+            } else if (ver == 2) {                // self-describing header
+                if (raw.length < 4 + 1 + 1 + 4 + SALT_LEN + IV_LEN + 16)
+                    throw new Exception("Not a Capoeira vault file.");
+                int kdfId = raw[off++] & 0xFF;
+                iter = ((raw[off] & 0xFF) << 24) | ((raw[off + 1] & 0xFF) << 16)
+                     | ((raw[off + 2] & 0xFF) << 8) | (raw[off + 3] & 0xFF);
+                off += 4;
+                if (kdfId != KDF_PBKDF2) throw new Exception("Unsupported KDF id: " + kdfId);
+            } else {
+                throw new Exception("Unsupported vault version: " + ver);
+            }
+
+            byte[] fileSalt = Arrays.copyOfRange(raw, off, off + SALT_LEN); off += SALT_LEN;
+            byte[] iv       = Arrays.copyOfRange(raw, off, off + IV_LEN);   off += IV_LEN;
+            byte[] cipher   = Arrays.copyOfRange(raw, off, raw.length);
+
+            SecretKey key = deriveKey(masterPassword, fileSalt, iter);
+            Cipher aes    = Cipher.getInstance("AES/GCM/NoPadding");
+            aes.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
+            byte[] plain  = aes.doFinal(cipher);   // throws AEADBadTagException on wrong key
+
+            this.salt       = fileSalt;
+            this.iterations = iter;
+            this.masterKey  = key;
+            touch();
+            // Decode straight to char[] — never materialize the whole plaintext vault
+            // (every saved password) as an immutable String, which can't be zeroed
+            // and would otherwise linger on the heap until GC.
+            char[] plainChars = bytesToChars(plain);
+            Arrays.fill(plain, (byte) 0);
+            try {
+                this.entries = deserialize(plainChars);
+            } finally {
+                Arrays.fill(plainChars, '\0');
+            }
+
+            // Transparently upgrade legacy / weaker-KDF vaults to CURRENT_ITER (v2) with a
+            // fresh salt — the password is still in hand here. Best-effort: a read-only vault
+            // dir must never block a successful unlock.
+            if (iter < CURRENT_ITER) {
+                try {
+                    byte[] newSalt = randomBytes(SALT_LEN);
+                    this.salt       = newSalt;
+                    this.iterations = CURRENT_ITER;
+                    this.masterKey  = deriveKey(masterPassword, newSalt, CURRENT_ITER);
+                    persist();
+                } catch (Exception rePersistFailed) {
+                    // Revert to the working key/salt so in-memory state matches what's on disk.
+                    this.salt       = fileSalt;
+                    this.iterations = iter;
+                    this.masterKey  = key;
+                }
+            }
         } finally {
-            Arrays.fill(plainChars, '\0');
+            Arrays.fill(masterPassword, '\0');     // always wipe, even on the wrong-password path
         }
         Runnable cb = onLockCallback;
         if (cb != null) cb.run();
@@ -204,10 +243,14 @@ public final class CredentialStore {
             Arrays.fill(plainBytes, (byte) 0);
         }
 
-        byte[] out = new byte[4 + 1 + SALT_LEN + IV_LEN + ciph.length];
+        byte[] out = new byte[4 + 1 + 1 + 4 + SALT_LEN + IV_LEN + ciph.length];
         int off = 0;
         System.arraycopy(MAGIC,  0, out, off, 4);       off += 4;
-        out[off++] = (byte) VERSION;
+        out[off++] = (byte) VERSION;                     // 2
+        out[off++] = (byte) KDF_PBKDF2;                  // KDF-algo id
+        int it = this.iterations;
+        out[off++] = (byte) (it >>> 24); out[off++] = (byte) (it >>> 16);
+        out[off++] = (byte) (it >>> 8);  out[off++] = (byte) it;
         System.arraycopy(salt,   0, out, off, SALT_LEN); off += SALT_LEN;
         System.arraycopy(iv,     0, out, off, IV_LEN);   off += IV_LEN;
         System.arraycopy(ciph,   0, out, off, ciph.length);
@@ -412,9 +455,9 @@ public final class CredentialStore {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private static SecretKey deriveKey(char[] password, byte[] salt) throws Exception {
+    private static SecretKey deriveKey(char[] password, byte[] salt, int iterations) throws Exception {
         SecretKeyFactory f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        PBEKeySpec spec = new PBEKeySpec(password, salt, PBKDF2_ITER, 256);
+        PBEKeySpec spec = new PBEKeySpec(password, salt, iterations, 256);
         try {
             return new SecretKeySpec(f.generateSecret(spec).getEncoded(), "AES");
         } finally {

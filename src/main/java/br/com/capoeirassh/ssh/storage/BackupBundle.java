@@ -29,9 +29,11 @@ import java.util.zip.*;
  */
 public final class BackupBundle {
 
-    private static final byte[] MAGIC       = { 'C', 'A', 'P', 'B' };
-    private static final byte   VERSION     = 1;
-    private static final int    PBKDF2_ITER = 120_000;
+    private static final byte[] MAGIC        = { 'C', 'A', 'P', 'B' };
+    private static final byte   VERSION      = 2;         // v2 header self-describes KDF params
+    private static final int    KDF_PBKDF2   = 1;         // KDF-algo id in the v2 header
+    private static final int    LEGACY_ITER  = 120_000;   // v1 bundles: iteration count implicit
+    private static final int    CURRENT_ITER = 600_000;   // OWASP-2023 baseline for new bundles
 
     private BackupBundle() {}
 
@@ -133,10 +135,15 @@ public final class BackupBundle {
         new SecureRandom().nextBytes(salt);
         new SecureRandom().nextBytes(iv);
         Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
-        c.init(Cipher.ENCRYPT_MODE, deriveKey(pw, salt), new GCMParameterSpec(128, iv));
+        c.init(Cipher.ENCRYPT_MODE, deriveKey(pw, salt, CURRENT_ITER), new GCMParameterSpec(128, iv));
         byte[] ct = c.doFinal(pt);
-        ByteArrayOutputStream out = new ByteArrayOutputStream(MAGIC.length + 1 + 16 + 12 + ct.length);
-        out.write(MAGIC); out.write(VERSION); out.write(salt); out.write(iv); out.write(ct);
+        ByteArrayOutputStream out = new ByteArrayOutputStream(MAGIC.length + 1 + 1 + 4 + 16 + 12 + ct.length);
+        out.write(MAGIC);
+        out.write(VERSION);                               // 2
+        out.write(KDF_PBKDF2);                            // KDF-algo id
+        out.write((CURRENT_ITER >>> 24) & 0xFF); out.write((CURRENT_ITER >>> 16) & 0xFF);
+        out.write((CURRENT_ITER >>>  8) & 0xFF); out.write( CURRENT_ITER        & 0xFF);
+        out.write(salt); out.write(iv); out.write(ct);
         return out.toByteArray();
     }
 
@@ -145,13 +152,27 @@ public final class BackupBundle {
             throw new IOException("Invalid or corrupt backup file.");
         for (int i = 0; i < MAGIC.length; i++)
             if (bundle[i] != MAGIC[i]) throw new IOException("Not a Capoeira SSH backup file.");
-        if (bundle[4] != VERSION)
-            throw new IOException("Unsupported backup version: " + (bundle[4] & 0xFF));
-        byte[] salt = Arrays.copyOfRange(bundle, 5,  21);
-        byte[] iv   = Arrays.copyOfRange(bundle, 21, 33);
-        byte[] ct   = Arrays.copyOfRange(bundle, 33, bundle.length);
+        int off = MAGIC.length;
+        int ver = bundle[off++] & 0xFF;
+        int iter;
+        if (ver == 1) {                       // legacy: KDF params were implicit
+            iter = LEGACY_ITER;
+        } else if (ver == 2) {                // self-describing header
+            if (bundle.length < MAGIC.length + 1 + 1 + 4 + 16 + 12 + 16)
+                throw new IOException("Invalid or corrupt backup file.");
+            int kdfId = bundle[off++] & 0xFF;
+            iter = ((bundle[off] & 0xFF) << 24) | ((bundle[off + 1] & 0xFF) << 16)
+                 | ((bundle[off + 2] & 0xFF) << 8) | (bundle[off + 3] & 0xFF);
+            off += 4;
+            if (kdfId != KDF_PBKDF2) throw new IOException("Unsupported backup KDF id: " + kdfId);
+        } else {
+            throw new IOException("Unsupported backup version: " + ver);
+        }
+        byte[] salt = Arrays.copyOfRange(bundle, off, off + 16); off += 16;
+        byte[] iv   = Arrays.copyOfRange(bundle, off, off + 12); off += 12;
+        byte[] ct   = Arrays.copyOfRange(bundle, off, bundle.length);
         Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
-        c.init(Cipher.DECRYPT_MODE, deriveKey(pw, salt), new GCMParameterSpec(128, iv));
+        c.init(Cipher.DECRYPT_MODE, deriveKey(pw, salt, iter), new GCMParameterSpec(128, iv));
         try {
             return c.doFinal(ct);
         } catch (AEADBadTagException e) {
@@ -159,9 +180,9 @@ public final class BackupBundle {
         }
     }
 
-    private static SecretKey deriveKey(char[] pw, byte[] salt)
+    private static SecretKey deriveKey(char[] pw, byte[] salt, int iterations)
             throws NoSuchAlgorithmException, InvalidKeySpecException {
-        var spec = new PBEKeySpec(pw, salt, PBKDF2_ITER, 256);
+        var spec = new PBEKeySpec(pw, salt, iterations, 256);
         byte[] raw = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
                                      .generateSecret(spec).getEncoded();
         spec.clearPassword();
