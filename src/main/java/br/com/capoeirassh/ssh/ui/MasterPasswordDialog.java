@@ -65,7 +65,7 @@ public class MasterPasswordDialog {
         new Label(dlg, SWT.NONE);
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
         cmpBtns.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
-        RowLayout rl = new RowLayout(SWT.HORIZONTAL); rl.spacing = 8;
+        RowLayout rl = new RowLayout(SWT.HORIZONTAL); rl.spacing = 8; rl.wrap = false;
         cmpBtns.setLayout(rl);
         Button btnOk     = new Button(cmpBtns, SWT.PUSH); btnOk.setText(createMode ? "Create" : "Unlock");
         Button btnCancel = new Button(cmpBtns, SWT.PUSH); btnCancel.setText("Cancel");
@@ -112,9 +112,13 @@ public class MasterPasswordDialog {
             }
         });
 
-        // Size to the real content height (not a hardcoded pixel guess) so the button row
-        // never gets clipped under non-100% OS display scaling, then center on the parent.
-        dlg.setSize(400, dlg.computeSize(400, SWT.DEFAULT).y);
+        // Pack to each widget's own natural size on the current platform/DPI instead of
+        // forcing a fixed width — a fixed width hint let GridLayout squeeze the button row
+        // on Linux/GTK (whose native widget metrics, e.g. the emoji eye-icon button, differ
+        // from Win32), wrapping Cancel onto a clipped second line. Enforce a comfortable
+        // minimum width, then center on the parent.
+        dlg.pack();
+        if (dlg.getSize().x < 400) dlg.setSize(400, dlg.getSize().y);
         center(dlg);
 
         dlg.open();
