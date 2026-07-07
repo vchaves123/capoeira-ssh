@@ -51,8 +51,10 @@ public final class UpdateChecker {
         conn.setConnectTimeout(4000);
         conn.setReadTimeout(4000);
         try (InputStream in = conn.getInputStream()) {
-            String body = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            Matcher m = TAG_PATTERN.matcher(body);
+            // Bound the read: a MITM/compromised endpoint must not be able to OOM this thread
+            // with an arbitrarily large body. The tag_name sits near the top of the JSON.
+            byte[] body = in.readNBytes(64 * 1024);
+            Matcher m = TAG_PATTERN.matcher(new String(body, StandardCharsets.UTF_8));
             return m.find() ? m.group(1) : null;
         } finally {
             conn.disconnect();

@@ -960,8 +960,19 @@ public class TerminalTab {
         canvas.redraw();
 
         try {
-            connection.send(text.getBytes(StandardCharsets.UTF_8));
+            connection.send(sanitizePaste(text).getBytes(StandardCharsets.UTF_8));
         } catch (IOException ignored) {}
+    }
+
+    /** Strip control bytes (especially ESC) from pasted text so a crafted clipboard can't
+     *  inject terminal escape sequences into the shell; tab/newline/carriage-return are kept. */
+    private static String sanitizePaste(String s) {
+        StringBuilder b = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\t' || c == '\n' || c == '\r' || (c >= 0x20 && c != 0x7F)) b.append(c);
+        }
+        return b.toString();
     }
 
     private boolean confirmMultilinePaste(String text) {

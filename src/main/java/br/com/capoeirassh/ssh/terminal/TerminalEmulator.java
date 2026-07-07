@@ -783,8 +783,13 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     // Send data back to SSH channel
     // -----------------------------------------------------------------------
+    /** Cap on queued responses so a server streaming endless DSR/DA requests can't grow the
+     *  queue without bound (reflected write-amplification). Real usage drains after each read. */
+    private static final int MAX_PENDING_RESPONSES = 256;
+
     private void send(String s) {
-        pendingResponses.add(s.getBytes(StandardCharsets.US_ASCII));
+        if (pendingResponses.size() < MAX_PENDING_RESPONSES)
+            pendingResponses.add(s.getBytes(StandardCharsets.US_ASCII));
     }
 
     /** Drain queued terminal responses and deliver them via the dataListener.
