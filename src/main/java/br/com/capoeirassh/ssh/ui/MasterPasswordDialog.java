@@ -28,8 +28,6 @@ public class MasterPasswordDialog {
         Shell dlg = new Shell(parent, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
         dlg.setText(createMode ? "Create Credential Vault" : "Unlock Credential Vault");
         AppIcon.apply(dlg);
-        dlg.setSize(400, createMode ? 240 : 200);
-        center(dlg);
 
         GridLayout gl = new GridLayout(2, false);
         gl.marginWidth = 16; gl.marginHeight = 12; gl.verticalSpacing = 8;
@@ -113,6 +111,11 @@ public class MasterPasswordDialog {
                 }
             }
         });
+
+        // Size to the real content height (not a hardcoded pixel guess) so the button row
+        // never gets clipped under non-100% OS display scaling, then center on the parent.
+        dlg.setSize(400, dlg.computeSize(400, SWT.DEFAULT).y);
+        center(dlg);
 
         dlg.open();
         Display d = parent.getDisplay();
