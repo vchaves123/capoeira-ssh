@@ -94,6 +94,10 @@ public class SessionsTab {
         root.setLayout(rootLayout);
 
         Listener delFilter = e -> {
+            // This is a Display-wide key filter, so without this guard it would also fire
+            // while a Terminal tab is focused, hijacking arrow keys/Enter meant for the
+            // remote shell (e.g. shell history recall) to navigate/connect sessions instead.
+            if (tabItem.isDisposed() || tabItem.getParent().getSelection() != tabItem) return;
             if (e.keyCode == SWT.DEL && !selectedIds.isEmpty()) {
                 deleteSelectedSessions();
             } else if ((e.keyCode == SWT.ARROW_DOWN || e.keyCode == SWT.ARROW_UP) && !sessionOrder.isEmpty()) {
