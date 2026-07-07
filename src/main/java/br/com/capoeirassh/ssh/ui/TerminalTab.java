@@ -50,6 +50,13 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     private Font  termFont;
     private Font  termFontBold;   // cached bold variant, rebuilt on font/size change
+    private Font  overlayFont;    // cached 16pt bold for the disconnected overlay
+    private Color colSelection;   // selection highlight  (lazy; disposed in dispose)
+    private Color colOverlayScrim;// disconnected dim scrim
+    private Color colOverlayText; // disconnected "Connection closed" text
+    private Color colReconnect;   // disconnected reconnect hint
+    private long  logBytesWritten = 0;
+    private static final long MAX_LOG_BYTES = 100L * 1024 * 1024; // cap session log at 100 MB
     private int   charWidth;
     private int   charHeight;
 
@@ -186,7 +193,9 @@ public class TerminalTab {
         String fontName = MonoFonts.resolve(display, termFontName);
         if (termFont != null && !termFont.isDisposed()) termFont.dispose();
         if (termFontBold != null && !termFontBold.isDisposed()) termFontBold.dispose();
+        if (overlayFont  != null && !overlayFont.isDisposed())  overlayFont.dispose();
         termFontBold = null;   // rebuilt lazily in render() for the new font/size
+        overlayFont  = null;
         termFont = new Font(display, fontName, termFontSize, SWT.NORMAL);
 
         GC gc = new GC(display);
@@ -472,7 +481,9 @@ public class TerminalTab {
                 int[] norm = normalizedSelection();
                 int r0 = norm[0], c0 = norm[1], r1 = norm[2], c1 = norm[3];
                 gc.setAlpha(80);
-                gc.setBackground(new Color(display, 100, 160, 255));
+                if (colSelection == null || colSelection.isDisposed())
+                    colSelection = new Color(display, 100, 160, 255);
+                gc.setBackground(colSelection);
                 for (int sr = r0; sr <= r1; sr++) {
                     int sc = (sr == r0) ? c0 : 0;
                     int ec = (sr == r1) ? c1 : cols - 1;
@@ -485,25 +496,30 @@ public class TerminalTab {
             if (disconnected) {
                 // Semi-transparent gray overlay
                 gc.setAlpha(180);
-                gc.setBackground(new Color(display, 20, 20, 20));
+                if (colOverlayScrim == null || colOverlayScrim.isDisposed())
+                    colOverlayScrim = new Color(display, 20, 20, 20);
+                gc.setBackground(colOverlayScrim);
                 gc.fillRectangle(area);
                 gc.setAlpha(255);
 
-                Font overlayFont = new Font(display, termFont.getFontData()[0].getName(), 16, SWT.BOLD);
+                if (overlayFont == null || overlayFont.isDisposed())
+                    overlayFont = new Font(display, termFont.getFontData()[0].getName(), 16, SWT.BOLD);
                 gc.setFont(overlayFont);
-                gc.setForeground(new Color(display, 200, 200, 200));
+                if (colOverlayText == null || colOverlayText.isDisposed())
+                    colOverlayText = new Color(display, 200, 200, 200);
+                gc.setForeground(colOverlayText);
 
                 String line1 = "Connection closed";
                 Point e1 = gc.stringExtent(line1);
                 gc.drawString(line1, (area.width - e1.x) / 2, area.height / 2 - e1.y - 6, true);
 
                 gc.setFont(termFont);
-                gc.setForeground(new Color(display, 100, 180, 255));
+                if (colReconnect == null || colReconnect.isDisposed())
+                    colReconnect = new Color(display, 100, 180, 255);
+                gc.setForeground(colReconnect);
                 String line2 = "▶  Click to reconnect";
                 Point e2 = gc.stringExtent(line2);
                 gc.drawString(line2, (area.width - e2.x) / 2, area.height / 2 + 6, true);
-
-                overlayFont.dispose();
             }
         } finally {
             gc.dispose();
@@ -714,6 +730,7 @@ public class TerminalTab {
             if (Files.exists(file))
                 file = logDir.resolve(candidate + "_" + LOG_SEQ.incrementAndGet() + ".log");
             logStream  = br.com.capoeirassh.ssh.storage.SecureFiles.openAppend(file);
+            logBytesWritten = 0;
             ansiState  = AnsiState.NORMAL;
             ansiUtf8Remaining = 0;
         } catch (IOException e) {
@@ -725,7 +742,9 @@ public class TerminalTab {
         if (logStream == null) return;
         byte[] filtered = stripAnsi(buf, len);
         if (filtered.length == 0) return;
-        try { logStream.write(filtered); logStream.flush(); }
+        // Cap the session log so a hostile server streaming endless output can't fill the disk.
+        if (logBytesWritten + filtered.length > MAX_LOG_BYTES) { closeLog(); return; }
+        try { logStream.write(filtered); logStream.flush(); logBytesWritten += filtered.length; }
         catch (IOException ignored) { logStream = null; }
     }
 
@@ -1193,6 +1212,11 @@ public class TerminalTab {
             if (colorActivityBlue != null && !colorActivityBlue.isDisposed()) colorActivityBlue.dispose();
             if (colorDisconnectedRed != null && !colorDisconnectedRed.isDisposed()) colorDisconnectedRed.dispose();
             if (termFontBold != null && !termFontBold.isDisposed()) termFontBold.dispose();
+            if (overlayFont  != null && !overlayFont.isDisposed())  overlayFont.dispose();
+            if (colSelection    != null && !colSelection.isDisposed())    colSelection.dispose();
+            if (colOverlayScrim != null && !colOverlayScrim.isDisposed()) colOverlayScrim.dispose();
+            if (colOverlayText  != null && !colOverlayText.isDisposed())  colOverlayText.dispose();
+            if (colReconnect    != null && !colReconnect.isDisposed())    colReconnect.dispose();
             if (!termFont.isDisposed())  termFont.dispose();
             if (!defaultBg.isDisposed()) defaultBg.dispose();
             if (!defaultFg.isDisposed()) defaultFg.dispose();

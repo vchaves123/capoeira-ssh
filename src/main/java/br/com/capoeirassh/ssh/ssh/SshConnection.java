@@ -31,57 +31,65 @@ public class SshConnection {
      * @param display  SWT display — used to show the host-key verification dialog on the UI thread
      */
     public void connect(SessionInfo info, char[] password, Display display) throws Exception {
-        jsch = new JSch();
+        try {
+            jsch = new JSch();
 
-        // Known-hosts file — host keys are stored here and verified on every connection.
-        // Pre-create with owner-only permissions so JSch doesn't create it world-readable.
-        Path knownHosts = Path.of(System.getProperty("user.home"), ".capoeira", "known_hosts");
-        if (!Files.exists(knownHosts))
-            br.com.capoeirassh.ssh.storage.SecureFiles.write(knownHosts, new byte[0]);
-        jsch.setKnownHosts(knownHosts.toString());
+            // Known-hosts file — host keys are stored here and verified on every connection.
+            // Pre-create with owner-only permissions so JSch doesn't create it world-readable.
+            Path knownHosts = Path.of(System.getProperty("user.home"), ".capoeira", "known_hosts");
+            if (!Files.exists(knownHosts))
+                br.com.capoeirassh.ssh.storage.SecureFiles.write(knownHosts, new byte[0]);
+            jsch.setKnownHosts(knownHosts.toString());
 
-        if (info.authType == SessionInfo.AuthType.PRIVATE_KEY
-                && info.keyPath != null && !info.keyPath.isBlank()) {
-            byte[] passBytes = (password != null && password.length > 0) ? toBytes(password) : null;
-            jsch.addIdentity(info.keyPath, passBytes);
-            if (passBytes != null) Arrays.fill(passBytes, (byte) 0);
+            if (info.authType == SessionInfo.AuthType.PRIVATE_KEY
+                    && info.keyPath != null && !info.keyPath.isBlank()) {
+                byte[] passBytes = (password != null && password.length > 0) ? toBytes(password) : null;
+                try {
+                    jsch.addIdentity(info.keyPath, passBytes);
+                } finally {
+                    if (passBytes != null) Arrays.fill(passBytes, (byte) 0);
+                }
+            }
+
+            session = jsch.getSession(info.username, info.host, info.port);
+
+            // "ask" — JSch calls UserInfo.promptYesNo for unknown hosts and saves accepted keys
+            // to the known_hosts file automatically.  "yes" would reject all unknown hosts silently.
+            session.setConfig("StrictHostKeyChecking", "ask");
+            session.setUserInfo(new SwtHostVerifier(display, info.host, info.port));
+            session.setConfig("ServerAliveInterval", "30");
+
+            if (info.authType == SessionInfo.AuthType.PASSWORD
+                    || info.authType == SessionInfo.AuthType.SAVED_CREDENTIAL) {
+                byte[] passBytes = (password != null) ? toBytes(password) : new byte[0];
+                try {
+                    session.setPassword(passBytes);
+                } finally {
+                    Arrays.fill(passBytes, (byte) 0);
+                }
+                session.setConfig("PreferredAuthentications", "password,keyboard-interactive");
+            } else {
+                session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
+            }
+
+            session.setTimeout(15_000);
+            session.connect(15_000);
+
+            channel = (ChannelShell) session.openChannel("shell");
+            String ptyType = (info.terminalType != null && !info.terminalType.isBlank())
+                ? info.terminalType : "xterm-256color";
+            channel.setPtyType(ptyType);
+            channel.setPtySize(80, 24, 640, 480);
+            channel.setTerminalMode(buildPtyModes());
+
+            input  = channel.getInputStream();
+            output = channel.getOutputStream();
+
+            channel.connect(15_000);
+        } finally {
+            // Always wipe the caller's secret, even if the connection fails partway through.
+            if (password != null) Arrays.fill(password, '\0');
         }
-
-        session = jsch.getSession(info.username, info.host, info.port);
-
-        // "ask" — JSch calls UserInfo.promptYesNo for unknown hosts and saves accepted keys
-        // to the known_hosts file automatically.  "yes" would reject all unknown hosts silently.
-        session.setConfig("StrictHostKeyChecking", "ask");
-        session.setUserInfo(new SwtHostVerifier(display, info.host, info.port));
-        session.setConfig("ServerAliveInterval", "30");
-
-        if (info.authType == SessionInfo.AuthType.PASSWORD
-                || info.authType == SessionInfo.AuthType.SAVED_CREDENTIAL) {
-            byte[] passBytes = (password != null) ? toBytes(password) : new byte[0];
-            session.setPassword(passBytes);
-            Arrays.fill(passBytes, (byte) 0);
-            session.setConfig("PreferredAuthentications", "password,keyboard-interactive");
-        } else {
-            session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
-        }
-
-        // Zero the caller's array — we have already extracted what we need above.
-        if (password != null) Arrays.fill(password, '\0');
-
-        session.setTimeout(15_000);
-        session.connect(15_000);
-
-        channel = (ChannelShell) session.openChannel("shell");
-        String ptyType = (info.terminalType != null && !info.terminalType.isBlank())
-            ? info.terminalType : "xterm-256color";
-        channel.setPtyType(ptyType);
-        channel.setPtySize(80, 24, 640, 480);
-        channel.setTerminalMode(buildPtyModes());
-
-        input  = channel.getInputStream();
-        output = channel.getOutputStream();
-
-        channel.connect(15_000);
     }
 
     public void send(byte[] data) throws IOException {
@@ -157,6 +165,7 @@ public class SshConnection {
         ByteBuffer bb = StandardCharsets.UTF_8.encode(CharBuffer.wrap(chars));
         byte[] b = new byte[bb.remaining()];
         bb.get(b);
+        if (bb.hasArray()) Arrays.fill(bb.array(), (byte) 0);   // wipe the encoder's backing array
         return b;
     }
 
