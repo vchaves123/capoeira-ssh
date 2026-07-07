@@ -98,10 +98,19 @@ public class MainWindow {
                 // Use e.item (the event's new selection) rather than tabFolder.getSelection(),
                 // which can be stale on Windows when setSelection() is called programmatically.
                 CTabItem sel = (CTabItem) e.item;
-                terminalTabs.stream()
+                java.util.Optional<TerminalTab> term = terminalTabs.stream()
                     .filter(t -> t.getTabItem() == sel)
-                    .findFirst()
-                    .ifPresent(TerminalTab::clearActivity);
+                    .findFirst();
+                if (term.isPresent()) {
+                    // Every tab switch must hand keyboard focus to the newly active tab's own
+                    // control — otherwise input can linger on (or leak to) whatever previously
+                    // had focus, which is exactly what let arrow keys/Enter meant for a terminal
+                    // get hijacked by the Sessions tab's global key filter.
+                    term.get().clearActivity();
+                    term.get().getCanvas().setFocus();
+                } else if (sessionsTab != null && sel == sessionsTab.getTabItem()) {
+                    sessionsTab.focusDefault();
+                }
                 refreshSelectionColor();
             }
         });

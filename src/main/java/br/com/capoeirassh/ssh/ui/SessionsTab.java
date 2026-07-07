@@ -1353,6 +1353,13 @@ public class SessionsTab {
     // -----------------------------------------------------------------------
     public CTabItem getTabItem() { return tabItem; }
 
+    /** Focus the tab's default control — called whenever this tab becomes the active one,
+     *  so keyboard input always goes somewhere sensible on this tab rather than lingering
+     *  on a control from whatever tab was previously focused. */
+    public void focusDefault() {
+        if (searchText != null && !searchText.isDisposed()) searchText.setFocus();
+    }
+
     public void reload(Runnable ignored) { reload(); }
 
     public void notifyUpdateAvailable(String version) {
