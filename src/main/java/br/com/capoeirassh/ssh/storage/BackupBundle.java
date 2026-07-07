@@ -165,6 +165,11 @@ public final class BackupBundle {
                  | ((bundle[off + 2] & 0xFF) << 8) | (bundle[off + 3] & 0xFF);
             off += 4;
             if (kdfId != KDF_PBKDF2) throw new IOException("Unsupported backup KDF id: " + kdfId);
+            // Reject an absurd iteration count from an untrusted header — otherwise a crafted
+            // bundle can peg a CPU core for minutes deriving a key before the (attacker-
+            // controlled) file is even confirmed as wrong.
+            if (iter < 1_000 || iter > 2_000_000)
+                throw new IOException("Invalid backup KDF iteration count: " + iter);
         } else {
             throw new IOException("Unsupported backup version: " + ver);
         }

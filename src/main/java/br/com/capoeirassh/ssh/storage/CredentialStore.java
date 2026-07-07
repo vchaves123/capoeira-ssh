@@ -126,6 +126,11 @@ public final class CredentialStore {
                      | ((raw[off + 2] & 0xFF) << 8) | (raw[off + 3] & 0xFF);
                 off += 4;
                 if (kdfId != KDF_PBKDF2) throw new Exception("Unsupported KDF id: " + kdfId);
+                // Reject an absurd iteration count from an untrusted header — otherwise a
+                // crafted vault file can peg a CPU core for minutes deriving a key before the
+                // (attacker-controlled) file is even confirmed as wrong.
+                if (iter < 1_000 || iter > 2_000_000)
+                    throw new Exception("Invalid vault KDF iteration count: " + iter);
             } else {
                 throw new Exception("Unsupported vault version: " + ver);
             }
