@@ -7,8 +7,6 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
 
-import java.util.List;
-
 /**
  * Manage saved credentials (add / edit / delete).
  * Opens the MasterPasswordDialog first if the vault is locked.
@@ -231,11 +229,6 @@ public class CredentialManagerDialog {
     }
     private static Label lbl(Composite p, String text) {
         Label l = new Label(p, SWT.NONE); l.setText(text); return l;
-    }
-    private static Text txt(Composite p) {
-        Text t = new Text(p, SWT.BORDER);
-        t.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-        return t;
     }
     private static Text txt(Composite p, int colspan) {
         Text t = new Text(p, SWT.BORDER);

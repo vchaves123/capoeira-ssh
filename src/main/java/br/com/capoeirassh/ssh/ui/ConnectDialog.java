@@ -89,7 +89,8 @@ public class ConnectDialog {
 
         // Credential picker — only unlocks the vault if the user actually opens the
         // dropdown to pick a saved credential; plain manual auth never touches it.
-        final List<CredentialEntry>[] credsHolder = new List[]{ List.of() };
+        final java.util.concurrent.atomic.AtomicReference<List<CredentialEntry>> credsHolder =
+                new java.util.concurrent.atomic.AtomicReference<>(List.of());
         Combo credCombo = null;
         if (store.vaultExists()) {
             new Label(dlg, SWT.NONE).setText("Credential:");
@@ -98,14 +99,14 @@ public class ConnectDialog {
             cc.add(MANUAL);
             cc.select(0);
             if (store.isUnlocked()) {
-                credsHolder[0] = store.getAll();
-                for (CredentialEntry ce : credsHolder[0]) cc.add(ce.toString());
+                credsHolder.set(store.getAll());
+                for (CredentialEntry ce : credsHolder.get()) cc.add(ce.toString());
             } else {
                 cc.addListener(SWT.MouseDown, e -> {
                     if (store.isUnlocked()) return;
                     if (new MasterPasswordDialog(parent).open()) {
-                        credsHolder[0] = store.getAll();
-                        for (CredentialEntry ce : credsHolder[0]) cc.add(ce.toString());
+                        credsHolder.set(store.getAll());
+                        for (CredentialEntry ce : credsHolder.get()) cc.add(ce.toString());
                     }
                 });
             }
@@ -134,7 +135,7 @@ public class ConnectDialog {
                     txtPass.setText("");
                     txtPass.setEditable(true);
                 } else {
-                    List<CredentialEntry> creds = credsHolder[0];
+                    List<CredentialEntry> creds = credsHolder.get();
                     if (idx - 1 < creds.size()) {
                         CredentialEntry ce = creds.get(idx - 1);
                         txtUser.setText(ce.username);

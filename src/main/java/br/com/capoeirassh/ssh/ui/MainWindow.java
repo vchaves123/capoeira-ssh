@@ -1,7 +1,6 @@
 package br.com.capoeirassh.ssh.ui;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
-import br.com.capoeirassh.ssh.storage.CredentialStore;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.*;
 import org.eclipse.swt.graphics.*;
@@ -577,74 +576,6 @@ public class MainWindow {
             screen.x + (screen.width  - win.width)  / 2,
             screen.y + (screen.height - win.height) / 2
         );
-    }
-
-    // -----------------------------------------------------------------------
-    // Application icon (drawn programmatically)
-    // -----------------------------------------------------------------------
-    /**
-     * Draws a terminal-style icon at the requested size.
-     *
-     * Visual: rounded dark screen bezel with a subtle teal/green glow,
-     * a bright ">" prompt and blinking-cursor underscore, and two thin
-     * scan-lines for texture.  Works at both 16 px and 32 px.
-     */
-    private Image buildAppIcon(int sz) {
-        PaletteData pal = new PaletteData(0xFF0000, 0x00FF00, 0x0000FF);
-        ImageData   data = new ImageData(sz, sz, 24, pal);
-        // Use pure magenta as the transparency key — it never appears in the drawing
-        data.transparentPixel = pal.getPixel(new RGB(255, 0, 255));
-
-        Image img = new Image(display, data);
-        GC    gc  = new GC(img);
-        gc.setAntialias(SWT.ON);
-        gc.setTextAntialias(SWT.ON);
-
-        // --- transparent fill ---
-        gc.setBackground(new Color(display, 255, 0, 255));
-        gc.fillRectangle(0, 0, sz, sz);
-
-        int r = Math.max(2, sz / 8);   // corner radius
-
-        // Outer bezel (dark charcoal with slight blue tint)
-        gc.setBackground(new Color(display, 22, 27, 34));
-        gc.fillRoundRectangle(0, 0, sz, sz, r * 2, r * 2);
-
-        // Inner screen area (slightly lighter)
-        int pad = Math.max(1, sz / 10);
-        gc.setBackground(new Color(display, 13, 17, 23));
-        gc.fillRoundRectangle(pad, pad, sz - pad * 2, sz - pad * 2, r, r);
-
-        // Subtle top-edge highlight (teal glow)
-        gc.setForeground(new Color(display, 0, 200, 160));
-        gc.drawLine(pad + r, pad, sz - pad - r, pad);
-
-        // Prompt ">" — bright green
-        Font f = new Font(display, "Consolas", Math.max(6, sz * 5 / 16), SWT.BOLD);
-        gc.setFont(f);
-        gc.setForeground(new Color(display, 0, 255, 140));
-        int tx = pad + Math.max(1, sz / 8);
-        int ty = sz / 2 - gc.getFontMetrics().getHeight() / 2 - Math.max(1, sz / 16);
-        gc.drawText(">", tx, ty, true);
-
-        // Cursor underscore (white)
-        int cx  = tx + gc.stringExtent(">").x + Math.max(1, sz / 16);
-        int cy  = ty + gc.getFontMetrics().getHeight() - Math.max(1, sz / 16);
-        int cw  = Math.max(2, sz / 5);
-        gc.setForeground(new Color(display, 220, 220, 220));
-        gc.setLineWidth(Math.max(1, sz / 16));
-        gc.drawLine(cx, cy, cx + cw, cy);
-
-        // Thin scan-line texture (one line roughly 2/3 down)
-        int sl = pad + (sz - pad * 2) * 2 / 3;
-        gc.setForeground(new Color(display, 255, 255, 255));
-        gc.setAlpha(18);
-        gc.drawLine(pad + 1, sl, sz - pad - 1, sl);
-        gc.setAlpha(255);
-
-        f.dispose();
-        gc.dispose();
-        return img;
     }
 
     private boolean confirmCloseTab() {

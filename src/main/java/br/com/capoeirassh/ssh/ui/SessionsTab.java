@@ -59,7 +59,6 @@ public class SessionsTab {
     private Text searchText;
     private Composite aboutIconBox;
     private boolean updateAvailable = false;
-    private String  updateVersion   = "";
 
     // Multi-selection state (ALL SESSIONS list)
     private final java.util.LinkedHashSet<String> selectedIds = new java.util.LinkedHashSet<>();
@@ -682,9 +681,7 @@ public class SessionsTab {
             e.gc.setForeground(cBorder);
             // dashed border via segments
             int dash = 6;
-            int perim = 2 * (b.width + b.height);
             boolean draw = true;
-            int x = 0, y = 0;
             // simple dashed rectangle approximation — top
             for (int px = 0; px < b.width; px += dash) {
                 if (draw) e.gc.drawLine(px, 0, Math.min(px + dash, b.width), 0);
@@ -929,13 +926,6 @@ public class SessionsTab {
         ctrl.addListener(SWT.MouseDoubleClick, e -> { if (e.button == 1) onConnect.accept(session, null); });
         if (ctrl instanceof Composite)
             for (Control c : ((Composite) ctrl).getChildren()) addDoubleClickRecursive(c, session);
-    }
-
-    private void addClickRecursive(Control ctrl, Listener listener) {
-        ctrl.addListener(SWT.MouseUp, e -> { if (e.button == 1) listener.handleEvent(e); });
-        if (ctrl instanceof Composite) {
-            for (Control c : ((Composite) ctrl).getChildren()) addClickRecursive(c, listener);
-        }
     }
 
     private void addSelectionClickRecursive(Control ctrl, SessionInfo session) {
@@ -1365,7 +1355,6 @@ public class SessionsTab {
     public void notifyUpdateAvailable(String version) {
         if (aboutIconBox == null || aboutIconBox.isDisposed()) return;
         updateAvailable = true;
-        updateVersion   = version;
         aboutIconBox.setToolTipText("Update available: v" + version + " — click About to download");
         for (Control c : aboutIconBox.getChildren())
             c.setToolTipText(aboutIconBox.getToolTipText());
