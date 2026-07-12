@@ -628,6 +628,13 @@ public class SessionsTab {
         List<String> groupNames = new java.util.ArrayList<>(byGroup.keySet());
         groupNames.sort(String::compareToIgnoreCase);
 
+        // One square grid dimension shared by every box, sized to the largest group, so
+        // all boxes end up the same pixel size — smaller groups just show empty slots
+        // in the same NxN grid instead of a shorter/taller box.
+        int maxMembers = ungrouped.size();
+        for (List<SessionInfo> members : byGroup.values()) maxMembers = Math.max(maxMembers, members.size());
+        int dim = Math.max(2, (int) Math.ceil(Math.sqrt(Math.max(1, maxMembers))));
+
         Composite wrap = new Composite(listContainer, SWT.NONE);
         wrap.setBackground(cBg);
         wrap.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
@@ -638,14 +645,12 @@ public class SessionsTab {
 
         // "" = the synthetic ungrouped bucket — kept distinct from the display caption
         // so a real group literally named "Ungrouped" can never collide with it.
-        if (!ungrouped.isEmpty()) buildGroupCard(wrap, display, "Ungrouped", "", ungrouped, online);
-        for (String g : groupNames) buildGroupCard(wrap, display, g, g, byGroup.get(g), online);
+        if (!ungrouped.isEmpty()) buildGroupCard(wrap, display, "Ungrouped", "", ungrouped, online, dim);
+        for (String g : groupNames) buildGroupCard(wrap, display, g, g, byGroup.get(g), online, dim);
     }
 
-    private static final int ICON_TILE_COLS = 2;
-
     private void buildGroupCard(Composite parent, Display display, String caption, String targetGroup,
-                                 List<SessionInfo> members, Set<String> online) {
+                                 List<SessionInfo> members, Set<String> online, int dim) {
         Composite outer = new Composite(parent, SWT.NONE);
         outer.setBackground(cBg);
         outer.setData("cardBlock", Boolean.TRUE);
@@ -664,12 +669,21 @@ public class SessionsTab {
             int inset = dragOver ? 1 : 0;
             e.gc.drawRoundRectangle(inset, inset, b.width - 1 - inset * 2, b.height - 1 - inset * 2, 12, 12);
         });
-        GridLayout gl = new GridLayout(ICON_TILE_COLS, true);
+        GridLayout gl = new GridLayout(dim, true);
         gl.marginWidth = 16; gl.marginHeight = 16;
         gl.horizontalSpacing = 12; gl.verticalSpacing = 12;
         box.setLayout(gl);
 
         for (SessionInfo s : members) buildIconTile(box, s, online.contains(s.name));
+        // Pad the grid to a full dim x dim square with invisible placeholders, so every
+        // group's box — regardless of how many sessions it has — comes out the same size.
+        for (int i = members.size(); i < dim * dim; i++) {
+            Composite placeholder = new Composite(box, SWT.NONE);
+            placeholder.setBackground(cSurface);
+            GridData gdPh = new GridData(SWT.CENTER, SWT.CENTER, false, false);
+            gdPh.widthHint = 40; gdPh.heightHint = 40;
+            placeholder.setLayoutData(gdPh);
+        }
 
         // Drop target: dragging a session tile here moves it into this group.
         DropTarget dropTarget = new DropTarget(box, DND.DROP_MOVE);
@@ -711,7 +725,7 @@ public class SessionsTab {
         // Cap the width to the icon box's own width instead of letting a long name
         // stretch the column — the label wraps onto extra lines instead.
         GridData gdCap = new GridData(SWT.CENTER, SWT.CENTER, true, false);
-        gdCap.widthHint = ICON_TILE_COLS * 40 + 32;
+        gdCap.widthHint = dim * 40 + 32;
         captionLbl.setLayoutData(gdCap);
     }
 
