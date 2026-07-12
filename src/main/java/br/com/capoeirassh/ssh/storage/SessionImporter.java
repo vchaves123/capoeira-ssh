@@ -213,7 +213,16 @@ public final class SessionImporter {
      * back to Windows-1252 (the common encoding for legacy Windows .ini files) so
      * structural ASCII delimiters ('[', '=', '%') are never misread.
      */
+    /** Real MobaXterm.ini files are at most a few hundred KB; this is a generous cap that
+     *  still rejects a corrupted/oversized/crafted file before it's read fully into memory —
+     *  Files.readAllBytes() + the String conversions below have no size limit of their own,
+     *  and an OutOfMemoryError isn't caught by the caller's catch(IOException). */
+    private static final long MAX_IMPORT_FILE_BYTES = 20L * 1024 * 1024;
+
     private static String readTextAutoDetect(Path file) throws IOException {
+        long size = Files.size(file);
+        if (size > MAX_IMPORT_FILE_BYTES)
+            throw new IOException("File is too large to be a MobaXterm.ini (" + size + " bytes) — refusing to import.");
         byte[] bytes = Files.readAllBytes(file);
         if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF) {
             return new String(bytes, 3, bytes.length - 3, StandardCharsets.UTF_8);

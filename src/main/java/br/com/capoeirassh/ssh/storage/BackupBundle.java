@@ -53,6 +53,11 @@ public final class BackupBundle {
             if (Files.exists(base)) {
                 try (var walk = Files.walk(base)) {
                     for (Path p : walk.filter(f -> f.toString().endsWith(".session")).toList()) {
+                        // Never follow a symlink into the export — a link planted under
+                        // sessions/ (by anyone with write access there) could otherwise smuggle
+                        // an arbitrary file's real content into the bundle under an innocuous
+                        // session-looking entry name.
+                        if (Files.isSymbolicLink(p)) continue;
                         String rel = base.relativize(p).toString().replace('\\', '/');
                         zip.putNextEntry(new ZipEntry("sessions/" + rel));
                         zip.write(Files.readAllBytes(p));
@@ -89,6 +94,14 @@ public final class BackupBundle {
         return unzip(zip);
     }
 
+    // Decompression-bomb guards for unzip(): a crafted bundle could otherwise contain a tiny
+    // compressed entry that expands to gigabytes, or an enormous number of entries, exhausting
+    // memory/disk during import. These caps are far above what any real backup ever needs
+    // (session files and credentials.dat are at most a few KB each).
+    private static final int  MAX_ENTRIES     = 100_000;
+    private static final long MAX_ENTRY_BYTES = 10L * 1024 * 1024;   // 10 MB per entry
+    private static final long MAX_TOTAL_BYTES = 200L * 1024 * 1024;  // 200 MB decompressed total
+
     private static ImportResult unzip(byte[] zipBytes) throws IOException {
         List<SessionInfo>     sessions    = new ArrayList<>();
         List<CredentialEntry> credentials = new ArrayList<>();
@@ -96,9 +109,14 @@ public final class BackupBundle {
 
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             ZipEntry entry;
+            int  entryCount = 0;
+            long totalBytes = 0;
             while ((entry = zip.getNextEntry()) != null) {
+                if (++entryCount > MAX_ENTRIES)
+                    throw new IOException("Backup contains too many entries — refusing to import.");
                 String name = entry.getName();
-                byte[] data = zip.readAllBytes();
+                byte[] data = readEntryBounded(zip, MAX_TOTAL_BYTES - totalBytes);
+                totalBytes += data.length;
 
                 if (name.equals("credentials.dat")) {
                     char[] chars = utf8Chars(data);
@@ -126,6 +144,26 @@ public final class BackupBundle {
             }
         }
         return new ImportResult(sessions, credentials);
+    }
+
+    /** Reads one ZIP entry's fully-decompressed content, aborting if it (or the running total
+     *  across the whole archive) exceeds the size caps — regardless of what the entry's own
+     *  metadata claims, since that's attacker-controlled and not to be trusted. */
+    private static byte[] readEntryBounded(ZipInputStream zip, long remainingTotalBudget) throws IOException {
+        if (remainingTotalBudget <= 0)
+            throw new IOException("Backup exceeds the allowed total size limit — refusing to import.");
+        long cap = Math.min(MAX_ENTRY_BYTES, remainingTotalBudget);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        long total = 0;
+        int n;
+        while ((n = zip.read(buf)) != -1) {
+            total += n;
+            if (total > cap)
+                throw new IOException("Backup entry exceeds the allowed size limit — refusing to import (possible decompression bomb).");
+            out.write(buf, 0, n);
+        }
+        return out.toByteArray();
     }
 
     // ── Crypto (AES-256-GCM + PBKDF2-SHA256) ─────────────────────────────────

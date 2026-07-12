@@ -122,9 +122,19 @@ public class SessionsTab {
             } else if ((e.keyCode == SWT.ARROW_DOWN || e.keyCode == SWT.ARROW_UP) && !sessionOrder.isEmpty()) {
                 int cur = selectedIds.size() == 1
                         ? indexOfId(selectedIds.iterator().next()) : -1;
-                int next = e.keyCode == SWT.ARROW_DOWN
-                        ? (cur < sessionOrder.size() - 1 ? cur + 1 : 0)
-                        : (cur > 0 ? cur - 1 : sessionOrder.size() - 1);
+                int n = sessionOrder.size();
+                int next = cur;
+                boolean found = false;
+                // Step past any session hidden by an active search filter — arrowing (and the
+                // Enter-to-connect below) must never land on something the user can't see.
+                for (int step = 0; step < n; step++) {
+                    next = e.keyCode == SWT.ARROW_DOWN
+                            ? (next < n - 1 ? next + 1 : 0)
+                            : (next > 0 ? next - 1 : n - 1);
+                    Composite candidate = rowById.get(sessionOrder.get(next).id);
+                    if (candidate != null && !candidate.isDisposed() && candidate.getVisible()) { found = true; break; }
+                }
+                if (!found) return; // everything is currently filtered out
                 String nextId = sessionOrder.get(next).id;
                 clearSelectionVisuals();
                 selectedIds.clear();
@@ -796,6 +806,14 @@ public class SessionsTab {
         input.setInitialValue(group);
         String newName = input.open();
         if (newName == null || newName.isBlank() || newName.equals(group)) return;
+        String colliding = SessionStorage.findCollidingGroup(newName, group);
+        if (colliding != null) {
+            MessageBox mb = new MessageBox(shell, SWT.ICON_WARNING | SWT.YES | SWT.NO);
+            mb.setText("Group Already Exists");
+            mb.setMessage("\"" + newName + "\" resolves to the same folder as the existing "
+                + "group \"" + colliding + "\" on this filesystem — they would be merged. Continue?");
+            if (mb.open() != SWT.YES) return;
+        }
         try {
             SessionStorage.renameGroup(group, newName);
             reload();
@@ -1648,29 +1666,9 @@ public class SessionsTab {
     }
 
     private void duplicateSession(SessionInfo source) {
-        SessionInfo clone = new SessionInfo();
-        clone.id            = java.util.UUID.randomUUID().toString();
-        clone.name          = source.name.isBlank() ? "(copy)" : source.name + " (copy)";
-        clone.host          = source.host;
-        clone.port          = source.port;
-        clone.username      = source.username;
-        clone.keyPath       = source.keyPath;
-        clone.group         = source.group;
-        clone.credentialId  = source.credentialId;
-        clone.authType      = source.authType;
-        clone.appearFontName = source.appearFontName;
-        clone.appearFontSize = source.appearFontSize;
-        clone.appearFgR     = source.appearFgR;
-        clone.appearFgG     = source.appearFgG;
-        clone.appearFgB     = source.appearFgB;
-        clone.appearBgR     = source.appearBgR;
-        clone.appearBgG     = source.appearBgG;
-        clone.appearBgB     = source.appearBgB;
-        clone.logEnabled    = source.logEnabled;
-        clone.logDir        = source.logDir;
-        clone.logFileName   = source.logFileName;
-        clone.terminalType  = source.terminalType;
-        clone.backspaceCode = source.backspaceCode;
+        SessionInfo clone = source.copy();
+        clone.id   = java.util.UUID.randomUUID().toString();
+        clone.name = source.name.isBlank() ? "(copy)" : source.name + " (copy)";
         SessionDialog dlg = new SessionDialog(shell, "");
         dlg.setEditing(clone);
         SessionInfo saved = dlg.open();

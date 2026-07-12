@@ -105,6 +105,7 @@ class GroupManagerDialog {
         InputDialog input = new InputDialog(dlg, "New Group", "Group name:");
         String name = input.open();
         if (name == null || name.isBlank()) return;
+        if (!confirmCollision(name, null)) return;
         try {
             SessionStorage.createGroup(name);
             changed = true;
@@ -125,6 +126,7 @@ class GroupManagerDialog {
         input.setInitialValue(group);
         String newName = input.open();
         if (newName == null || newName.isBlank() || newName.equals(group)) return;
+        if (!confirmCollision(newName, group)) return;
         try {
             SessionStorage.renameGroup(group, newName);
             changed = true;
@@ -132,6 +134,20 @@ class GroupManagerDialog {
         } catch (Exception ex) {
             error("Failed to rename group:\n" + ex.getMessage());
         }
+    }
+
+    /** If candidateName would land on the same on-disk folder as a differently-named existing
+     *  group (case-insensitive filesystem, or both collapsing through sanitize() the same way),
+     *  ask for confirmation instead of silently merging into it — mirrors deleteGroup()'s own
+     *  explicit warn-before-acting pattern. @return true if it's fine to proceed. */
+    private boolean confirmCollision(String candidateName, String excludeSelf) {
+        String existing = SessionStorage.findCollidingGroup(candidateName, excludeSelf);
+        if (existing == null) return true;
+        MessageBox mb = new MessageBox(dlg, SWT.ICON_WARNING | SWT.YES | SWT.NO);
+        mb.setText("Group Already Exists");
+        mb.setMessage("\"" + candidateName + "\" resolves to the same folder as the existing "
+            + "group \"" + existing + "\" on this filesystem — they would be merged. Continue?");
+        return mb.open() == SWT.YES;
     }
 
     private void deleteSelectedGroups() {

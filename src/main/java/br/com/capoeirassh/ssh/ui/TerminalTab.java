@@ -853,10 +853,28 @@ public class TerminalTab {
     private void showVerboseLine(String line) {
         display.asyncExec(() -> {
             if (canvas.isDisposed()) return;
-            byte[] bytes = ("[90m*** ssh: " + line + "[0m\r\n").getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = ("[90m*** ssh: " + sanitizeVerboseLine(line) + "[0m\r\n").getBytes(StandardCharsets.UTF_8);
             emulator.processBytes(bytes);
             canvas.redraw();
         });
+    }
+
+    /** Strips control/escape characters before a JSch log line is embedded in the ANSI-wrapped
+     *  string above and fed to the terminal. Some log messages are built from server-controlled
+     *  text (banner, disconnect reason, etc.), so without this a malicious/MITM server could
+     *  inject its own escape/control sequences into the local terminal via the verbose-
+     *  diagnostics feature. Embedded CR/LF become a space so one message can't fake multiple
+     *  lines of output either. */
+    private static String sanitizeVerboseLine(String line) {
+        if (line == null) return "";
+        StringBuilder out = new StringBuilder(line.length());
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '\r' || c == '\n') { out.append(' '); continue; }
+            if (c < 0x20 || (c >= 0x7F && c <= 0x9F)) continue; // C0/DEL/C1 control range
+            out.append(c);
+        }
+        return out.toString();
     }
 
     private void readSsh() {

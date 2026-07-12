@@ -43,6 +43,37 @@ public class SessionInfo {
     /** Free-form labels for filtering/organizing, independent of group. Capped at 6. */
     public java.util.List<String> tags = new java.util.ArrayList<>();
 
+    /** Deep copy (tags gets its own list, not a shared reference). Used wherever code needs to
+     *  stage in-progress edits without touching the original — e.g. SessionDialog mutates a
+     *  copy while editing, only applying it back to the live/cached instance once
+     *  SessionStorage.save() actually succeeds. */
+    public SessionInfo copy() {
+        SessionInfo c = new SessionInfo();
+        c.id = id;
+        c.name = name;
+        c.host = host;
+        c.port = port;
+        c.username = username;
+        c.authType = authType;
+        c.keyPath = keyPath;
+        c.group = group;
+        c.iconType = iconType;
+        c.credentialId = credentialId;
+        c.appearFontSize = appearFontSize;
+        c.appearFontName = appearFontName;
+        c.appearFgR = appearFgR; c.appearFgG = appearFgG; c.appearFgB = appearFgB;
+        c.appearBgR = appearBgR; c.appearBgG = appearBgG; c.appearBgB = appearBgB;
+        c.logEnabled = logEnabled;
+        c.logDir = logDir;
+        c.logFileName = logFileName;
+        c.terminalType = terminalType;
+        c.backspaceCode = backspaceCode;
+        c.sshVerbose = sshVerbose;
+        c.sortOrder = sortOrder;
+        c.tags = new java.util.ArrayList<>(tags);
+        return c;
+    }
+
     /** Label shown in the tab title and session tree. */
     public String label() {
         return name.isBlank() ? (username + "@" + host) : name;

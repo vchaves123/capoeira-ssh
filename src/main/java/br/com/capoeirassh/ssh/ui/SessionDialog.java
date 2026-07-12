@@ -395,7 +395,11 @@ public class SessionDialog {
             List<String> tags = new java.util.ArrayList<>(java.util.Arrays.asList(listTags.getSelection()));
             if (tags.size() > 6) { alert(dlg, "Up to 6 tags allowed."); return; }
 
-            SessionInfo s = editing != null ? editing : new SessionInfo();
+            // Mutate a copy, never `editing` itself — if SessionStorage.save() below fails and
+            // the user then clicks Cancel instead of retrying, editing (still referenced by
+            // SessionsTab's caches/menu closures) must be left exactly as it was, not stuck
+            // holding these in-progress, never-persisted edits.
+            SessionInfo s = editing != null ? editing.copy() : new SessionInfo();
             String oldGroup = editing != null ? editing.group : null;
             s.name  = txtName.getText().trim();
             s.host  = host;
@@ -426,7 +430,8 @@ public class SessionDialog {
                 && authUntouched;
 
             if (preserveLink) {
-                // s == editing: its authType/username/keyPath/credentialId are already correct.
+                // s already inherited authType/username/keyPath/credentialId from editing via
+                // copy(), so they're already correct — nothing to do.
             } else if (lockedIdx[0] >= 0) {
                 List<CredentialEntry> cur = credsRef.get();
                 if (lockedIdx[0] >= cur.size()) { alert(dlg, "Please select a saved credential."); return; }

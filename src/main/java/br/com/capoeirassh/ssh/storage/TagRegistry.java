@@ -27,13 +27,17 @@ public final class TagRegistry {
         new RGB(157, 124, 216), new RGB(69, 197, 192), new RGB(201, 168, 60), new RGB(108, 122, 137),
     };
 
-    private static final LinkedHashMap<String, RGB> tags = new LinkedHashMap<>();
+    // Case-insensitive keys — a case-only-different name (e.g. "Prod" after "prod" already
+    // exists) is treated as the SAME tag everywhere (exists()/create()/register()/getColor()),
+    // instead of silently creating a second entry that a case-insensitive display (like
+    // TagManagerDialog's sorted list) then collapses into an invisible, unmanageable orphan.
+    private static final TreeMap<String, RGB> tags = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
     static { load(); }
 
     private TagRegistry() {}
 
-    /** All known tags, in creation order. */
+    /** All known tags, alphabetically (case-insensitive). */
     public static synchronized List<String> getAll() {
         return new ArrayList<>(tags.keySet());
     }

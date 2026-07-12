@@ -4,7 +4,6 @@ import br.com.capoeirassh.ssh.model.CredentialEntry;
 
 import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
@@ -41,9 +40,14 @@ public final class CredentialStore {
 
     private static final long INACTIVITY_MS = 5 * 60 * 1000L; // 5 minutes
 
-    private List<CredentialEntry> entries   = new ArrayList<>();
-    private SecretKey             masterKey = null;
-    private byte[]                salt      = null;
+    private List<CredentialEntry> entries        = new ArrayList<>();
+    /** Raw AES key bytes, held directly instead of wrapped in a SecretKeySpec — SecretKeySpec
+     *  advertises Destroyable but destroy() throws DestroyFailedException on this JDK rather
+     *  than actually zeroing anything (JDK-8160206, still unresolved), so owning the byte[]
+     *  ourselves is the only way to actually wipe key material on lock()/rotation. A fresh
+     *  SecretKeySpec is constructed on demand for each Cipher.init() call. */
+    private byte[]                masterKeyBytes = null;
+    private byte[]                salt           = null;
     private int                   iterations = LEGACY_ITER; // KDF iterations of the loaded key
 
     private volatile long    lastAccessMs  = 0;
@@ -59,7 +63,7 @@ public final class CredentialStore {
         lockTimer.scheduleAtFixedRate(() -> {
             boolean locked = false;
             synchronized (this) {
-                if (masterKey != null && lastAccessMs > 0
+                if (masterKeyBytes != null && lastAccessMs > 0
                         && System.currentTimeMillis() - lastAccessMs >= INACTIVITY_MS) {
                     lock();
                     locked = true;
@@ -84,7 +88,7 @@ public final class CredentialStore {
 
     public static CredentialStore getInstance() { return INSTANCE; }
 
-    public synchronized boolean isUnlocked()   { return masterKey != null; }
+    public synchronized boolean isUnlocked()   { return masterKeyBytes != null; }
     public boolean vaultExists()  { return Files.exists(VAULT); }
 
     // -----------------------------------------------------------------------
@@ -93,9 +97,9 @@ public final class CredentialStore {
 
     /** Create a brand-new vault with the given master password. Zeroes the array after use. */
     public synchronized void create(char[] masterPassword) throws Exception {
-        this.salt       = randomBytes(SALT_LEN);
-        this.iterations = CURRENT_ITER;
-        this.masterKey  = deriveKey(masterPassword, salt, CURRENT_ITER);
+        this.salt           = randomBytes(SALT_LEN);
+        this.iterations     = CURRENT_ITER;
+        this.masterKeyBytes = deriveKeyBytes(masterPassword, salt, CURRENT_ITER);
         Arrays.fill(masterPassword, '\0');
         this.entries    = new ArrayList<>();
         persist();
@@ -138,14 +142,14 @@ public final class CredentialStore {
             byte[] iv       = Arrays.copyOfRange(raw, off, off + IV_LEN);   off += IV_LEN;
             byte[] cipher   = Arrays.copyOfRange(raw, off, raw.length);
 
-            SecretKey key = deriveKey(masterPassword, fileSalt, iter);
-            Cipher aes    = Cipher.getInstance("AES/GCM/NoPadding");
-            aes.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
-            byte[] plain  = aes.doFinal(cipher);   // throws AEADBadTagException on wrong key
+            byte[] keyBytes = deriveKeyBytes(masterPassword, fileSalt, iter);
+            Cipher aes      = Cipher.getInstance("AES/GCM/NoPadding");
+            aes.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(128, iv));
+            byte[] plain    = aes.doFinal(cipher);   // throws AEADBadTagException on wrong key
 
-            this.salt       = fileSalt;
-            this.iterations = iter;
-            this.masterKey  = key;
+            this.salt           = fileSalt;
+            this.iterations     = iter;
+            this.masterKeyBytes = keyBytes;
             touch();
             // Decode straight to char[] — never materialize the whole plaintext vault
             // (every saved password) as an immutable String, which can't be zeroed
@@ -162,17 +166,23 @@ public final class CredentialStore {
             // fresh salt — the password is still in hand here. Best-effort: a read-only vault
             // dir must never block a successful unlock.
             if (iter < CURRENT_ITER) {
+                byte[] newKeyBytes = null;
                 try {
                     byte[] newSalt = randomBytes(SALT_LEN);
-                    this.salt       = newSalt;
-                    this.iterations = CURRENT_ITER;
-                    this.masterKey  = deriveKey(masterPassword, newSalt, CURRENT_ITER);
+                    newKeyBytes         = deriveKeyBytes(masterPassword, newSalt, CURRENT_ITER);
+                    this.salt           = newSalt;
+                    this.iterations     = CURRENT_ITER;
+                    this.masterKeyBytes = newKeyBytes;
                     persist();
+                    // Only safe to wipe the superseded key once the new one is fully committed.
+                    Arrays.fill(keyBytes, (byte) 0);
                 } catch (Exception rePersistFailed) {
-                    // Revert to the working key/salt so in-memory state matches what's on disk.
-                    this.salt       = fileSalt;
-                    this.iterations = iter;
-                    this.masterKey  = key;
+                    // Revert to the working key/salt so in-memory state matches what's on disk —
+                    // keyBytes was never touched above, so it's still intact to revert to.
+                    this.salt           = fileSalt;
+                    this.iterations     = iter;
+                    this.masterKeyBytes = keyBytes;
+                    if (newKeyBytes != null) Arrays.fill(newKeyBytes, (byte) 0);
                 }
             }
         } finally {
@@ -188,9 +198,10 @@ public final class CredentialStore {
         for (CredentialEntry e : entries) {
             if (e.password != null) Arrays.fill(e.password, '\0');
         }
-        masterKey = null;
-        entries   = new ArrayList<>();
-        salt      = null;
+        if (masterKeyBytes != null) Arrays.fill(masterKeyBytes, (byte) 0);
+        masterKeyBytes = null;
+        entries        = new ArrayList<>();
+        salt           = null;
     }
 
     // -----------------------------------------------------------------------
@@ -214,9 +225,19 @@ public final class CredentialStore {
 
     public synchronized void addOrUpdate(CredentialEntry e) throws Exception {
         touch();
+        List<CredentialEntry> snapshot = new ArrayList<>(entries);
         entries.removeIf(x -> x.id.equals(e.id));
         entries.add(e);
-        persist();
+        try {
+            persist();
+        } catch (Exception ex) {
+            // Roll back so a failed save never leaves e's plaintext password permanently
+            // reachable from the store (and never gets silently written by some later,
+            // unrelated successful save that just happens to persist() the whole list).
+            entries = snapshot;
+            if (e.password != null) Arrays.fill(e.password, '\0');
+            throw ex;
+        }
     }
 
     public synchronized void delete(String id) throws Exception {
@@ -230,10 +251,10 @@ public final class CredentialStore {
     // -----------------------------------------------------------------------
 
     private synchronized void persist() throws Exception {
-        if (masterKey == null) throw new IllegalStateException("Vault is locked.");
+        if (masterKeyBytes == null) throw new IllegalStateException("Vault is locked.");
         byte[] iv    = randomBytes(IV_LEN);
         Cipher aes   = Cipher.getInstance("AES/GCM/NoPadding");
-        aes.init(Cipher.ENCRYPT_MODE, masterKey, new GCMParameterSpec(128, iv));
+        aes.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(masterKeyBytes, "AES"), new GCMParameterSpec(128, iv));
 
         // Serialize without ever forming one immutable String holding the whole
         // plaintext vault (every saved password) — extract into a char[]/byte[]
@@ -282,11 +303,12 @@ public final class CredentialStore {
      */
     public synchronized Map<String, String> mergeCredentials(List<br.com.capoeirassh.ssh.model.CredentialEntry> incoming)
             throws Exception {
-        if (masterKey == null) throw new IllegalStateException("Vault is locked.");
+        if (masterKeyBytes == null) throw new IllegalStateException("Vault is locked.");
         Set<String> usedLabels = entries.stream()
                 .map(e -> e.label.toLowerCase())
                 .collect(Collectors.toCollection(java.util.HashSet::new));
 
+        List<CredentialEntry> snapshot = new ArrayList<>(entries);
         Map<String, String> remap = new java.util.LinkedHashMap<>();
         for (br.com.capoeirassh.ssh.model.CredentialEntry imp : incoming) {
             String origId = imp.id;
@@ -298,7 +320,16 @@ public final class CredentialStore {
             usedLabels.add(imp.label.toLowerCase());
             entries.add(imp);
         }
-        persist();
+        try {
+            persist();
+        } catch (Exception ex) {
+            // Same rollback discipline as addOrUpdate() — a failed import must not leave
+            // every incoming plaintext password permanently resident in the live store.
+            entries = snapshot;
+            for (br.com.capoeirassh.ssh.model.CredentialEntry imp : incoming)
+                if (imp.password != null) Arrays.fill(imp.password, '\0');
+            throw ex;
+        }
         return remap;
     }
 
@@ -321,7 +352,17 @@ public final class CredentialStore {
     // -----------------------------------------------------------------------
 
     private static StringBuilder serialize(List<CredentialEntry> list) {
-        StringBuilder sb = new StringBuilder();
+        // Pre-size to (worst-case) fit every entry without growing — StringBuilder's default
+        // growth reallocates into a new backing char[] and abandons the old one (which, mid-way
+        // through this loop, already contains prior entries' plaintext passwords) as ordinary
+        // unzeroed garbage. Sizing up front so the buffer never needs to grow means there is
+        // only ever one backing array, which wipe() below can (and does) fully zero.
+        int estimate = 64;
+        for (CredentialEntry e : list) {
+            estimate += 32 + e.label.length() * 2 + e.username.length() * 2
+                + (e.keyPath != null ? e.keyPath.length() * 2 : 0) + e.password.length * 2;
+        }
+        StringBuilder sb = new StringBuilder(estimate);
         for (CredentialEntry e : list) {
             sb.append("e.").append(e.id).append(".l=").append(esc(e.label))   .append('\n');
             sb.append("e.").append(e.id).append(".u=").append(esc(e.username)).append('\n');
@@ -463,11 +504,13 @@ public final class CredentialStore {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private static SecretKey deriveKey(char[] password, byte[] salt, int iterations) throws Exception {
+    /** Returns the raw derived key bytes directly, rather than wrapping them in a SecretKey —
+     *  see the masterKeyBytes field comment for why. */
+    private static byte[] deriveKeyBytes(char[] password, byte[] salt, int iterations) throws Exception {
         SecretKeyFactory f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
         PBEKeySpec spec = new PBEKeySpec(password, salt, iterations, 256);
         try {
-            return new SecretKeySpec(f.generateSecret(spec).getEncoded(), "AES");
+            return f.generateSecret(spec).getEncoded();
         } finally {
             spec.clearPassword();
         }

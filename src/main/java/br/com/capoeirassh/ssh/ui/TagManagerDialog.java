@@ -136,7 +136,12 @@ class TagManagerDialog {
     private void createTag() {
         InputDialog input = new InputDialog(dlg, "New Tag", "Tag name:");
         String name = input.open();
-        if (name == null || name.isBlank()) return;
+        if (name == null) return;
+        name = name.trim();
+        if (name.isBlank()) return;
+        // Tags are persisted as a single comma-joined property with no escaping — a literal
+        // comma would silently fragment into bogus tags on the next load/save round-trip.
+        if (name.contains(",")) { error("Tag names can't contain a comma."); return; }
         if (TagRegistry.exists(name)) { error("Tag \"" + name + "\" already exists."); return; }
 
         ColorDialog cd = new ColorDialog(dlg);
@@ -158,7 +163,10 @@ class TagManagerDialog {
         InputDialog input = new InputDialog(dlg, "Rename Tag", "New name:");
         input.setInitialValue(tag);
         String newName = input.open();
-        if (newName == null || newName.isBlank() || newName.equals(tag)) return;
+        if (newName == null) return;
+        newName = newName.trim();
+        if (newName.isBlank() || newName.equals(tag)) return;
+        if (newName.contains(",")) { error("Tag names can't contain a comma."); return; }
 
         TagRegistry.rename(tag, newName);
         for (SessionInfo s : SessionStorage.loadAll()) {

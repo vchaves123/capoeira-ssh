@@ -231,9 +231,30 @@ public final class SessionStorage {
 
     public static String sanitize(String name) {
         String s = name.replaceAll("[^\\w\\-. ]", "_").trim();
+        // Windows silently strips trailing dots/spaces from a path segment on create — do the
+        // same here so the app's own notion of a group's name never diverges from what's
+        // actually on disk (otherwise "build." and "build" would resolve to the same directory
+        // without the app realizing it).
+        while (s.endsWith(".") || s.endsWith(" ")) s = s.substring(0, s.length() - 1);
         // "." and ".." are special path segments — left unblocked, a group named ".."
         // would resolve outside sessions/ into ~/.capoeira itself (alongside the vault).
         if (s.isEmpty() || s.equals(".") || s.equals("..")) return "_group";
         return s;
+    }
+
+    /** Finds an existing group whose on-disk (sanitized) form collides with candidateName's —
+     *  typically because the two are the same up to a case-insensitive-filesystem comparison
+     *  (Windows/macOS default), or because both happen to sanitize to the same string (e.g. two
+     *  names differing only in non-ASCII characters, which sanitize() collapses to "_"). Returns
+     *  null if there's no collision. {@code excludeSelf} lets a rename ignore the group's own
+     *  current name (renaming "Test" to "test" isn't a collision with itself). */
+    public static String findCollidingGroup(String candidateName, String excludeSelf) {
+        if (candidateName == null || candidateName.isBlank()) return null;
+        String candidateSanitized = sanitize(candidateName);
+        for (String existing : loadGroups()) {
+            if (existing.equals(excludeSelf)) continue;
+            if (sanitize(existing).equalsIgnoreCase(candidateSanitized)) return existing;
+        }
+        return null;
     }
 }
