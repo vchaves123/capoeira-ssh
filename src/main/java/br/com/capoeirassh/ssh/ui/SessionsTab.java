@@ -495,9 +495,10 @@ public class SessionsTab {
         Font lblSmFont = new Font(display, "Arial", 8, SWT.NORMAL);
         statsRow.addDisposeListener(e -> lblSmFont.dispose());
 
-        statSessions = buildStatBox(statsRow, display, "0", "SESSIONS", cGold,  numFont, lblSmFont, null);
-        statGroups   = buildStatBox(statsRow, display, "0", "GROUPS",   cTerra, numFont, lblSmFont, this::openGroupManager);
-        statOnline   = buildStatBox(statsRow, display, "0", "ONLINE",   cGreen, numFont, lblSmFont, null);
+        statSessions = buildStatBox(statsRow, display, "0", "SESSIONS", cGold,  numFont, lblSmFont, null, null);
+        statGroups   = buildStatBox(statsRow, display, "0", "GROUPS",   cTerra, numFont, lblSmFont,
+            this::openGroupManager, "Double-click to manage groups");
+        statOnline   = buildStatBox(statsRow, display, "0", "ONLINE",   cGreen, numFont, lblSmFont, null, null);
     }
 
     private void openGroupManager() {
@@ -507,25 +508,24 @@ public class SessionsTab {
 
     /** Creates one stat box and returns the Label that holds the number. {@code onDoubleClick},
      *  when non-null, opens something related to this stat (e.g. GROUPS opens the group
-     *  manager) and shows a hand cursor as a discoverability hint. */
+     *  manager); shows a hand cursor, {@code tooltip}, and highlights the border in the box's
+     *  own number color on hover as discoverability hints. */
     private Label buildStatBox(Composite parent, Display display,
                                String number, String label,
                                Color numColor, Font numFont, Font lblFont,
-                               Runnable onDoubleClick) {
+                               Runnable onDoubleClick, String tooltip) {
         Composite box = new Composite(parent, SWT.NONE);
         box.setBackground(cSurface);
         box.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 
         box.addListener(SWT.Paint, e -> {
             Rectangle b = box.getBounds();
-            e.gc.setForeground(cMid);
-            e.gc.drawRoundRectangle(0, 0, b.width - 1, b.height - 1, 8, 8);
+            boolean hover = box.getData("hoverBorder") != null;
+            e.gc.setForeground(hover ? numColor : cMid);
+            e.gc.setLineWidth(hover ? 2 : 1);
+            int inset = hover ? 1 : 0;
+            e.gc.drawRoundRectangle(inset, inset, b.width - 1 - inset * 2, b.height - 1 - inset * 2, 8, 8);
         });
-
-        if (onDoubleClick != null) {
-            box.setCursor(display.getSystemCursor(SWT.CURSOR_HAND));
-            addDoubleClickRecursive(box, onDoubleClick);
-        }
 
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 14; gl.marginHeight = 10;
@@ -545,6 +545,15 @@ public class SessionsTab {
         txtLbl.setForeground(cDim);
         txtLbl.setFont(lblFont);
         txtLbl.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+
+        // Wired last, after every child exists — a Label/Canvas doesn't bubble Mouse events
+        // up to its parent, so the recursive helpers need the full widget tree to attach to.
+        if (onDoubleClick != null) {
+            box.setCursor(display.getSystemCursor(SWT.CURSOR_HAND));
+            if (tooltip != null) box.setToolTipText(tooltip);
+            addDoubleClickRecursive(box, onDoubleClick);
+            addHoverBorderRecursive(box, box);
+        }
 
         return numLbl;
     }
@@ -1397,6 +1406,21 @@ public class SessionsTab {
         ctrl.addListener(SWT.MouseDoubleClick, e -> { if (e.button == 1) action.run(); });
         if (ctrl instanceof Composite)
             for (Control c : ((Composite) ctrl).getChildren()) addDoubleClickRecursive(c, action);
+    }
+
+    /** Highlights {@code box}'s own border (via its "hoverBorder" data flag, read by its Paint
+     *  listener) while the cursor is anywhere over it or its children — recurses the same way
+     *  addDoubleClickRecursive does, since a Label/Canvas child doesn't bubble Mouse events up
+     *  to its parent Composite. */
+    private void addHoverBorderRecursive(Control ctrl, Composite box) {
+        ctrl.addListener(SWT.MouseEnter, e -> { box.setData("hoverBorder", Boolean.TRUE); box.redraw(); });
+        ctrl.addListener(SWT.MouseExit, e -> {
+            Point cursor = box.getDisplay().getCursorLocation();
+            Point local  = box.toControl(cursor);
+            if (!box.getClientArea().contains(local)) { box.setData("hoverBorder", null); box.redraw(); }
+        });
+        if (ctrl instanceof Composite)
+            for (Control c : ((Composite) ctrl).getChildren()) addHoverBorderRecursive(c, box);
     }
 
     private void addSelectionClickRecursive(Control ctrl, SessionInfo session) {
