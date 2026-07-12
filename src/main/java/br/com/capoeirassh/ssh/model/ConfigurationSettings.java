@@ -19,6 +19,9 @@ public class ConfigurationSettings {
     public String  terminalType  = "xterm-256color";
     public int     backspaceCode = 0x7F;
 
+    /** When true, the SSH handshake/negotiation is shown live in the terminal (like {@code ssh -vvv}). */
+    public boolean sshVerbose = false;
+
     public static ConfigurationSettings fromSession(SessionInfo s) {
         ConfigurationSettings c = new ConfigurationSettings();
         c.appearFontSize = s.appearFontSize;
@@ -30,6 +33,7 @@ public class ConfigurationSettings {
         c.logFileName = s.logFileName;
         c.terminalType  = s.terminalType;
         c.backspaceCode = s.backspaceCode;
+        c.sshVerbose    = s.sshVerbose;
         return c;
     }
 
@@ -43,6 +47,7 @@ public class ConfigurationSettings {
         s.logFileName = logFileName;
         s.terminalType  = terminalType;
         s.backspaceCode = backspaceCode;
+        s.sshVerbose    = sshVerbose;
     }
 
     public ConfigurationSettings copy() {
@@ -52,6 +57,7 @@ public class ConfigurationSettings {
         c.appearBgR = appearBgR; c.appearBgG = appearBgG; c.appearBgB = appearBgB;
         c.logEnabled = logEnabled; c.logDir = logDir; c.logFileName = logFileName;
         c.terminalType = terminalType; c.backspaceCode = backspaceCode;
+        c.sshVerbose = sshVerbose;
         return c;
     }
 }

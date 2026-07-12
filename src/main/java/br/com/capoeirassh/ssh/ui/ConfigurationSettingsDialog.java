@@ -179,6 +179,14 @@ public class ConfigurationSettingsDialog {
         cmbBackspace.setItems("DEL (0x7F) — Linux and most systems", "BS (0x08) — AIX");
         cmbBackspace.select(settings.backspaceCode == 0x08 ? 1 : 0);
 
+        // ── SSH verbose ───────────────────────────────────────────────────────
+        label(dlg, "SSH diagnostics:");
+        Button chkVerbose = new Button(dlg, SWT.CHECK);
+        chkVerbose.setText("Show SSH handshake details in the terminal (like ssh -vvv)");
+        chkVerbose.setToolTipText("Prints key exchange, host key and authentication negotiation "
+            + "messages directly in the terminal as the connection is established.");
+        chkVerbose.setSelection(settings.sshVerbose);
+
         // ── Buttons ───────────────────────────────────────────────────────────
         new Label(dlg, SWT.NONE);
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
@@ -203,6 +211,7 @@ public class ConfigurationSettingsDialog {
             String termType = cmbTermType.getText().trim();
             settings.terminalType  = termType.isEmpty() ? "xterm-256color" : termType;
             settings.backspaceCode = cmbBackspace.getSelectionIndex() == 1 ? 0x08 : 0x7F;
+            settings.sshVerbose    = chkVerbose.getSelection();
 
             confirmed = true;
             dlg.dispose();

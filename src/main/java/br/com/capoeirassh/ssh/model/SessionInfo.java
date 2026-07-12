@@ -34,6 +34,8 @@ public class SessionInfo {
     public String   terminalType  = "xterm-256color";
     /** Byte sent for the Backspace key: 0x7F (DEL, most systems) or 0x08 (BS, e.g. AIX). */
     public int      backspaceCode = 0x7F;
+    /** When true, the SSH handshake/negotiation is shown live in the terminal (like {@code ssh -vvv}). */
+    public boolean  sshVerbose = false;
 
     /** Label shown in the tab title and session tree. */
     public String label() {

@@ -64,6 +64,7 @@ public final class SessionDefaults {
             // Match SessionStorage's clamp: only DEL (0x7F) or BS (0x08) are valid; anything
             // else would be narrowed to an arbitrary byte and sent to the SSH server.
             if (c.backspaceCode != 0x08 && c.backspaceCode != 0x7F) c.backspaceCode = 0x7F;
+            c.sshVerbose = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
             current = c;
         } catch (Exception ignored) {}
     }
@@ -83,6 +84,7 @@ public final class SessionDefaults {
         p.setProperty("logFileName", current.logFileName);
         p.setProperty("terminalType", current.terminalType);
         p.setProperty("backspaceCode", String.valueOf(current.backspaceCode));
+        p.setProperty("sshVerbose", String.valueOf(current.sshVerbose));
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             p.store(baos, null);

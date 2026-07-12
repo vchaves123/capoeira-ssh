@@ -826,7 +826,7 @@ public class TerminalTab {
 
     private void runSsh(SessionInfo info, char[] password) {
         try {
-            connection.connect(info, password, display); // zeroes password internally
+            connection.connect(info, password, display, this::showVerboseLine); // zeroes password internally
             openLogFile(info);
             display.asyncExec(() -> {
                 if (!canvas.isDisposed()) { updateTerminalSize(); canvas.setFocus(); }
@@ -844,6 +844,19 @@ public class TerminalTab {
             });
             handleDisconnect();
         }
+    }
+
+    /** Prints one SSH protocol log line (see {@link SshConnection#connect}) directly into the
+     *  terminal, dimmed, as the handshake happens — the {@code sshVerbose} option's UI. Called
+     *  from whatever thread JSch's logger fires on, so the emulator update (thread-safe) and the
+     *  repaint are dispatched onto the UI thread rather than assumed to already be on it. */
+    private void showVerboseLine(String line) {
+        display.asyncExec(() -> {
+            if (canvas.isDisposed()) return;
+            byte[] bytes = ("[90m*** ssh: " + line + "[0m\r\n").getBytes(StandardCharsets.UTF_8);
+            emulator.processBytes(bytes);
+            canvas.redraw();
+        });
     }
 
     private void readSsh() {
@@ -1235,6 +1248,10 @@ public class TerminalTab {
     public String   getTabTitle() { return tabTitle; }
 
     public boolean isLogging()   { return logStream != null; }
+
+    /** Turns SSH protocol diagnostics on/off for the live connection immediately — takes effect
+     *  on the current session, no reconnect needed. */
+    public void setSshVerbose(boolean on) { connection.setVerbose(on); }
 
     public String getLogDir() {
         SessionInfo s = sessionInfo;

@@ -24,13 +24,24 @@ public class SshConnection {
     private ChannelShell channel;
     private InputStream  input;
     private OutputStream output;
+    /** Live toggle read by the Logger registered in connect() — mutable via {@link #setVerbose}
+     *  so turning verbose off/on while already connected takes effect immediately (JSch keeps
+     *  logging channel/keepalive/rekey activity for the life of the session, not just the
+     *  initial handshake). Volatile: flipped from the UI thread, read from whatever thread
+     *  JSch's logger fires on. */
+    private volatile boolean verboseEnabled;
 
     /**
-     * @param info     session configuration
-     * @param password plaintext password or passphrase as char[] (zeroed after use); null = no password
-     * @param display  SWT display — used to show the host-key verification dialog on the UI thread
+     * @param info        session configuration
+     * @param password    plaintext password or passphrase as char[] (zeroed after use); null = no password
+     * @param display     SWT display — used to show the host-key verification dialog on the UI thread
+     * @param verboseSink when {@code info.sshVerbose} is true, receives one formatted line per
+     *                    SSH protocol log message (key exchange, host key, auth negotiation) —
+     *                    the JSch equivalent of {@code ssh -vvv}; ignored when {@code null} or
+     *                    when {@code info.sshVerbose} is false
      */
-    public void connect(SessionInfo info, char[] password, Display display) throws Exception {
+    public void connect(SessionInfo info, char[] password, Display display,
+                         java.util.function.Consumer<String> verboseSink) throws Exception {
         try {
             jsch = new JSch();
 
@@ -52,6 +63,21 @@ public class SshConnection {
             }
 
             session = jsch.getSession(info.username, info.host, info.port);
+
+            verboseEnabled = info.sshVerbose;
+            if (verboseSink != null) {
+                // Per-Session logger (this mwiede fork adds it beyond upstream jcraft's
+                // process-wide static JSch.setLogger) — so turning verbose on for one tab
+                // never leaks handshake logs into any other open session. Registered
+                // unconditionally (gated by verboseEnabled inside the callbacks, not here) so
+                // setVerbose() can turn logging on/off live without re-registering mid-session.
+                session.setLogger(new Logger() {
+                    @Override public boolean isEnabled(int level) { return verboseEnabled; }
+                    @Override public void log(int level, String message) {
+                        if (verboseEnabled) verboseSink.accept(levelName(level) + ": " + message);
+                    }
+                });
+            }
 
             // "ask" — JSch calls UserInfo.promptYesNo for unknown hosts and saves accepted keys
             // to the known_hosts file automatically.  "yes" would reject all unknown hosts silently.
@@ -91,6 +117,10 @@ public class SshConnection {
             if (password != null) Arrays.fill(password, '\0');
         }
     }
+
+    /** Turns SSH protocol log output on/off for the live connection immediately — no
+     *  reconnect needed, since the Logger registered in connect() re-checks this on every call. */
+    public void setVerbose(boolean on) { this.verboseEnabled = on; }
 
     public void send(byte[] data) throws IOException {
         output.write(data);
@@ -158,6 +188,18 @@ public class SshConnection {
         }
         buf[i] = 0x00; // TTY_OP_END
         return buf;
+    }
+
+    /** Maps JSch's numeric log level to the short label used in the verbose sink output. */
+    private static String levelName(int level) {
+        return switch (level) {
+            case Logger.DEBUG -> "debug";
+            case Logger.INFO  -> "info";
+            case Logger.WARN  -> "warn";
+            case Logger.ERROR -> "error";
+            case Logger.FATAL -> "fatal";
+            default           -> "log";
+        };
     }
 
     /** Convert char[] to UTF-8 bytes without creating an intermediate String. */

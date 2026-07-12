@@ -422,6 +422,7 @@ public class MainWindow {
         current.logFileName = terminal.getLogFileName();
         current.terminalType  = info.terminalType;
         current.backspaceCode = info.backspaceCode;
+        current.sshVerbose    = info.sshVerbose;
 
         ConfigurationSettingsDialog dlg = new ConfigurationSettingsDialog(shell, "Configuration Setting", current, info.host);
         if (!dlg.open()) return;
@@ -439,6 +440,8 @@ public class MainWindow {
 
         info.terminalType  = s.terminalType;
         info.backspaceCode = s.backspaceCode;
+        info.sshVerbose    = s.sshVerbose;
+        terminal.setSshVerbose(s.sshVerbose);
     }
 
     private void closeAll() {
