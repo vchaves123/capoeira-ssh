@@ -279,14 +279,19 @@ public class SessionsTab {
         aboutIconBox.addListener(SWT.MouseUp, e -> onAbout.run());
         for (Control c : aboutIconBox.getChildren()) c.addListener(SWT.MouseUp, e -> onAbout.run());
 
-        // Update badge overlay on the about icon
-        aboutIconBox.addListener(SWT.Paint, e -> {
+        // Update badge overlay on the about icon. Registered on BOTH the box and its child
+        // label: the label fills the box's entire client area (GridData FILL/FILL), so a
+        // badge painted only on the box would be silently covered by the label control
+        // stacked on top of it.
+        Listener updateBadgePaint = e -> {
             if (!updateAvailable) return;
             int sz = 8;
-            Rectangle b = aboutIconBox.getClientArea();
+            Point size = ((Control) e.widget).getSize();
             e.gc.setBackground(cGold);
-            e.gc.fillOval(b.width - sz - 2, 2, sz, sz);
-        });
+            e.gc.fillOval(size.x - sz - 2, 2, sz, sz);
+        };
+        aboutIconBox.addListener(SWT.Paint, updateBadgePaint);
+        for (Control c : aboutIconBox.getChildren()) c.addListener(SWT.Paint, updateBadgePaint);
     }
 
     private Composite createSidebarIcon(Composite parent, Display display, String emoji, boolean active) {
@@ -315,6 +320,7 @@ public class SessionsTab {
         lbl.setBackground(active ? cGoldHl : cSurface);
         lbl.setForeground(active ? cGold : cAreia);
         lbl.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        box.setData("label", lbl);
 
         Font emojiFont = new Font(display, "Segoe UI Emoji", 14, SWT.NORMAL);
         lbl.setFont(emojiFont);
@@ -1960,8 +1966,10 @@ public class SessionsTab {
         if (aboutIconBox == null || aboutIconBox.isDisposed()) return;
         updateAvailable = true;
         aboutIconBox.setToolTipText("Update available: v" + version + " — click About to download");
-        for (Control c : aboutIconBox.getChildren())
+        for (Control c : aboutIconBox.getChildren()) {
             c.setToolTipText(aboutIconBox.getToolTipText());
+            c.redraw();
+        }
         aboutIconBox.redraw();
     }
 }
