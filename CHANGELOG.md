@@ -5,6 +5,151 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Session icons**: pick one of 36 bundled icons for a session (Session dialog → "Icon:"
+  button), shown next to the session wherever it's listed.
+- **Card view** for "All sessions": toggle between the flat list and a Windows-Start-Menu-style
+  card view — one rounded box per group holding a compact icon-only grid, with the group name as
+  a caption below. Every box renders as a uniform N×N square grid, sized from the largest group,
+  regardless of how many sessions the other groups hold.
+- **Drag-and-drop between groups** in Card view: dragging a session's icon into another group's
+  box moves it there (updates the session's saved group and re-saves its file into the new
+  group's directory).
+- The List/Cards view choice now persists across app restarts
+  (`~/.capoeira/ui-state.properties`).
+
+### Fixed
+- **Import Sessions dialog**: re-scanning (or scanning two overlapping sources) listed every
+  previously found session a second time instead of skipping already-listed matches.
+- `run.bat` looked for the pre-rebrand jar name (`14bis-ssh-*.jar`) instead of
+  `capoeira-ssh-*.jar`, left over from the Capoeira rename.
+
+### Removed
+- Dead code left over from the 1.4.0 Home-tab redesign that was never deleted after the
+  migration: `SplashScreen` (never instantiated), `SessionTreePanel` and `WelcomeTab`
+  (superseded by `SessionsTab`).
+
+---
+
+## [1.4.3] — 2026-07-07
+
+### Fixed
+Fourth security audit plus two coverage-gap follow-up passes (builds 135–145) — 17 confirmed
+issues, all fixed:
+
+- **HIGH — Zip Slip in backup import**: `BackupBundle.fromProps` derived the on-disk session
+  filename from the ZIP entry name without sanitizing backslash path separators, letting a
+  malicious backup escape `~/.capoeira/sessions` on Windows. Entry names are now reduced to a
+  validated basename, falling back to a fresh UUID when unsafe.
+- **HIGH — immutable-`String` password leak in export/import**: the plaintext
+  `credentials.dat` (every saved password) was converted through un-zeroable `String`s on both
+  the export and import paths. Now carried through zeroable byte/char buffers end to end.
+- **HIGH — Windows ACLs are no-ops**: `SecureFiles.restrictWindows` relied on
+  `File.setReadable/Writable`, which don't affect NTFS ACLs at all. Now uses `icacls` to strip
+  inherited ACEs and grant the owner exclusive access.
+- **HIGH — two hostile-server terminal DoS vectors**: an unbounded `CSI` parameter list could
+  grow until the JVM OOM-crashed the app, and per-cell bold-`Font` allocation let a server churn
+  native font handles and freeze the (single-threaded) UI. Both are now capped/cached.
+- **KDF strength**: PBKDF2 iterations raised 120k → 600k (OWASP 2023 baseline), behind a new
+  self-describing v2 vault/backup format with transparent, one-time v1→v2 migration on unlock.
+  A follow-up fix (found by the security-audit skill's own eval run) bounds-checks the v2
+  iteration count immediately after parsing — an unchecked count near `INT_MAX` could otherwise
+  force 18–35 minutes of CPU-pegging computation before a corrupted/malicious file was rejected.
+- Heap hygiene: `CredentialStore.lock()` now zeroes every cached password `char[]` before
+  dropping it, instead of leaving plaintext passwords to linger until GC.
+- `unesc()` escape round-trip silently corrupted values containing a literal backslash+`n` (e.g.
+  Windows key paths) via chained `String.replace`; rewritten as a single left-to-right pass.
+- Thread-safety: vault state (`masterKey`/`entries`/`salt`) is now guarded by a single monitor
+  across create/unlock/lock/CRUD/persist, fixing a `persist()` TOCTOU NPE.
+- Secret-lifetime and resource leaks: the SSH password `char[]` is now wiped on every exit path,
+  including exceptions; session logs are capped at 100 MB to prevent disk exhaustion from a
+  hostile server; per-repaint selection/overlay `Color`/`Font` handles are cached and disposed
+  instead of leaking on every frame.
+- P3 hardening: pasted clipboard text is stripped of control bytes before being sent to the
+  shell; the terminal response queue is capped at 256 entries; the update-check response body is
+  capped at 64 KB.
+- Two dialog-sizing bugs clipped the vault password dialog's buttons — once under Windows DPI
+  scaling, then again on Linux/GTK with a different fix — both now use `pack()`-based sizing that
+  measures real widget metrics instead of a hardcoded pixel width.
+- The sessions-list keyboard filter (arrows/Delete/Enter) intercepted keystrokes meant for a
+  focused, connected terminal tab. Scoped to fire only while the Home tab is active, and
+  generalized into a "focus follows active tab" invariant enforced on every tab switch.
+
+---
+
+## [1.4.2] — 2026-07-05
+
+### Added
+- **Encrypted export/import backup**: "Export backup..." bundles all sessions (and, optionally,
+  the credential vault) into one AES-256-GCM-encrypted, password-protected file; "Import from
+  Capoeira backup..." restores it elsewhere, merging imported credentials into the local vault
+  (conflicting labels suffixed " (imported)") and automatically remapping each session's
+  credential link to the merged IDs. The former separate import/export sidebar icons are unified
+  into a single ⇅ menu (Export backup / Import from PuTTY or MobaXterm / Import from Capoeira
+  backup).
+- **Multi-select and bulk delete** in the sessions list (Ctrl/Shift-click, Delete key, "Delete N
+  sessions" in the context menu).
+- **Keyboard navigation** in the sessions list: arrow keys move the selection with wrap-around,
+  Enter connects.
+- **Duplicate session** (context menu; later relabeled "Copy") — opens the session dialog
+  pre-filled from the source, preserving a renamed tab's title if the source tab had one.
+- **Vault auto-lock** after 5 minutes of inactivity, a live lock/unlock sidebar icon reflecting
+  vault state, and a manual "Lock vault" button in the Credential Manager. Selecting the
+  locked-vault sentinel in a session's Username combo now auto-reopens the credential dropdown
+  right after a successful unlock.
+- **Host/port validation and auto-filled display name** in the session dialog: invalid
+  host/port disables Save; a blank display name defaults to `user@host`, upgraded to
+  `user@fqdn` via a background reverse-DNS lookup.
+
+### Changed
+- SSH connections now request standard PTY terminal modes (RFC 4254: `ICRNL`, `ECHO`, `ISIG`,
+  `ICANON`, `OPOST`, `ONLCR` and control characters) on connect.
+
+### Fixed
+- The sessions-list right-click context menu only opened when clicking a row's edges, not
+  anywhere on the row.
+- Duplicating a disconnected session didn't apply the disconnected (red) tab color.
+- A horizontal scrollbar appeared after the sessions list reloaded (e.g. after a delete).
+
+---
+
+## [1.4.1] — 2026-07-03
+
+### Fixed
+Home-screen fixes following the 1.4.0 redesign:
+- The ONLINE counter and status dot didn't update when a session connected or disconnected.
+- Single-click on a session row didn't connect (previously required a double-click).
+- Right-click triggered connect instead of opening the context menu.
+- The row hover effect disappeared when the mouse moved over a child text control.
+- White corner artifacts appeared on the avatar and status-dot canvases.
+
+### Added
+- Update-available badge on the About sidebar icon; hover effect on sidebar icons.
+- Session search now also filters by group name.
+
+---
+
+## [1.4.0] — 2026-07-03
+
+### Added
+- **Capoeira SSH rebrand**: renamed from "14bis SSH" (Java package
+  `br.com.quatorzebis.ssh` → `br.com.capoeirassh.ssh`, data directory `~/.14bis` →
+  `~/.capoeira`, all user-visible strings), with a new visual identity — a "Roda" icon (two
+  stick figures in ginga facing each other) and an Ouro/Terracota/Noite colour palette applied
+  throughout the app.
+- **Redesigned Home tab**: the old session-tree panel is replaced by a card+list dashboard — an
+  icon sidebar (Sessions / Credentials / Settings / About), a header with logo, search field and
+  "+ New Session" button, a stats row (session/group/online counts), up to 3 recent-session
+  cards, and the full session list below with avatar, group badge, status dot, hover state, and
+  live search-as-you-type filtering.
+
+### Changed
+- Default terminal text colour changed to Ouro (#E8B84B).
+
+---
+
 ## [1.3.1] — 2026-07-02
 
 ### Fixed

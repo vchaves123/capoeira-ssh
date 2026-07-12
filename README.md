@@ -9,7 +9,7 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 
 | | |
 |---|---|
-| ![Home](docs/screenshots/home.png) Session tree & welcome screen | ![Unlock vault](docs/screenshots/unlock-vault.png) Credential vault unlock |
+| ![Home](docs/screenshots/home.png) Home tab | ![Unlock vault](docs/screenshots/unlock-vault.png) Credential vault unlock |
 | ![Terminal session](docs/screenshots/terminal-session.png) An active terminal session | ![Disconnected tab](docs/screenshots/disconnected-tab.png) Disconnected session (red tab) |
 
 </details>
@@ -19,9 +19,14 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 - **xterm-256color** terminal emulator with full colour, bold, underline and reverse support
 - **Tabbed interface** — open multiple sessions side by side, drag tabs to reorder
 - **Session manager** — save hosts, port, authentication method and terminal appearance per session
+- **Session icons** — pick one of 36 bundled icons to tell sessions apart at a glance
+- **List or Card view** — browse "All sessions" as a flat list or as Windows-Start-Menu-style
+  group cards; drag a session between group cards to move it; your choice persists across restarts
 - **Authentication** — username/password, private key, or saved credentials (AES-256 encrypted vault)
 - **Credential manager** — store and reuse credentials across sessions, protected by a master password
 - **Session groups** — organise sessions into named groups
+- **Encrypted backup** — export all sessions (and, optionally, the credential vault) to a single
+  password-protected file, and import it back or merge it into another install
 - **Terminal appearance** — per-session font size, foreground and background colour
 - **Screen capture / logging** — save terminal output (plain text, ANSI stripped) to a file; toggle on/off at any time from the tab context menu
 - **Scrollback buffer** with mouse wheel and scroll bar
@@ -32,7 +37,7 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 
 | Component | Minimum |
 |-----------|---------|
-| Java | 17 or newer |
+| Java | 21 or newer |
 | OS | Windows 10+, Linux (GTK 3), macOS 11+ |
 
 ## Installation
@@ -51,7 +56,7 @@ mvn package
 java -jar target/capoeira-ssh-*.jar
 ```
 
-Maven and Java 17+ must be installed.
+Maven and Java 21+ must be installed.
 
 ## Data storage
 
@@ -91,6 +96,10 @@ Log files are saved as `yyyyMMdd_HHmmss_<name>.log` under the configured directo
 
 The Windows installer is not yet code-signed. See [SIGNING.md](SIGNING.md) for details
 and options.
+
+## Credits
+
+Third-party inspirations and attributions are listed in [CREDITS.md](CREDITS.md).
 
 ## License
 
