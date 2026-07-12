@@ -112,6 +112,12 @@ public class ImportSessionsDialog {
 
     private void addRows(List<SessionInfo> sessions) {
         for (SessionInfo s : sessions) {
+            // Re-scanning the same source (or a second source with overlapping entries)
+            // must not duplicate rows already listed.
+            boolean dup = found.stream().anyMatch(f ->
+                f.host.equalsIgnoreCase(s.host) && f.port == s.port
+                    && f.username.equalsIgnoreCase(s.username) && f.name.equals(s.name));
+            if (dup) continue;
             found.add(s);
             TableItem item = new TableItem(table, SWT.NONE);
             item.setText(new String[]{
