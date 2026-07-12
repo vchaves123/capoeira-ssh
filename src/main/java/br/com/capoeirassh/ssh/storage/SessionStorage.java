@@ -56,6 +56,7 @@ public final class SessionStorage {
         p.setProperty("backspaceCode", String.valueOf(s.backspaceCode));
         p.setProperty("sshVerbose",    String.valueOf(s.sshVerbose));
         p.setProperty("sortOrder",     String.valueOf(s.sortOrder));
+        p.setProperty("tags",          String.join(",", s.tags));
 
         Path file = dir.resolve(s.fileName());
         try (OutputStream out = SecureFiles.openAppend(file)) {
@@ -186,6 +187,7 @@ public final class SessionStorage {
         if (s.backspaceCode != 0x08 && s.backspaceCode != 0x7F) s.backspaceCode = 0x7F;
         s.sshVerbose    = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
         s.sortOrder     = parseInt(p.getProperty("sortOrder", "0"));
+        s.tags          = parseTags(p.getProperty("tags", ""));
         String at        = p.getProperty("authType", "PASSWORD");
         try { s.authType = SessionInfo.AuthType.valueOf(at); }
         catch (IllegalArgumentException e) { s.authType = SessionInfo.AuthType.PASSWORD; }
@@ -206,6 +208,18 @@ public final class SessionStorage {
     }
     private static int parseInt(String s) {
         try { return Integer.parseInt(s.trim()); } catch (NumberFormatException e) { return 0; }
+    }
+    /** Comma-separated, trimmed, de-duplicated, capped at 6 — defensive against a hand-edited
+     *  or corrupted *.session file, not just whatever the dialog already validated on save. */
+    private static List<String> parseTags(String raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null || raw.isBlank()) return out;
+        for (String t : raw.split(",")) {
+            String trimmed = t.trim();
+            if (!trimmed.isEmpty() && !out.contains(trimmed)) out.add(trimmed);
+            if (out.size() == 6) break;
+        }
+        return out;
     }
     private static int[] parseRgb(String s) {
         try {

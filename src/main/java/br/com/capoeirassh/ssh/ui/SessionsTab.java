@@ -55,7 +55,7 @@ public class SessionsTab {
     private Composite innerComposite;
     private Label statSessions;
     private Label statGroups;
-    private Label statOnline;
+    private Label statTags;
     private Composite recentCardsRow;
     private Composite listContainer;
     private Text searchText;
@@ -498,11 +498,17 @@ public class SessionsTab {
         statSessions = buildStatBox(statsRow, display, "0", "SESSIONS", cGold,  numFont, lblSmFont, null, null);
         statGroups   = buildStatBox(statsRow, display, "0", "GROUPS",   cTerra, numFont, lblSmFont,
             this::openGroupManager, "Double-click to manage groups");
-        statOnline   = buildStatBox(statsRow, display, "0", "ONLINE",   cGreen, numFont, lblSmFont, null, null);
+        statTags     = buildStatBox(statsRow, display, "0", "TAGS",     cGreen, numFont, lblSmFont,
+            this::openTagManager, "Double-click to manage tags");
     }
 
     private void openGroupManager() {
         boolean changed = new GroupManagerDialog(shell).open();
+        if (changed) reload();
+    }
+
+    private void openTagManager() {
+        boolean changed = new TagManagerDialog(shell).open();
         if (changed) reload();
     }
 
@@ -870,6 +876,9 @@ public class SessionsTab {
             String hostStr = session.host + (session.port != 22 ? ":" + session.port : "");
             tip += "  —  " + hostStr;
         }
+        if (session.tags != null && !session.tags.isEmpty()) {
+            tip += "  [" + String.join(", ", session.tags) + "]";
+        }
         halo.setToolTipText(tip);
         icon.setToolTipText(tip);
         if (isOnline) icon.setToolTipText(tip + "  •  online");
@@ -918,8 +927,11 @@ public class SessionsTab {
             statSessions.setText(String.valueOf(sessions.size()));
         if (statGroups != null && !statGroups.isDisposed())
             statGroups.setText(String.valueOf(groups.size()));
-        if (statOnline != null && !statOnline.isDisposed())
-            statOnline.setText(String.valueOf(online.size()));
+        if (statTags != null && !statTags.isDisposed()) {
+            Set<String> distinctTags = new java.util.HashSet<>();
+            for (SessionInfo s : sessions) distinctTags.addAll(s.tags);
+            statTags.setText(String.valueOf(distinctTags.size()));
+        }
 
         // Rebuild recent cards
         if (recentCardsRow != null && !recentCardsRow.isDisposed()) {
@@ -1128,6 +1140,45 @@ public class SessionsTab {
     }
 
     // -----------------------------------------------------------------------
+    // Tag badges (List view only — Card view is icon-only, tags show in the tooltip instead)
+    // -----------------------------------------------------------------------
+    private void buildTagBadges(Composite parent, Display display, java.util.List<String> tags) {
+        Composite strip = new Composite(parent, SWT.NONE);
+        strip.setBackground(cBg);
+        strip.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        RowLayout rl = new RowLayout(SWT.HORIZONTAL);
+        rl.spacing = 4; rl.marginWidth = 0; rl.marginHeight = 0; rl.wrap = true;
+        strip.setLayout(rl);
+        for (String tag : tags) buildTagBadge(strip, display, tag);
+    }
+
+    /** Same visual style as {@link #buildGroupBadge}, but laid out with RowLayout (no GridData)
+     *  since a row can hold a variable number of these, unlike the single fixed group badge. */
+    private void buildTagBadge(Composite parent, Display display, String tag) {
+        Composite badge = new Composite(parent, SWT.NONE);
+        badge.setBackground(cBlack);
+
+        badge.addListener(SWT.Paint, e -> {
+            Rectangle b = badge.getBounds();
+            e.gc.setForeground(cBorder);
+            e.gc.drawRoundRectangle(0, 0, b.width - 1, b.height - 1, 3, 3);
+        });
+
+        GridLayout gl = new GridLayout(1, false);
+        gl.marginWidth = 5; gl.marginHeight = 2;
+        badge.setLayout(gl);
+
+        Label lbl = new Label(badge, SWT.NONE);
+        lbl.setText(tag);
+        lbl.setBackground(cBlack);
+        lbl.setForeground(cGreen);
+        Font f = new Font(display, "Arial", 8, SWT.NORMAL);
+        lbl.setFont(f);
+        lbl.addDisposeListener(e -> f.dispose());
+        lbl.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, false, false));
+    }
+
+    // -----------------------------------------------------------------------
     // Session list row
     // -----------------------------------------------------------------------
     private void buildListRow(Composite parent, Display display, SessionInfo session, boolean isOnline) {
@@ -1198,6 +1249,10 @@ public class SessionsTab {
         hostL.setFont(hostF);
         hostL.addDisposeListener(e -> hostF.dispose());
         hostL.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        if (session.tags != null && !session.tags.isEmpty()) {
+            buildTagBadges(nameCol, display, session.tags);
+        }
 
         // Group badge column
         if (session.group != null && !session.group.isEmpty()) {

@@ -257,6 +257,7 @@ public final class BackupBundle {
         s.backspaceCode = def(p.getProperty("backspaceCode", "127"), 127);
         s.sshVerbose    = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
         s.sortOrder     = def(p.getProperty("sortOrder", "0"), 0);
+        s.tags          = parseTags(p.getProperty("tags", ""));
         try { s.authType = SessionInfo.AuthType.valueOf(p.getProperty("authType", "PASSWORD")); }
         catch (Exception e) { s.authType = SessionInfo.AuthType.PASSWORD; }
         return s;
@@ -271,6 +272,16 @@ public final class BackupBundle {
 
     private static int def(String s, int d) {
         try { return Integer.parseInt(s.trim()); } catch (Exception e) { return d; }
+    }
+    private static List<String> parseTags(String raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null || raw.isBlank()) return out;
+        for (String t : raw.split(",")) {
+            String trimmed = t.trim();
+            if (!trimmed.isEmpty() && !out.contains(trimmed)) out.add(trimmed);
+            if (out.size() == 6) break;
+        }
+        return out;
     }
     private static int[] rgb(String s) {
         try {

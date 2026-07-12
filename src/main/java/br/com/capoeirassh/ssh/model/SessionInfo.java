@@ -40,6 +40,8 @@ public class SessionInfo {
      *  Sessions sharing the default 0 fall back to their on-disk load order until the user
      *  drags one, at which point the whole visible list is resequenced to 0..N-1. */
     public int      sortOrder = 0;
+    /** Free-form labels for filtering/organizing, independent of group. Capped at 6. */
+    public java.util.List<String> tags = new java.util.ArrayList<>();
 
     /** Label shown in the tab title and session tree. */
     public String label() {

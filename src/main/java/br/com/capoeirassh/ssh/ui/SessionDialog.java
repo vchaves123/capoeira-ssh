@@ -86,6 +86,11 @@ public class SessionDialog {
             refreshIconBtn.run();
         });
 
+        // ── Tags ──────────────────────────────────────────────────────────────
+        label(dlg, "Tags:");
+        Text txtTags = text(dlg);
+        txtTags.setMessage("e.g. prod, critical, db (up to 6, comma-separated)");
+
         // ── Authentication ───────────────────────────────────────────────────
         CredentialStore store = CredentialStore.getInstance();
         final java.util.concurrent.atomic.AtomicReference<List<CredentialEntry>> credsRef =
@@ -293,6 +298,9 @@ public class SessionDialog {
                 chosenIcon[0] = SessionIconType.fromKey(editing.iconType);
                 refreshIconBtn.run();
             }
+            if (editing.tags != null && !editing.tags.isEmpty()) {
+                txtTags.setText(String.join(", ", editing.tags));
+            }
 
             boolean linkedToCredential = false;
             if (editing.credentialId != null && !editing.credentialId.isBlank()) {
@@ -372,6 +380,13 @@ public class SessionDialog {
             String host = txtHost.getText().trim();
             if (host.isEmpty()) { alert(dlg, "Host is required."); return; }
 
+            List<String> tags = new java.util.ArrayList<>();
+            for (String t : txtTags.getText().split(",")) {
+                String trimmed = t.trim();
+                if (!trimmed.isEmpty() && !tags.contains(trimmed)) tags.add(trimmed);
+            }
+            if (tags.size() > 6) { alert(dlg, "Up to 6 tags allowed."); return; }
+
             SessionInfo s = editing != null ? editing : new SessionInfo();
             String oldGroup = editing != null ? editing.group : null;
             s.name  = txtName.getText().trim();
@@ -380,6 +395,7 @@ public class SessionDialog {
             String groupText = cmbGroup.getText().trim();
             s.group = (groupText.isEmpty() || groupText.equals("(none)")) ? "" : groupText;
             s.iconType = chosenIcon[0] != null ? chosenIcon[0].getKey() : "";
+            s.tags = tags;
 
             String user = cmbUser.getText().trim();
 
