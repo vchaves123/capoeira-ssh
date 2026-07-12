@@ -88,8 +88,15 @@ public class SessionDialog {
 
         // ── Tags ──────────────────────────────────────────────────────────────
         label(dlg, "Tags:");
-        Text txtTags = text(dlg);
-        txtTags.setMessage("e.g. prod, critical, db (up to 6, comma-separated)");
+        org.eclipse.swt.widgets.List listTags =
+            new org.eclipse.swt.widgets.List(dlg, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL);
+        GridData gdTags = fill();
+        gdTags.heightHint = 80;
+        listTags.setLayoutData(gdTags);
+        for (String t : br.com.capoeirassh.ssh.storage.TagRegistry.getAll()) listTags.add(t);
+        listTags.setToolTipText(listTags.getItemCount() == 0
+            ? "No tags yet — create some via the TAGS card on the Home tab."
+            : "Ctrl/Shift-click to select up to 6 tags.");
 
         // ── Authentication ───────────────────────────────────────────────────
         CredentialStore store = CredentialStore.getInstance();
@@ -299,7 +306,8 @@ public class SessionDialog {
                 refreshIconBtn.run();
             }
             if (editing.tags != null && !editing.tags.isEmpty()) {
-                txtTags.setText(String.join(", ", editing.tags));
+                for (int i = 0; i < listTags.getItemCount(); i++)
+                    if (editing.tags.contains(listTags.getItem(i))) listTags.select(i);
             }
 
             boolean linkedToCredential = false;
@@ -380,11 +388,7 @@ public class SessionDialog {
             String host = txtHost.getText().trim();
             if (host.isEmpty()) { alert(dlg, "Host is required."); return; }
 
-            List<String> tags = new java.util.ArrayList<>();
-            for (String t : txtTags.getText().split(",")) {
-                String trimmed = t.trim();
-                if (!trimmed.isEmpty() && !tags.contains(trimmed)) tags.add(trimmed);
-            }
+            List<String> tags = new java.util.ArrayList<>(java.util.Arrays.asList(listTags.getSelection()));
             if (tags.size() > 6) { alert(dlg, "Up to 6 tags allowed."); return; }
 
             SessionInfo s = editing != null ? editing : new SessionInfo();
