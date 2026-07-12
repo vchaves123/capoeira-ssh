@@ -760,6 +760,31 @@ public class SessionsTab {
         GridData gdCap = new GridData(SWT.CENTER, SWT.CENTER, true, false);
         gdCap.widthHint = dim * 40 + 32;
         captionLbl.setLayoutData(gdCap);
+
+        // "Ungrouped" is the synthetic root-level bucket (targetGroup == ""), not a real
+        // group on disk — renaming it makes no sense, so only wire real groups.
+        if (!targetGroup.isBlank()) {
+            captionLbl.setCursor(display.getSystemCursor(SWT.CURSOR_HAND));
+            captionLbl.setToolTipText("Double-click to rename this group");
+            captionLbl.addListener(SWT.MouseDoubleClick, e -> renameGroupCaption(targetGroup));
+        }
+    }
+
+    /** Renames a group from its Card-view caption label, mirroring GroupManagerDialog's own
+     *  rename flow (same InputDialog helper, same SessionStorage.renameGroup call). */
+    private void renameGroupCaption(String group) {
+        InputDialog input = new InputDialog(shell, "Rename Group", "New name:");
+        input.setInitialValue(group);
+        String newName = input.open();
+        if (newName == null || newName.isBlank() || newName.equals(group)) return;
+        try {
+            SessionStorage.renameGroup(group, newName);
+            reload();
+        } catch (Exception ex) {
+            MessageBox mb = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+            mb.setMessage("Failed to rename group:\n" + ex.getMessage());
+            mb.open();
+        }
     }
 
     /** Deletes the session's old on-disk file and re-saves it under the new group,
