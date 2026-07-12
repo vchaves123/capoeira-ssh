@@ -55,6 +55,7 @@ public final class SessionStorage {
         p.setProperty("terminalType",  s.terminalType != null && !s.terminalType.isBlank() ? s.terminalType : "xterm-256color");
         p.setProperty("backspaceCode", String.valueOf(s.backspaceCode));
         p.setProperty("sshVerbose",    String.valueOf(s.sshVerbose));
+        p.setProperty("sortOrder",     String.valueOf(s.sortOrder));
 
         Path file = dir.resolve(s.fileName());
         try (OutputStream out = SecureFiles.openAppend(file)) {
@@ -184,6 +185,7 @@ public final class SessionStorage {
         s.backspaceCode = parseInt(p.getProperty("backspaceCode", "127"));
         if (s.backspaceCode != 0x08 && s.backspaceCode != 0x7F) s.backspaceCode = 0x7F;
         s.sshVerbose    = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
+        s.sortOrder     = parseInt(p.getProperty("sortOrder", "0"));
         String at        = p.getProperty("authType", "PASSWORD");
         try { s.authType = SessionInfo.AuthType.valueOf(at); }
         catch (IllegalArgumentException e) { s.authType = SessionInfo.AuthType.PASSWORD; }

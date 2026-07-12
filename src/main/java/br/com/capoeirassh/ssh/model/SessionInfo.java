@@ -36,6 +36,10 @@ public class SessionInfo {
     public int      backspaceCode = 0x7F;
     /** When true, the SSH handshake/negotiation is shown live in the terminal (like {@code ssh -vvv}). */
     public boolean  sshVerbose = false;
+    /** Manual display order in the flat sessions list (List view) — lower sorts first.
+     *  Sessions sharing the default 0 fall back to their on-disk load order until the user
+     *  drags one, at which point the whole visible list is resequenced to 0..N-1. */
+    public int      sortOrder = 0;
 
     /** Label shown in the tab title and session tree. */
     public String label() {

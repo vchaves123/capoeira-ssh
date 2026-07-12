@@ -256,6 +256,7 @@ public final class BackupBundle {
         s.terminalType  = p.getProperty("terminalType",  "xterm-256color");
         s.backspaceCode = def(p.getProperty("backspaceCode", "127"), 127);
         s.sshVerbose    = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
+        s.sortOrder     = def(p.getProperty("sortOrder", "0"), 0);
         try { s.authType = SessionInfo.AuthType.valueOf(p.getProperty("authType", "PASSWORD")); }
         catch (Exception e) { s.authType = SessionInfo.AuthType.PASSWORD; }
         return s;

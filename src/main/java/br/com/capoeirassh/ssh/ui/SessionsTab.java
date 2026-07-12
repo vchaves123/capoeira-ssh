@@ -71,6 +71,14 @@ public class SessionsTab {
     private final java.util.Map<String, Composite> rowById = new java.util.HashMap<>();
     private Color cSelected;
 
+    // Row drag-reorder state (List view only) — same self-contained Mouse* + Paint-indicator
+    // approach as MainWindow's tab reordering, deliberately not SWT DragSource/DropTarget
+    // (that native OLE-based path is what made the card-view grid reorder unreliable).
+    private static final int ROW_DRAG_THRESHOLD = 5;
+    private SessionInfo draggedRowSession;
+    private int dragStartY;
+    private int dropIndicatorY = -1;
+
     public SessionsTab(CTabFolder folder, Shell shell,
                        BiConsumer<SessionInfo, char[]> onConnect,
                        Runnable onCredentials, Runnable onAbout,
@@ -611,6 +619,14 @@ public class SessionsTab {
         gl.marginWidth = 0; gl.marginHeight = 0;
         gl.verticalSpacing = 2;
         listContainer.setLayout(gl);
+
+        // Row drag-reorder indicator (List view only — see addRowDragRecursive/commitRowReorder).
+        listContainer.addListener(SWT.Paint, e -> {
+            if (draggedRowSession == null || dropIndicatorY < 0) return;
+            e.gc.setForeground(cGold);
+            e.gc.setLineWidth(2);
+            e.gc.drawLine(0, dropIndicatorY, listContainer.getBounds().width, dropIndicatorY);
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -816,6 +832,7 @@ public class SessionsTab {
     // -----------------------------------------------------------------------
     public void reload() {
         List<SessionInfo> sessions = SessionStorage.loadAll();
+        sessions.sort((a, b) -> Integer.compare(a.sortOrder, b.sortOrder));
         List<String> groups;
         try { groups = SessionStorage.loadGroups(); } catch (Exception ex) { groups = List.of(); }
 
@@ -1134,6 +1151,83 @@ public class SessionsTab {
         arrow.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
 
         wireSessionInteractions(row, session);
+        addRowDragRecursive(row, session);
+    }
+
+    /** Tracks a plain-mouse drag (no native DnD) to reorder rows in List view — mirrors
+     *  MainWindow's tab drag-reorder: MouseDown marks the candidate, MouseMove past a small
+     *  threshold shows a live insertion line, MouseUp commits the new order. Recurses over the
+     *  row's children so grabbing anywhere on the row (name, host, avatar...) starts the drag. */
+    private void addRowDragRecursive(Control ctrl, SessionInfo session) {
+        ctrl.addListener(SWT.MouseDown, e -> {
+            if (e.button != 1) return;
+            draggedRowSession = session;
+            dragStartY = toContainerY(ctrl, e.x, e.y);
+        });
+        ctrl.addListener(SWT.MouseMove, e -> {
+            if (draggedRowSession == null) return;
+            int y = toContainerY(ctrl, e.x, e.y);
+            if (dropIndicatorY < 0 && Math.abs(y - dragStartY) < ROW_DRAG_THRESHOLD) return;
+            dropIndicatorY = y;
+            listContainer.setCursor(listContainer.getDisplay().getSystemCursor(SWT.CURSOR_SIZENS));
+            listContainer.redraw();
+        });
+        ctrl.addListener(SWT.MouseUp, e -> {
+            if (draggedRowSession == null) return;
+            SessionInfo src = draggedRowSession;
+            boolean dragged = dropIndicatorY >= 0;
+            draggedRowSession = null;
+            dropIndicatorY = -1;
+            listContainer.setCursor(null);
+            listContainer.redraw();
+            if (dragged) commitRowReorder(src, toContainerY(ctrl, e.x, e.y));
+        });
+        if (ctrl instanceof Composite) {
+            for (Control c : ((Composite) ctrl).getChildren()) addRowDragRecursive(c, session);
+        }
+    }
+
+    /** Translates a control-local point into a Y coordinate relative to {@code listContainer},
+     *  so drag geometry is comparable regardless of which row/child fired the mouse event. */
+    private int toContainerY(Control ctrl, int x, int y) {
+        return listContainer.toControl(ctrl.toDisplay(x, y)).y;
+    }
+
+    /** Given a drop Y (in listContainer coordinates), returns the index in {@code order} before
+     *  which the dragged row should land — same half-height-boundary test as the tab reorder's
+     *  {@code dropIndexAt}, just vertical instead of horizontal. */
+    private int computeInsertIndex(int y, java.util.List<SessionInfo> order) {
+        for (int i = 0; i < order.size(); i++) {
+            Composite row = rowById.get(order.get(i).id);
+            if (row == null || row.isDisposed()) continue;
+            Rectangle b = row.getBounds();
+            if (y < b.y + b.height / 2) return i;
+        }
+        return order.size();
+    }
+
+    /** Resequences the whole visible List-view order after a row drag and persists only the
+     *  sessions whose {@code sortOrder} actually changed. Moving a session this way never
+     *  changes its group — only its position. */
+    private void commitRowReorder(SessionInfo src, int dropY) {
+        java.util.List<SessionInfo> order = new java.util.ArrayList<>(sessionOrder);
+        int srcIdx = order.indexOf(src);
+        if (srcIdx < 0) return;
+        int insertIdx = computeInsertIndex(dropY, order);
+        if (insertIdx == srcIdx || insertIdx == srcIdx + 1) return; // no actual move
+
+        order.remove(srcIdx);
+        if (insertIdx > srcIdx) insertIdx--;
+        order.add(insertIdx, src);
+
+        for (int i = 0; i < order.size(); i++) {
+            SessionInfo s = order.get(i);
+            if (s.sortOrder != i) {
+                s.sortOrder = i;
+                try { SessionStorage.save(s); } catch (Exception ignored) {}
+            }
+        }
+        reload();
     }
 
     /** Selection click/keyboard wiring + right-click context menu — shared by the flat
