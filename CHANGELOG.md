@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.5] — 2026-07-12
+
+### Added
+- **Update-available dialog**: the Import/Export sidebar icon now shows a gold badge when a
+  newer release is detected. Its context menu gains a "New version available..." item that opens
+  a dialog with the release notes, a button to open the release page in a browser, and an option
+  to permanently dismiss update alerts.
+
+### Changed
+- The update-available indicator moved from the About icon to the Import/Export icon.
+
+### Fixed
+- The update-available badge (when it briefly lived on the About icon) was invisible: the emoji
+  label filling that icon's whole area painted over the badge dot drawn on its parent.
+
 ## [1.4.4] — 2026-07-12
 
 ### Added
