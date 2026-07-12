@@ -69,6 +69,10 @@ public class SessionsTab {
     private final java.util.List<SessionInfo>     sessionOrder = new java.util.ArrayList<>();
     private String lastClickedId = null;
     private final java.util.Map<String, Composite> rowById = new java.util.HashMap<>();
+    /** Each row/tile's resting (unselected, unhovered) background — cBg for a flat list row,
+     *  cSurface for a card-view tile — so deselecting always restores the right one instead of
+     *  hardcoding a single color that only matched whichever view happened to be built last. */
+    private final java.util.Map<String, Color> restBgById = new java.util.HashMap<>();
     private Color cSelected;
 
     // Row drag-reorder state (List view only) — same self-contained Mouse* + Paint-indicator
@@ -796,6 +800,7 @@ public class SessionsTab {
         halo.setLayout(hgl);
 
         rowById.put(session.id, halo);
+        restBgById.put(session.id, cSurface);
         Color normalBg = selectedIds.contains(session.id) ? cSelected : cSurface;
         halo.setBackground(normalBg);
 
@@ -905,6 +910,7 @@ public class SessionsTab {
             sessionOrder.clear();
             sessionOrder.addAll(sessions);
             rowById.clear();
+            restBgById.clear();
             if (cardView) {
                 buildCardView(sessions, online, display);
             } else {
@@ -1103,6 +1109,7 @@ public class SessionsTab {
         row.setLayout(gl);
 
         rowById.put(session.id, row);
+        restBgById.put(session.id, cBg);
 
         // Hover / selection background
         Color normalBg = selectedIds.contains(session.id) ? cSelected : cBg;
@@ -1375,7 +1382,7 @@ public class SessionsTab {
             if (ctrl_) {
                 if (selectedIds.contains(session.id)) {
                     selectedIds.remove(session.id);
-                    applyRowColor(session.id, cBg);
+                    applyRowColor(session.id, restBgById.getOrDefault(session.id, cBg));
                 } else {
                     selectedIds.add(session.id);
                     applyRowColor(session.id, cSelected);
@@ -1423,7 +1430,7 @@ public class SessionsTab {
     }
 
     private void clearSelectionVisuals() {
-        for (String id : selectedIds) applyRowColor(id, cBg);
+        for (String id : selectedIds) applyRowColor(id, restBgById.getOrDefault(id, cBg));
     }
 
     private void deleteSelectedSessions() {
