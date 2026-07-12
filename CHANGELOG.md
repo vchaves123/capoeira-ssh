@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased]
+## [1.4.4] — 2026-07-12
 
 ### Added
 - **Session icons**: pick one of 36 bundled icons for a session (Session dialog → "Icon:"
@@ -13,23 +13,66 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Card view** for "All sessions": toggle between the flat list and a Windows-Start-Menu-style
   card view — one rounded box per group holding a compact icon-only grid, with the group name as
   a caption below. Every box renders as a uniform N×N square grid, sized from the largest group,
-  regardless of how many sessions the other groups hold.
-- **Drag-and-drop between groups** in Card view: dragging a session's icon into another group's
-  box moves it there (updates the session's saved group and re-saves its file into the new
-  group's directory).
+  regardless of how many sessions the other groups hold. Each icon shows the session's IP (or the
+  first label of its FQDN) underneath so same-icon sessions in one group stay distinguishable
+  without hovering. Double-clicking a group's caption renames it.
+- **Drag-and-drop between groups** in Card view, and **drag-to-reorder** within List view — both
+  update the session's saved `sortOrder`/`group` and re-save its file.
 - The List/Cards view choice now persists across app restarts
   (`~/.capoeira/ui-state.properties`).
+- **Group Manager**: create, rename, and multi-select-delete groups from the Home tab (double-click
+  the "GROUPS" stat card). Deleting a group moves its sessions to Ungrouped first — it never
+  deletes them.
+- **Session tags**: tag a session with up to 6 labels (Session dialog → multi-select list),
+  independent of its group. The "ONLINE" stat card is replaced with **TAGS**; double-clicking it
+  opens a **Tag Manager** to create tags and assign each one a color, or rename/delete them across
+  every session that carries them. Tags show as colored badges in List view and are searchable
+  alongside name/host/group.
+- **SSH verbose diagnostics**: an opt-in, per-session (and live-togglable per open tab) option that
+  prints the SSH handshake — key exchange, host key, authentication negotiation — directly into the
+  terminal, similar to `ssh -vvv` (Session dialog / tab "Settings…" → "SSH diagnostics").
+- `CREDITS.md`: attributes the session icons' visual style to the Lucide and Feather Icons
+  open-source projects.
+
+### Changed
+- The Tags field in the session dialog is a multi-select list of existing tags, not free text —
+  creating a brand-new tag now happens via the Tag Manager, avoiding typo'd near-duplicates.
 
 ### Fixed
 - **Import Sessions dialog**: re-scanning (or scanning two overlapping sources) listed every
   previously found session a second time instead of skipping already-listed matches.
 - `run.bat` looked for the pre-rebrand jar name (`14bis-ssh-*.jar`) instead of
   `capoeira-ssh-*.jar`, left over from the Capoeira rename.
+- A card-view tile turned black instead of reverting to its normal background when deselected.
+- **Fifth security audit**, run in three phases (secrets/crypto/memory; filesystem/persistence;
+  concurrency/UI-flow/input-validation), each adversarially verified — 33 confirmed issues, all
+  fixed. Highlights: every on-disk write (sessions, tags, groups, backups) is now atomic on Windows
+  as well as POSIX, closing several windows where a crash/power-loss could destroy a file mid-write;
+  the credential vault's `addOrUpdate`/`mergeCredentials` now roll back instead of leaving a failed
+  save's plaintext password permanently resident in memory, and the AES master key is held in a
+  wipeable `byte[]` instead of a `SecretKeySpec` (whose `destroy()` doesn't actually zero anything on
+  this JDK); editing a session no longer mutates the live cached object before a save succeeds;
+  exporting a backup no longer follows symlinks, and importing one is now capped against a
+  decompression-bomb-style crafted bundle; a global keyboard filter could hijack Delete/Enter
+  keystrokes typed inside a modal dialog (Group/Tag Manager, etc.) into deleting or connecting a
+  background session; search-filtered sessions could be swept into a shift-click multi-selection or
+  reached via arrow-key navigation despite being hidden; case-variant or comma-containing tag names,
+  and colliding group names on a case-insensitive filesystem, are now caught instead of silently
+  corrupting data or merging unexpectedly; SSH verbose-diagnostic output is now sanitized before
+  reaching the terminal so a malicious server can't inject escape sequences through it.
 
 ### Removed
 - Dead code left over from the 1.4.0 Home-tab redesign that was never deleted after the
   migration: `SplashScreen` (never instantiated), `SessionTreePanel` and `WelcomeTab`
   (superseded by `SessionsTab`).
+- 17 Eclipse compiler warnings (dead imports/methods/fields) and several public methods/classes
+  with zero callers anywhere in the project, found via a dedicated whole-codebase sweep (Eclipse
+  only flags unused *private* members, so these needed a separate pass): a leftover
+  callback-style `reload()` overload, an unused `TerminalAppearanceDialog` constructor,
+  `UpdateChecker.RELEASES_URL`, `CredentialEntry.clearPassword()`, and `SessionIconType`'s
+  per-icon hex color (icons render from PNGs, the color was never read).
+- Leftover `build.properties` from the pre-`BuildInfo.java` build-number scheme, never actually
+  read by anything.
 
 ---
 
