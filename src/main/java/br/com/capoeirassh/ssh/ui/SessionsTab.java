@@ -710,7 +710,7 @@ public class SessionsTab {
             Composite placeholder = new Composite(box, SWT.NONE);
             placeholder.setBackground(cSurface);
             GridData gdPh = new GridData(SWT.CENTER, SWT.CENTER, false, false);
-            gdPh.widthHint = 40; gdPh.heightHint = 40;
+            gdPh.widthHint = 40; gdPh.heightHint = 54;
             placeholder.setLayoutData(gdPh);
         }
 
@@ -784,14 +784,15 @@ public class SessionsTab {
     }
 
     /** One icon-only tile inside a group box — a highlight "halo" (shows selection/hover)
-     *  wrapping the 28x28 avatar Canvas, with the name/host as a tooltip. */
+     *  wrapping the 28x28 avatar Canvas and a small IP/hostname label, with the full
+     *  name/host as a tooltip. */
     private void buildIconTile(Composite parent, SessionInfo session, boolean isOnline) {
         Composite halo = new Composite(parent, SWT.NONE);
         GridData gd = new GridData(SWT.CENTER, SWT.CENTER, false, false);
         halo.setLayoutData(gd);
         halo.setData("session", session);
         GridLayout hgl = new GridLayout(1, false);
-        hgl.marginWidth = 6; hgl.marginHeight = 6;
+        hgl.marginWidth = 6; hgl.marginHeight = 6; hgl.verticalSpacing = 2;
         halo.setLayout(hgl);
 
         rowById.put(session.id, halo);
@@ -799,13 +800,14 @@ public class SessionsTab {
         halo.setBackground(normalBg);
 
         halo.addListener(SWT.MouseEnter, e -> {
-            if (!selectedIds.contains(session.id)) halo.setBackground(cMid);
+            if (!selectedIds.contains(session.id)) { halo.setBackground(cMid); refreshChildren(halo, cMid); }
         });
         halo.addListener(SWT.MouseExit, e -> {
             Point cursor = halo.getDisplay().getCursorLocation();
             Point local  = halo.toControl(cursor);
             if (!halo.getClientArea().contains(local)) {
-                halo.setBackground(selectedIds.contains(session.id) ? cSelected : cSurface);
+                Color bg = selectedIds.contains(session.id) ? cSelected : cSurface;
+                halo.setBackground(bg); refreshChildren(halo, bg);
             }
         });
 
@@ -814,6 +816,15 @@ public class SessionsTab {
         gdIcon.widthHint = 28; gdIcon.heightHint = 28;
         icon.setLayoutData(gdIcon);
         paintAvatar(icon, session);
+
+        Label hostLbl = new Label(halo, SWT.CENTER);
+        hostLbl.setText(shortHostLabel(session.host));
+        hostLbl.setBackground(normalBg);
+        hostLbl.setForeground(cDim);
+        Font hostFont = new Font(halo.getDisplay(), "Arial", 7, SWT.NORMAL);
+        hostLbl.setFont(hostFont);
+        hostLbl.addDisposeListener(e -> hostFont.dispose());
+        hostLbl.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, false, false));
 
         String tip = session.name != null ? session.name : "";
         if (session.host != null && !session.host.isBlank()) {
@@ -838,6 +849,16 @@ public class SessionsTab {
         }
 
         wireSessionInteractions(halo, session);
+    }
+
+    /** IP addresses are shown as-is; a FQDN is trimmed to just its first label
+     *  (e.g. "db1.prod.example.com" -> "db1") so card-view tiles stay compact while
+     *  still telling apart same-icon sessions without needing to hover for the tooltip. */
+    private static String shortHostLabel(String host) {
+        if (host == null || host.isBlank()) return "";
+        boolean looksLikeIp = host.matches("[0-9.]+") || host.contains(":");
+        String label = looksLikeIp || !host.contains(".") ? host : host.substring(0, host.indexOf('.'));
+        return label.length() > 12 ? label.substring(0, 11) + "…" : label;
     }
 
     // -----------------------------------------------------------------------
