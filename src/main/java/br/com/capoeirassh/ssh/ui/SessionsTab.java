@@ -1,5 +1,6 @@
 package br.com.capoeirassh.ssh.ui;
 
+import br.com.capoeirassh.ssh.model.SessionIconType;
 import br.com.capoeirassh.ssh.model.SessionInfo;
 import br.com.capoeirassh.ssh.storage.BackupBundle;
 import br.com.capoeirassh.ssh.storage.SessionStorage;
@@ -7,6 +8,7 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CTabFolder;
 import org.eclipse.swt.custom.CTabItem;
 import org.eclipse.swt.custom.ScrolledComposite;
+import org.eclipse.swt.dnd.*;
 import org.eclipse.swt.graphics.*;
 import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
@@ -59,6 +61,8 @@ public class SessionsTab {
     private Text searchText;
     private Composite aboutIconBox;
     private boolean updateAvailable = false;
+    /** ALL SESSIONS list rendering mode — false = flat list (default), true = cards grouped by group. */
+    private boolean cardView = br.com.capoeirassh.ssh.storage.UiState.isSessionsCardView();
 
     // Multi-selection state (ALL SESSIONS list)
     private final java.util.LinkedHashSet<String> selectedIds = new java.util.LinkedHashSet<>();
@@ -304,6 +308,48 @@ public class SessionsTab {
         return box;
     }
 
+    /** A single icon-glyph toggle tile — same custom-painted approach as
+     *  {@link #createSidebarIcon}, since native buttons don't reliably show custom
+     *  colors here. The Label is stashed via setData("label", ...) so the caller can
+     *  restyle it later to reflect which option is currently active. */
+    private Composite buildViewToggleButton(Composite parent, Display display, String glyph,
+                                             String tooltip, Font font, Runnable onClick) {
+        Composite box = new Composite(parent, SWT.NONE) {
+            @Override
+            public Point computeSize(int wHint, int hHint, boolean changed) {
+                return new Point(30, 26);
+            }
+        };
+        box.setBackground(cSurface);
+        box.addListener(SWT.Paint, e -> {
+            Rectangle b = box.getClientArea();
+            e.gc.setForeground(cBorder);
+            e.gc.drawRoundRectangle(0, 0, b.width - 1, b.height - 1, 4, 4);
+        });
+
+        GridLayout gl = new GridLayout(1, false);
+        gl.marginWidth = 0; gl.marginHeight = 0;
+        box.setLayout(gl);
+
+        Label lbl = new Label(box, SWT.CENTER);
+        lbl.setText(glyph);
+        lbl.setBackground(cSurface);
+        lbl.setForeground(cAreia);
+        lbl.setFont(font);
+        lbl.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        box.setToolTipText(tooltip);
+        lbl.setToolTipText(tooltip);
+        box.setData("label", lbl);
+
+        Cursor hand = display.getSystemCursor(SWT.CURSOR_HAND);
+        box.setCursor(hand);
+        lbl.setCursor(hand);
+        box.addListener(SWT.MouseUp, e -> onClick.run());
+        lbl.addListener(SWT.MouseUp, e -> onClick.run());
+
+        return box;
+    }
+
     // -----------------------------------------------------------------------
     // Main content area
     // -----------------------------------------------------------------------
@@ -507,16 +553,54 @@ public class SessionsTab {
     // All Sessions section
     // -----------------------------------------------------------------------
     private void buildAllSessionsSection(Composite parent, Display display) {
-        Label allHeader = new Label(parent, SWT.NONE);
+        Composite headerRow = new Composite(parent, SWT.NONE);
+        headerRow.setBackground(cBg);
+        GridData gdHeaderRow = new GridData(SWT.FILL, SWT.TOP, true, false);
+        gdHeaderRow.verticalIndent = 20;
+        headerRow.setLayoutData(gdHeaderRow);
+        GridLayout headerGl = new GridLayout(2, false);
+        headerGl.marginWidth = 0; headerGl.marginHeight = 0;
+        headerRow.setLayout(headerGl);
+
+        Label allHeader = new Label(headerRow, SWT.NONE);
         allHeader.setText("ALL SESSIONS");
         allHeader.setBackground(cBg);
         allHeader.setForeground(cDim);
         Font hdrFont = new Font(display, "Arial", 9, SWT.NORMAL);
         allHeader.setFont(hdrFont);
         allHeader.addDisposeListener(e -> hdrFont.dispose());
-        GridData gdHdr = new GridData(SWT.FILL, SWT.TOP, true, false);
-        gdHdr.verticalIndent = 20;
-        allHeader.setLayoutData(gdHdr);
+        allHeader.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, true, false));
+
+        // View-mode toggle (List / Cards) — custom-painted like the sidebar icons, since
+        // native SWT.TOGGLE buttons don't reliably honor custom colors on Windows and end
+        // up barely visible against this dark theme.
+        Composite viewToggle = new Composite(headerRow, SWT.NONE);
+        viewToggle.setBackground(cBg);
+        viewToggle.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
+        RowLayout vtRl = new RowLayout(SWT.HORIZONTAL);
+        vtRl.spacing = 4; vtRl.marginWidth = 0; vtRl.marginHeight = 0;
+        viewToggle.setLayout(vtRl);
+
+        Font vtFont = new Font(display, "Arial", 13, SWT.NORMAL);
+        viewToggle.addDisposeListener(e -> vtFont.dispose());
+
+        Runnable[] refreshToggleRef = new Runnable[1];
+        Composite boxList  = buildViewToggleButton(viewToggle, display, "☰", "List view", vtFont,
+            () -> { cardView = false; br.com.capoeirassh.ssh.storage.UiState.setSessionsCardView(false); refreshToggleRef[0].run(); reload(); });
+        Composite boxCards = buildViewToggleButton(viewToggle, display, "▦", "Card view", vtFont,
+            () -> { cardView = true;  br.com.capoeirassh.ssh.storage.UiState.setSessionsCardView(true);  refreshToggleRef[0].run(); reload(); });
+        Label lblList  = (Label) boxList.getData("label");
+        Label lblCards = (Label) boxCards.getData("label");
+
+        refreshToggleRef[0] = () -> {
+            boxList.setBackground(!cardView ? cGoldHl : cSurface);
+            lblList.setBackground(!cardView ? cGoldHl : cSurface);
+            lblList.setForeground(!cardView ? cGold   : cAreia);
+            boxCards.setBackground(cardView ? cGoldHl : cSurface);
+            lblCards.setBackground(cardView ? cGoldHl : cSurface);
+            lblCards.setForeground(cardView ? cGold   : cAreia);
+        };
+        refreshToggleRef[0].run();
 
         listContainer = new Composite(parent, SWT.NONE);
         listContainer.setBackground(cBg);
@@ -527,6 +611,190 @@ public class SessionsTab {
         gl.marginWidth = 0; gl.marginHeight = 0;
         gl.verticalSpacing = 2;
         listContainer.setLayout(gl);
+    }
+
+    // -----------------------------------------------------------------------
+    // Card view — Windows Start-menu-style: each group is a rounded box holding
+    // a compact grid of session icons only, with the group name as a caption
+    // below the box (name/host show as a tooltip instead of inline text).
+    // -----------------------------------------------------------------------
+    private void buildCardView(List<SessionInfo> sessions, Set<String> online, Display display) {
+        java.util.LinkedHashMap<String, List<SessionInfo>> byGroup = new java.util.LinkedHashMap<>();
+        List<SessionInfo> ungrouped = new java.util.ArrayList<>();
+        for (SessionInfo s : sessions) {
+            if (s.group == null || s.group.isBlank()) ungrouped.add(s);
+            else byGroup.computeIfAbsent(s.group, g -> new java.util.ArrayList<>()).add(s);
+        }
+        List<String> groupNames = new java.util.ArrayList<>(byGroup.keySet());
+        groupNames.sort(String::compareToIgnoreCase);
+
+        Composite wrap = new Composite(listContainer, SWT.NONE);
+        wrap.setBackground(cBg);
+        wrap.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+        wrap.setData("cardBlock", Boolean.TRUE);
+        RowLayout rl = new RowLayout(SWT.HORIZONTAL);
+        rl.wrap = true; rl.spacing = 20; rl.marginWidth = 0; rl.marginHeight = 4;
+        wrap.setLayout(rl);
+
+        // "" = the synthetic ungrouped bucket — kept distinct from the display caption
+        // so a real group literally named "Ungrouped" can never collide with it.
+        if (!ungrouped.isEmpty()) buildGroupCard(wrap, display, "Ungrouped", "", ungrouped, online);
+        for (String g : groupNames) buildGroupCard(wrap, display, g, g, byGroup.get(g), online);
+    }
+
+    private static final int ICON_TILE_COLS = 2;
+
+    private void buildGroupCard(Composite parent, Display display, String caption, String targetGroup,
+                                 List<SessionInfo> members, Set<String> online) {
+        Composite outer = new Composite(parent, SWT.NONE);
+        outer.setBackground(cBg);
+        outer.setData("cardBlock", Boolean.TRUE);
+        GridLayout ogl = new GridLayout(1, false);
+        ogl.marginWidth = 0; ogl.marginHeight = 0; ogl.verticalSpacing = 6;
+        outer.setLayout(ogl);
+
+        Composite box = new Composite(outer, SWT.NONE);
+        box.setBackground(cSurface);
+        box.setLayoutData(new GridData(SWT.CENTER, SWT.TOP, false, false));
+        box.addListener(SWT.Paint, e -> {
+            Rectangle b = box.getBounds();
+            boolean dragOver = box.getData("dragOver") != null;
+            e.gc.setForeground(dragOver ? cGold : cMid);
+            e.gc.setLineWidth(dragOver ? 2 : 1);
+            int inset = dragOver ? 1 : 0;
+            e.gc.drawRoundRectangle(inset, inset, b.width - 1 - inset * 2, b.height - 1 - inset * 2, 12, 12);
+        });
+        GridLayout gl = new GridLayout(ICON_TILE_COLS, true);
+        gl.marginWidth = 16; gl.marginHeight = 16;
+        gl.horizontalSpacing = 12; gl.verticalSpacing = 12;
+        box.setLayout(gl);
+
+        for (SessionInfo s : members) buildIconTile(box, s, online.contains(s.name));
+
+        // Drop target: dragging a session tile here moves it into this group.
+        DropTarget dropTarget = new DropTarget(box, DND.DROP_MOVE);
+        dropTarget.setTransfer(TextTransfer.getInstance());
+        dropTarget.addDropListener(new DropTargetAdapter() {
+            @Override public void dragEnter(DropTargetEvent event) {
+                event.detail = DND.DROP_MOVE;
+                box.setData("dragOver", Boolean.TRUE);
+                box.redraw();
+            }
+            @Override public void dragLeave(DropTargetEvent event) {
+                box.setData("dragOver", null);
+                box.redraw();
+            }
+            @Override public void drop(DropTargetEvent event) {
+                box.setData("dragOver", null);
+                box.redraw();
+                if (!(event.data instanceof String sessionId)) return;
+                // Defer to after this native DND callback returns — reload() disposes and
+                // rebuilds the very widgets involved in the drop (box, halo tiles), and doing
+                // that synchronously while Windows' OLE-based DND is still unwinding this
+                // callback crashes the JVM. asyncExec runs it on the next UI tick instead.
+                Display d = box.getDisplay();
+                d.asyncExec(() -> {
+                    if (box.isDisposed()) return;
+                    sessionOrder.stream().filter(s -> s.id.equals(sessionId)).findFirst()
+                        .ifPresent(s -> moveSessionToGroup(s, targetGroup));
+                });
+            }
+        });
+
+        Label captionLbl = new Label(outer, SWT.WRAP | SWT.CENTER);
+        captionLbl.setText(caption);
+        captionLbl.setBackground(cBg);
+        captionLbl.setForeground(cDim);
+        Font capF = new Font(display, "Arial", 9, SWT.NORMAL);
+        captionLbl.setFont(capF);
+        captionLbl.addDisposeListener(e -> capF.dispose());
+        // Cap the width to the icon box's own width instead of letting a long name
+        // stretch the column — the label wraps onto extra lines instead.
+        GridData gdCap = new GridData(SWT.CENTER, SWT.CENTER, true, false);
+        gdCap.widthHint = ICON_TILE_COLS * 40 + 32;
+        captionLbl.setLayoutData(gdCap);
+    }
+
+    /** Deletes the session's old on-disk file and re-saves it under the new group,
+     *  moving it between ~/.capoeira/sessions/&lt;group&gt;/ directories. No-op if the
+     *  session is already in that group. */
+    private void moveSessionToGroup(SessionInfo session, String newGroup) {
+        String normalizedNew = newGroup == null ? "" : newGroup;
+        String normalizedOld = session.group == null ? "" : session.group;
+        if (normalizedOld.equals(normalizedNew)) return;
+
+        SessionInfo ghost = new SessionInfo();
+        ghost.id    = session.id;
+        ghost.group = session.group;
+        try { SessionStorage.delete(ghost); } catch (Exception ignored) {}
+
+        session.group = normalizedNew;
+        try {
+            SessionStorage.save(session);
+        } catch (Exception ex) {
+            MessageBox err = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+            err.setMessage("Failed to move session:\n" + ex.getMessage());
+            err.open();
+            return;
+        }
+        reload();
+    }
+
+    /** One icon-only tile inside a group box — a highlight "halo" (shows selection/hover)
+     *  wrapping the 28x28 avatar Canvas, with the name/host as a tooltip. */
+    private void buildIconTile(Composite parent, SessionInfo session, boolean isOnline) {
+        Composite halo = new Composite(parent, SWT.NONE);
+        GridData gd = new GridData(SWT.CENTER, SWT.CENTER, false, false);
+        halo.setLayoutData(gd);
+        halo.setData("session", session);
+        GridLayout hgl = new GridLayout(1, false);
+        hgl.marginWidth = 6; hgl.marginHeight = 6;
+        halo.setLayout(hgl);
+
+        rowById.put(session.id, halo);
+        Color normalBg = selectedIds.contains(session.id) ? cSelected : cSurface;
+        halo.setBackground(normalBg);
+
+        halo.addListener(SWT.MouseEnter, e -> {
+            if (!selectedIds.contains(session.id)) halo.setBackground(cMid);
+        });
+        halo.addListener(SWT.MouseExit, e -> {
+            Point cursor = halo.getDisplay().getCursorLocation();
+            Point local  = halo.toControl(cursor);
+            if (!halo.getClientArea().contains(local)) {
+                halo.setBackground(selectedIds.contains(session.id) ? cSelected : cSurface);
+            }
+        });
+
+        Canvas icon = new Canvas(halo, SWT.NONE);
+        GridData gdIcon = new GridData(SWT.CENTER, SWT.CENTER, false, false);
+        gdIcon.widthHint = 28; gdIcon.heightHint = 28;
+        icon.setLayoutData(gdIcon);
+        paintAvatar(icon, session);
+
+        String tip = session.name != null ? session.name : "";
+        if (session.host != null && !session.host.isBlank()) {
+            String hostStr = session.host + (session.port != 22 ? ":" + session.port : "");
+            tip += "  —  " + hostStr;
+        }
+        halo.setToolTipText(tip);
+        icon.setToolTipText(tip);
+        if (isOnline) icon.setToolTipText(tip + "  •  online");
+
+        // Drag source: drop onto a group box (buildGroupCard) to move this session there.
+        // Registered on BOTH halo and the icon Canvas — the Canvas is a separate native
+        // control layered on top, so a DragSource on halo alone never sees a press that
+        // starts directly on the visible icon (which is most of the clickable area).
+        DragSourceAdapter dragListener = new DragSourceAdapter() {
+            @Override public void dragSetData(DragSourceEvent event) { event.data = session.id; }
+        };
+        for (Control c : new Control[]{ halo, icon }) {
+            DragSource dragSource = new DragSource(c, DND.DROP_MOVE);
+            dragSource.setTransfer(TextTransfer.getInstance());
+            dragSource.addDragListener(dragListener);
+        }
+
+        wireSessionInteractions(halo, session);
     }
 
     // -----------------------------------------------------------------------
@@ -564,7 +832,7 @@ public class SessionsTab {
             recentCardsRow.layout(true, true);
         }
 
-        // Rebuild list
+        // Rebuild list (flat rows, or grouped cards depending on the view toggle)
         if (listContainer != null && !listContainer.isDisposed()) {
             for (Control c : listContainer.getChildren()) c.dispose();
             selectedIds.clear();
@@ -572,8 +840,12 @@ public class SessionsTab {
             sessionOrder.clear();
             sessionOrder.addAll(sessions);
             rowById.clear();
-            for (SessionInfo s : sessions) {
-                buildListRow(listContainer, display, s, online.contains(s.name));
+            if (cardView) {
+                buildCardView(sessions, online, display);
+            } else {
+                for (SessionInfo s : sessions) {
+                    buildListRow(listContainer, display, s, online.contains(s.name));
+                }
             }
             listContainer.layout(true, true);
         }
@@ -790,18 +1062,7 @@ public class SessionsTab {
         GridData gdAv = new GridData(SWT.LEFT, SWT.CENTER, false, false);
         gdAv.widthHint = 28; gdAv.heightHint = 28;
         avatar.setLayoutData(gdAv);
-        String initials = (session.name != null && !session.name.isEmpty())
-            ? String.valueOf(session.name.charAt(0)).toUpperCase() : "?";
-        avatar.addListener(SWT.Paint, e -> {
-            e.gc.setBackground(cMid);
-            e.gc.fillRoundRectangle(0, 0, 28, 28, 6, 6);
-            e.gc.setForeground(cGold);
-            Font avF = new Font(display, "Arial", 11, SWT.BOLD);
-            e.gc.setFont(avF);
-            Point ext = e.gc.stringExtent(initials);
-            e.gc.drawString(initials, (28 - ext.x) / 2, (28 - ext.y) / 2, true);
-            avF.dispose();
-        });
+        paintAvatar(avatar, session);
 
         // Name + host column
         Composite nameCol = new Composite(row, SWT.NONE);
@@ -858,12 +1119,18 @@ public class SessionsTab {
         arrow.setForeground(cDark);
         arrow.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, false, false));
 
+        wireSessionInteractions(row, session);
+    }
+
+    /** Selection click/keyboard wiring + right-click context menu — shared by the flat
+     *  list row and the card-view tile, so both offer identical interactions. */
+    private void wireSessionInteractions(Composite container, SessionInfo session) {
         // Single-click → select / Ctrl+click → toggle / Shift+click → range
         // Double-click → connect
-        addSelectionClickRecursive(row, session);
+        addSelectionClickRecursive(container, session);
 
         // Right-click context menu (rebuilt dynamically at show time)
-        Menu menu = new Menu(row);
+        Menu menu = new Menu(container);
         menu.addListener(SWT.Show, e -> {
             for (MenuItem it : menu.getItems()) it.dispose();
 
@@ -906,13 +1173,37 @@ public class SessionsTab {
             }
         });
 
-        setMenuRecursive(row, menu);
+        setMenuRecursive(container, menu);
     }
 
     private void setMenuRecursive(Control ctrl, Menu menu) {
         ctrl.setMenu(menu);
         if (ctrl instanceof Composite)
             for (Control c : ((Composite) ctrl).getChildren()) setMenuRecursive(c, menu);
+    }
+
+    /** Draws the session's icon (if one is set) or a letter-initial fallback into a
+     *  28x28 Canvas — shared by the flat list row's avatar and the card-view tile. */
+    private void paintAvatar(Canvas avatar, SessionInfo session) {
+        avatar.setBackground(cBg);
+        String initials = (session.name != null && !session.name.isEmpty())
+            ? String.valueOf(session.name.charAt(0)).toUpperCase() : "?";
+        boolean hasIcon = session.iconType != null && !session.iconType.isBlank();
+        avatar.addListener(SWT.Paint, e -> {
+            e.gc.setBackground(cMid);
+            e.gc.fillRoundRectangle(0, 0, 28, 28, 6, 6);
+            if (hasIcon) {
+                Image icon = SessionIconRegistry.get(SessionIconType.fromKey(session.iconType), 24);
+                e.gc.drawImage(icon, 2, 2);
+            } else {
+                e.gc.setForeground(cGold);
+                Font avF = new Font(avatar.getDisplay(), "Arial", 11, SWT.BOLD);
+                e.gc.setFont(avF);
+                Point ext = e.gc.stringExtent(initials);
+                e.gc.drawString(initials, (28 - ext.x) / 2, (28 - ext.y) / 2, true);
+                avF.dispose();
+            }
+        });
     }
 
     private void refreshChildren(Composite comp, Color bg) {
@@ -1010,23 +1301,55 @@ public class SessionsTab {
     private void filterList(String query) {
         if (listContainer == null || listContainer.isDisposed()) return;
         String q = query == null ? "" : query.trim().toLowerCase();
-        for (Control c : listContainer.getChildren()) {
-            if (!(c instanceof Composite)) continue;
-            Object data = c.getData("session");
-            if (!(data instanceof SessionInfo)) continue;
-            SessionInfo s = (SessionInfo) data;
-            boolean match = q.isEmpty()
-                || (s.name  != null && s.name.toLowerCase().contains(q))
-                || (s.host  != null && s.host.toLowerCase().contains(q))
-                || (s.group != null && s.group.toLowerCase().contains(q));
-            c.setVisible(match);
-            ((GridData) c.getLayoutData()).exclude = !match;
+        if (cardView) {
+            filterCardView(listContainer, q);
+        } else {
+            for (Control c : listContainer.getChildren()) {
+                if (!(c instanceof Composite)) continue;
+                Object data = c.getData("session");
+                if (!(data instanceof SessionInfo s)) continue;
+                boolean match = sessionMatches(s, q);
+                c.setVisible(match);
+                ((GridData) c.getLayoutData()).exclude = !match;
+            }
         }
         listContainer.layout(true, true);
         if (scrolled != null && !scrolled.isDisposed() && innerComposite != null && !innerComposite.isDisposed()) {
             int cw = scrolled.getClientArea().width;
             scrolled.setMinSize(innerComposite.computeSize(cw > 0 ? cw : SWT.DEFAULT, SWT.DEFAULT));
         }
+    }
+
+    private boolean sessionMatches(SessionInfo s, String q) {
+        return q.isEmpty()
+            || (s.name  != null && s.name.toLowerCase().contains(q))
+            || (s.host  != null && s.host.toLowerCase().contains(q))
+            || (s.group != null && s.group.toLowerCase().contains(q));
+    }
+
+    /** Recursively filters session cards in card-view mode; a "cardBlock"-tagged
+     *  container (the ungrouped-cards panel, or a group card) hides itself entirely
+     *  once none of its descendant session cards match, instead of leaving an empty
+     *  frame. Returns whether this node has any visible session-card descendant. */
+    private boolean filterCardView(Composite node, String q) {
+        boolean anyVisible = false;
+        for (Control c : node.getChildren()) {
+            Object sessionData = c.getData("session");
+            if (sessionData instanceof SessionInfo s) {
+                boolean match = sessionMatches(s, q);
+                c.setVisible(match);
+                if (match) anyVisible = true;
+            } else if (c instanceof Composite composite) {
+                boolean childVisible = filterCardView(composite, q);
+                if (composite.getData("cardBlock") != null) {
+                    composite.setVisible(childVisible);
+                    Object ld = composite.getLayoutData();
+                    if (ld instanceof GridData gd) gd.exclude = !childVisible;
+                }
+                if (childVisible) anyVisible = true;
+            }
+        }
+        return anyVisible;
     }
 
     // -----------------------------------------------------------------------

@@ -242,6 +242,7 @@ public final class BackupBundle {
         s.username  = p.getProperty("username", "");
         s.keyPath        = p.getProperty("keyPath",        "");
         s.group          = p.getProperty("group",          "");
+        s.iconType       = p.getProperty("iconType",       "");
         s.credentialId   = p.getProperty("credentialId",   "");
         s.appearFontSize = def(p.getProperty("appearFontSize", "0"), 0);
         s.appearFontName = p.getProperty("appearFontName", "");

@@ -16,6 +16,8 @@ public class SessionInfo {
     public String   keyPath  = "";
     /** Empty string means root level (no group). */
     public String   group        = "";
+    /** SessionIconType key (e.g. "linux"); empty = no icon, fall back to letter avatar. */
+    public String   iconType     = "";
     /** ID of a CredentialEntry in the vault; empty = no saved credential. */
     public String   credentialId = "";
     /** Terminal appearance — font size 0 means "use default". */

@@ -102,9 +102,22 @@
 
     <build>
         <resources>
+            <!-- Text resources only — filtering does ${...} token substitution, which
+                 corrupts binary files if applied to them. -->
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>
+                <excludes>
+                    <exclude>icons/**</exclude>
+                </excludes>
+            </resource>
+            <!-- Icon PNGs — copied verbatim, never filtered. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <includes>
+                    <include>icons/**</include>
+                </includes>
             </resource>
         </resources>
         <plugins>

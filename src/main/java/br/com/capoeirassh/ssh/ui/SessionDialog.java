@@ -1,6 +1,7 @@
 package br.com.capoeirassh.ssh.ui;
 
 import br.com.capoeirassh.ssh.model.CredentialEntry;
+import br.com.capoeirassh.ssh.model.SessionIconType;
 import br.com.capoeirassh.ssh.model.SessionInfo;
 import br.com.capoeirassh.ssh.storage.CredentialStore;
 import br.com.capoeirassh.ssh.storage.SessionStorage;
@@ -64,6 +65,26 @@ public class SessionDialog {
         cmbGroup.add("(none)");
         for (String g : groups) cmbGroup.add(g);
         cmbGroup.select(0);
+
+        // ── Icon ──────────────────────────────────────────────────────────────
+        final SessionIconType[] chosenIcon = { null };
+        label(dlg, "Icon:");
+        Button btnIcon = new Button(dlg, SWT.PUSH);
+        btnIcon.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+        Runnable refreshIconBtn = () -> {
+            if (chosenIcon[0] != null) {
+                btnIcon.setImage(SessionIconRegistry.get(chosenIcon[0], 16));
+                btnIcon.setText(chosenIcon[0].getLabel());
+            } else {
+                btnIcon.setImage(null);
+                btnIcon.setText("Choose Icon…");
+            }
+        };
+        refreshIconBtn.run();
+        btnIcon.addListener(SWT.Selection, e -> {
+            chosenIcon[0] = new IconPickerDialog(dlg, chosenIcon[0]).open();
+            refreshIconBtn.run();
+        });
 
         // ── Authentication ───────────────────────────────────────────────────
         CredentialStore store = CredentialStore.getInstance();
@@ -268,6 +289,10 @@ public class SessionDialog {
                 int idx = cmbGroup.indexOf(editing.group);
                 if (idx >= 0) cmbGroup.select(idx);
             }
+            if (editing.iconType != null && !editing.iconType.isBlank()) {
+                chosenIcon[0] = SessionIconType.fromKey(editing.iconType);
+                refreshIconBtn.run();
+            }
 
             boolean linkedToCredential = false;
             if (editing.credentialId != null && !editing.credentialId.isBlank()) {
@@ -354,6 +379,7 @@ public class SessionDialog {
             s.port  = parsePort(txtPort.getText());
             String groupText = cmbGroup.getText().trim();
             s.group = (groupText.isEmpty() || groupText.equals("(none)")) ? "" : groupText;
+            s.iconType = chosenIcon[0] != null ? chosenIcon[0].getKey() : "";
 
             String user = cmbUser.getText().trim();
 

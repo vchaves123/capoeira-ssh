@@ -43,6 +43,7 @@ public final class SessionStorage {
         p.setProperty("authType", s.authType.name());
         p.setProperty("keyPath",      s.keyPath      != null ? s.keyPath      : "");
         p.setProperty("group",        s.group        != null ? s.group        : "");
+        p.setProperty("iconType",     s.iconType     != null ? s.iconType     : "");
         p.setProperty("credentialId", s.credentialId != null ? s.credentialId : "");
         p.setProperty("appearFontSize", String.valueOf(s.appearFontSize));
         p.setProperty("appearFontName", s.appearFontName != null ? s.appearFontName : "");
@@ -167,6 +168,7 @@ public final class SessionStorage {
         s.username  = p.getProperty("username", "");
         s.keyPath       = p.getProperty("keyPath",      "");
         s.group         = group;
+        s.iconType      = p.getProperty("iconType", "");
         s.credentialId   = p.getProperty("credentialId", "");
         s.appearFontSize = parseInt(p.getProperty("appearFontSize", "0"));
         s.appearFontName = p.getProperty("appearFontName", "");

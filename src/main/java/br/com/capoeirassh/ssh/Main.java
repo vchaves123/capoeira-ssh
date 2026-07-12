@@ -18,6 +18,7 @@ public class Main {
         try {
             new MainWindow(display).open();
         } finally {
+            br.com.capoeirassh.ssh.ui.SessionIconRegistry.disposeAll();
             if (!display.isDisposed()) display.dispose();
         }
     }
