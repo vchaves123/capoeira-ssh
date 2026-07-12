@@ -26,6 +26,17 @@ public final class PasswordField {
 
         Text txt = new Text(cmp, SWT.BORDER | SWT.PASSWORD);
         txt.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        // Defense-in-depth: SWT.PASSWORD's echo masking is documented to also block the OS
+        // clipboard from receiving a copy on some platforms (e.g. Win32's ES_PASSWORD), but
+        // that's a platform-specific side effect, not a guarantee — a GTK/Linux build may not
+        // enforce it. Explicitly block the common copy shortcuts here too; paste (Ctrl+V /
+        // right-click paste) is intentionally left untouched since the user needs it to paste
+        // in a password.
+        txt.addListener(SWT.KeyDown, e -> {
+            boolean primaryMod = (e.stateMask & SWT.MOD1) != 0;
+            if (primaryMod && (e.keyCode == 'c' || e.keyCode == 'C')) e.doit = false;
+            if ((e.stateMask & SWT.CTRL) != 0 && e.keyCode == SWT.INSERT) e.doit = false;
+        });
 
         Button eye = new Button(cmp, SWT.PUSH);
         eye.setText("👁");

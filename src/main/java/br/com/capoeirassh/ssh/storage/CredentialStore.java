@@ -120,6 +120,12 @@ public final class CredentialStore {
             int ver = raw[off++] & 0xFF;
             int iter;
             if (ver == 1) {                       // legacy: KDF params were implicit
+                // Same length guard the v2 branch already has below — without it, a truncated
+                // v1-labeled file falls through to the unchecked copyOfRange calls, which
+                // either silently zero-pad or throw an unchecked ArrayIndexOutOfBoundsException
+                // instead of this clean rejection.
+                if (raw.length < 4 + 1 + SALT_LEN + IV_LEN + 16)
+                    throw new Exception("Not a Capoeira vault file.");
                 iter = LEGACY_ITER;
             } else if (ver == 2) {                // self-describing header
                 if (raw.length < 4 + 1 + 1 + 4 + SALT_LEN + IV_LEN + 16)

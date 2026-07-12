@@ -144,7 +144,14 @@ public final class SessionStorage {
         SecureFiles.createDirectories(newDir);
         try (Stream<Path> files = Files.list(oldDir)) {
             for (Path f : files.toList()) {
-                Files.move(f, newDir.resolve(f.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                Path target = newDir.resolve(f.getFileName());
+                // Session filenames are random UUIDs, so a same-name collision here should be
+                // essentially impossible in normal use — but REPLACE_EXISTING would silently
+                // destroy whatever's already there if it ever did happen (e.g. a hand-restored
+                // or duplicated backup). Leave the source file behind in oldDir instead of
+                // clobbering; every other file still moves normally.
+                if (Files.exists(target)) continue;
+                Files.move(f, target);
             }
         }
         try (Stream<Path> remaining = Files.list(oldDir)) {

@@ -73,6 +73,11 @@ public final class SessionImporter {
 
         try (Stream<Path> files = Files.list(dir)) {
             for (Path f : files.toList()) {
+                // Real PuTTY session files are tiny (well under 1 KB); skip anything
+                // implausibly large rather than letting BufferedReader.readLine() buffer an
+                // entire pathological single line into memory (same bug class as the
+                // MobaXterm .ini import, and same fix: check size before reading).
+                try { if (Files.size(f) > MAX_IMPORT_FILE_BYTES) continue; } catch (IOException ignored) { continue; }
                 Map<String, String> values = new HashMap<>();
                 try (BufferedReader r = Files.newBufferedReader(f, StandardCharsets.UTF_8)) {
                     String line;

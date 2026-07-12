@@ -976,6 +976,13 @@ public class SessionsTab {
             sessionOrder.addAll(sessions);
             rowById.clear();
             restBgById.clear();
+            // An in-flight row drag references a row that's about to be disposed above — reset
+            // it here too, or its MouseUp (the only place that normally clears these) never
+            // fires, leaving a stray drop-indicator line and a stuck resize cursor behind.
+            draggedRowSession = null;
+            dragStartY = 0;
+            dropIndicatorY = -1;
+            listContainer.setCursor(null);
             if (cardView) {
                 buildCardView(sessions, online, display);
             } else {
@@ -1357,7 +1364,10 @@ public class SessionsTab {
     private int computeInsertIndex(int y, java.util.List<SessionInfo> order) {
         for (int i = 0; i < order.size(); i++) {
             Composite row = rowById.get(order.get(i).id);
-            if (row == null || row.isDisposed()) continue;
+            // Also skip rows hidden by an active search filter — GridLayout doesn't reposition
+            // an excluded control, so a hidden row's bounds are stale and would otherwise throw
+            // off the geometry scan for every real (visible) row after it.
+            if (row == null || row.isDisposed() || !row.getVisible()) continue;
             Rectangle b = row.getBounds();
             if (y < b.y + b.height / 2) return i;
         }

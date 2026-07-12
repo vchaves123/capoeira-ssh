@@ -129,11 +129,19 @@ public final class BackupBundle {
 
                 } else if (name.startsWith("sessions/") && name.endsWith(".session")) {
                     String rel  = name.substring("sessions/".length());
-                    Path   dest = base.resolve(rel.replace('/', File.separatorChar));
                     Properties p = new Properties();
                     p.load(new ByteArrayInputStream(data));
                     SessionInfo s = fromProps(p, rel);
-                    // Conflict: file already exists → new UUID + name suffix
+                    // Conflict check uses only the already-sanitized id/group (isSafeId inside
+                    // fromProps, SessionStorage.sanitize() for the group), matching where
+                    // SessionStorage.save() will actually write this session — never the raw
+                    // zip entry path. That raw path could contain traversal segments smuggled
+                    // past the ".session" suffix check (e.g. "sessions/../../../x.session"),
+                    // which a prior finding showed being used as a Files.exists() oracle to
+                    // probe for arbitrary file presence outside sessions/.
+                    Path dest = s.group.isBlank()
+                        ? base.resolve(s.id + ".session")
+                        : base.resolve(SessionStorage.sanitize(s.group)).resolve(s.id + ".session");
                     if (Files.exists(dest)) {
                         s.id   = UUID.randomUUID().toString();
                         s.name = s.name.isBlank() ? "(imported)" : s.name + " (imported)";

@@ -118,7 +118,7 @@ class GroupManagerDialog {
     private void renameSelectedGroup() {
         java.util.List<String> sel = selectedGroups();
         if (sel.size() != 1) {
-            if (sel.size() > 1) error("Select a single group to rename.");
+            error(sel.isEmpty() ? "Select a group first." : "Select a single group to rename.");
             return;
         }
         String group = sel.get(0);
@@ -152,7 +152,7 @@ class GroupManagerDialog {
 
     private void deleteSelectedGroups() {
         java.util.List<String> groups = selectedGroups();
-        if (groups.isEmpty()) return;
+        if (groups.isEmpty()) { error("Select a group first."); return; }
 
         java.util.List<SessionInfo> allSessions = SessionStorage.loadAll();
         java.util.List<SessionInfo> members = allSessions.stream()

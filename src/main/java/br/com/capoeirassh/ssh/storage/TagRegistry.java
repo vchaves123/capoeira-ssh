@@ -86,6 +86,12 @@ public final class TagRegistry {
         if (tags.remove(tag) != null) save();
     }
 
+    // Sane bounds against a corrupted or hand-edited tags.properties — a real registry never
+    // gets anywhere close to these, but without them a crafted file could bloat the in-memory
+    // registry (and every UI list rendered from it) unboundedly.
+    private static final int MAX_TAGS = 1000;
+    private static final int MAX_TAG_NAME_LENGTH = 200;
+
     private static void load() {
         if (!Files.exists(FILE)) return;
         Properties p = new Properties();
@@ -93,7 +99,8 @@ public final class TagRegistry {
             p.load(in);
         } catch (IOException e) { return; }
         for (String tag : p.getProperty("_order", "").split(",")) {
-            if (tag.isBlank()) continue;
+            if (tag.isBlank() || tag.length() > MAX_TAG_NAME_LENGTH) continue;
+            if (tags.size() >= MAX_TAGS) break;
             tags.put(tag, parseRgb(p.getProperty("color." + tag, "")));
         }
     }
