@@ -491,15 +491,23 @@ public class SessionsTab {
         Font lblSmFont = new Font(display, "Arial", 8, SWT.NORMAL);
         statsRow.addDisposeListener(e -> lblSmFont.dispose());
 
-        statSessions = buildStatBox(statsRow, display, "0", "SESSIONS", cGold,  numFont, lblSmFont);
-        statGroups   = buildStatBox(statsRow, display, "0", "GROUPS",   cTerra, numFont, lblSmFont);
-        statOnline   = buildStatBox(statsRow, display, "0", "ONLINE",   cGreen, numFont, lblSmFont);
+        statSessions = buildStatBox(statsRow, display, "0", "SESSIONS", cGold,  numFont, lblSmFont, null);
+        statGroups   = buildStatBox(statsRow, display, "0", "GROUPS",   cTerra, numFont, lblSmFont, this::openGroupManager);
+        statOnline   = buildStatBox(statsRow, display, "0", "ONLINE",   cGreen, numFont, lblSmFont, null);
     }
 
-    /** Creates one stat box and returns the Label that holds the number. */
+    private void openGroupManager() {
+        boolean changed = new GroupManagerDialog(shell).open();
+        if (changed) reload();
+    }
+
+    /** Creates one stat box and returns the Label that holds the number. {@code onDoubleClick},
+     *  when non-null, opens something related to this stat (e.g. GROUPS opens the group
+     *  manager) and shows a hand cursor as a discoverability hint. */
     private Label buildStatBox(Composite parent, Display display,
                                String number, String label,
-                               Color numColor, Font numFont, Font lblFont) {
+                               Color numColor, Font numFont, Font lblFont,
+                               Runnable onDoubleClick) {
         Composite box = new Composite(parent, SWT.NONE);
         box.setBackground(cSurface);
         box.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
@@ -509,6 +517,11 @@ public class SessionsTab {
             e.gc.setForeground(cMid);
             e.gc.drawRoundRectangle(0, 0, b.width - 1, b.height - 1, 8, 8);
         });
+
+        if (onDoubleClick != null) {
+            box.setCursor(display.getSystemCursor(SWT.CURSOR_HAND));
+            addDoubleClickRecursive(box, onDoubleClick);
+        }
 
         GridLayout gl = new GridLayout(1, false);
         gl.marginWidth = 14; gl.marginHeight = 10;
@@ -1325,6 +1338,12 @@ public class SessionsTab {
         ctrl.addListener(SWT.MouseDoubleClick, e -> { if (e.button == 1) onConnect.accept(session, null); });
         if (ctrl instanceof Composite)
             for (Control c : ((Composite) ctrl).getChildren()) addDoubleClickRecursive(c, session);
+    }
+
+    private void addDoubleClickRecursive(Control ctrl, Runnable action) {
+        ctrl.addListener(SWT.MouseDoubleClick, e -> { if (e.button == 1) action.run(); });
+        if (ctrl instanceof Composite)
+            for (Control c : ((Composite) ctrl).getChildren()) addDoubleClickRecursive(c, action);
     }
 
     private void addSelectionClickRecursive(Control ctrl, SessionInfo session) {
