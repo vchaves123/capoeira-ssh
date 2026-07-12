@@ -109,10 +109,14 @@ public class SessionsTab {
         root.setLayout(rootLayout);
 
         Listener delFilter = e -> {
-            // This is a Display-wide key filter, so without this guard it would also fire
-            // while a Terminal tab is focused, hijacking arrow keys/Enter meant for the
-            // remote shell (e.g. shell history recall) to navigate/connect sessions instead.
+            // This is a Display-wide key filter, so without these guards it would also fire
+            // while a Terminal tab is focused (hijacking arrow keys/Enter meant for the remote
+            // shell), or while a modal dialog on top of the Home tab has focus (Group/Tag
+            // Manager, InputDialog, ColorDialog, SessionDialog, etc.) — opening a modal Shell
+            // never changes which CTabItem is selected, so a Delete/Enter typed inside one of
+            // those dialogs could otherwise delete/connect a background session by accident.
             if (tabItem.isDisposed() || tabItem.getParent().getSelection() != tabItem) return;
+            if (display.getActiveShell() != shell) return;
             if (e.keyCode == SWT.DEL && !selectedIds.isEmpty()) {
                 deleteSelectedSessions();
             } else if ((e.keyCode == SWT.ARROW_DOWN || e.keyCode == SWT.ARROW_UP) && !sessionOrder.isEmpty()) {
@@ -1507,6 +1511,11 @@ public class SessionsTab {
                     int lo = Math.min(from, to), hi = Math.max(from, to);
                     for (int i = lo; i <= hi; i++) {
                         String id = sessionOrder.get(i).id;
+                        // Skip sessions hidden by an active search filter — shift-click should
+                        // only ever select what's actually visible, not silently sweep in
+                        // filtered-out sessions the user can't see and didn't mean to touch.
+                        Composite r = rowById.get(id);
+                        if (r != null && !r.isDisposed() && !r.getVisible()) continue;
                         selectedIds.add(id);
                         applyRowColor(id, cSelected);
                     }

@@ -37,4 +37,13 @@ public final class PasswordField {
 
         return txt;
     }
+
+    /** Best-effort: overwrites the widget's native buffer before the dialog holding it is
+     *  disposed, so a plaintext password/passphrase doesn't linger there indefinitely after
+     *  the dialog closes. Safe to call on a disposed/null Text (no-op). Call this right
+     *  before dlg.dispose() for every PasswordField-created (or otherwise password-holding)
+     *  Text in a dialog. */
+    public static void scrub(Text txt) {
+        if (txt != null && !txt.isDisposed()) txt.setText("");
+    }
 }

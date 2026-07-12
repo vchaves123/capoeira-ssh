@@ -4,7 +4,6 @@ import br.com.capoeirassh.ssh.model.SessionInfo;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.*;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -60,16 +59,12 @@ public final class SessionStorage {
         for (String tag : s.tags) TagRegistry.register(tag);
 
         Path file = dir.resolve(s.fileName());
-        try (OutputStream out = SecureFiles.openAppend(file)) {
-            // openAppend creates the file with restricted permissions;
-            // we truncate + rewrite by deleting first to avoid stale keys.
-            out.close();
-        }
-        // Delete then rewrite so Properties.store always produces a fresh file.
-        Files.deleteIfExists(file);
-        try (OutputStream out = SecureFiles.openAppend(file)) {
-            p.store(out, "Capoeira SSH session");
-        }
+        // Serialize to a byte[] first, then write via SecureFiles' temp-file + atomic-move —
+        // the previous delete-then-reopen approach left a window where the file was briefly
+        // absent, so a crash/power-loss mid-write could permanently lose the session.
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        p.store(baos, "Capoeira SSH session");
+        SecureFiles.write(file, baos.toByteArray());
     }
 
     public static void delete(SessionInfo s) throws IOException {

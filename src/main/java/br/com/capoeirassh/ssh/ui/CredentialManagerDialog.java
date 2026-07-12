@@ -155,6 +155,9 @@ public class CredentialManagerDialog {
 
         Label lblPass = lbl(dlg, "Password:");
         Text txtPass = PasswordField.create(dlg, new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
+        // Scrub the native widget buffer on every dispose path — a typed or pre-filled
+        // password/passphrase shouldn't linger in the OS text control after this dialog closes.
+        dlg.addDisposeListener(e -> PasswordField.scrub(txtPass));
 
         Runnable updateKeyMode = () -> {
             boolean useKey = chkKey.getSelection();

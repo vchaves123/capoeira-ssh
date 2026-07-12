@@ -130,6 +130,10 @@ public class SessionDialog {
 
         Label lblPwd = label(dlg, "Password:");
         Text  txtPwd = PasswordField.create(dlg, fill());
+        // Scrub the native widget buffer on every dispose path — a typed password/passphrase,
+        // or one pre-filled from a saved credential, shouldn't linger in the OS text control
+        // after this dialog closes.
+        dlg.addDisposeListener(e -> PasswordField.scrub(txtPwd));
 
         new Label(dlg, SWT.NONE); // col-1 filler
         Button btnSaveCred = new Button(dlg, SWT.PUSH);

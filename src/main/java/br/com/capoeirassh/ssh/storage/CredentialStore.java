@@ -197,15 +197,19 @@ public final class CredentialStore {
     // CRUD
     // -----------------------------------------------------------------------
 
+    /** Returns deep copies, not the store's own live entries — a UI dialog editing one of
+     *  these in place (before the user even clicks Save) must not mutate the store's actual
+     *  state, nor be able to have its password char[] zeroed out from under it by a concurrent
+     *  lock()/auto-lock while the dialog is still open. */
     public synchronized List<CredentialEntry> getAll() {
         touch();
-        return List.copyOf(entries);
+        return entries.stream().map(CredentialEntry::copy).toList();
     }
 
     public synchronized CredentialEntry findById(String id) {
         if (id == null || id.isBlank()) return null;
         touch();
-        return entries.stream().filter(e -> e.id.equals(id)).findFirst().orElse(null);
+        return entries.stream().filter(e -> e.id.equals(id)).findFirst().map(CredentialEntry::copy).orElse(null);
     }
 
     public synchronized void addOrUpdate(CredentialEntry e) throws Exception {

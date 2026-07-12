@@ -123,6 +123,10 @@ public class ConnectDialog {
         new Label(dlg, SWT.NONE).setText(keyAuth ? "Passphrase (optional):" : "Password:");
         Text txtPass = PasswordField.create(dlg, new GridData(SWT.FILL, SWT.CENTER, true, false));
         if (prefillPassword != null) txtPass.setTextChars(prefillPassword);
+        // Scrub the native widget buffer on every dispose path — the password/passphrase
+        // (typed, prefilled, or auto-filled from a saved credential above) shouldn't linger
+        // in the OS text control after this dialog closes.
+        dlg.addDisposeListener(e -> PasswordField.scrub(txtPass));
 
         // Wire credential picker → auto-fill fields
         final Combo finalCombo = credCombo;

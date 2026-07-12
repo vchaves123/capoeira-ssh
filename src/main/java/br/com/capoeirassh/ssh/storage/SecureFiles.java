@@ -41,9 +41,18 @@ public final class SecureFiles {
             Files.setPosixFilePermissions(tmp, FILE_PERMS);
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } else {
-            Files.write(path, data,
+            // Same temp-file + atomic-move approach as POSIX, so a crash/power-loss mid-write
+            // can never leave the destination truncated or half-written — only ever the old
+            // content or the fully-written new content, never something in between.
+            Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+            Files.write(tmp, data,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                 StandardOpenOption.WRITE);
+            try {
+                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+            }
             restrictWindows(path);
         }
     }

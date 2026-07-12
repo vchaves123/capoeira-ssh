@@ -56,6 +56,11 @@ public class MasterPasswordDialog {
         }
         final Text confirmField = txtConfirm;
 
+        // Scrub the native widget buffers on every dispose path (Cancel, success, or the
+        // window's own close button) — not just the char[] copies already zeroed above,
+        // which don't touch what the OS text control itself is holding onto.
+        dlg.addDisposeListener(e -> { PasswordField.scrub(txtPass); PasswordField.scrub(confirmField); });
+
         // Error label
         Label lblError = new Label(dlg, SWT.NONE);
         lblError.setForeground(dlg.getDisplay().getSystemColor(SWT.COLOR_RED));
