@@ -12,9 +12,6 @@ public class CredentialEntry {
     /** Empty = password credential; non-empty = private-key credential (path to the key file). */
     public String keyPath  = "";
 
-    /** Zero the password array so it cannot be recovered from a heap dump. */
-    public void clearPassword() { java.util.Arrays.fill(password, '\0'); }
-
     @Override
     public String toString() {
         return label.isBlank() ? username : label;

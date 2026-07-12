@@ -17,8 +17,6 @@ public final class UpdateChecker {
 
     private static final String API_URL =
         "https://api.github.com/repos/vchaves123/capoeira-ssh/releases/latest";
-    public static final String RELEASES_URL =
-        "https://github.com/vchaves123/capoeira-ssh/releases/latest";
 
     private static final Pattern TAG_PATTERN = Pattern.compile("\"tag_name\"\\s*:\\s*\"v?([^\"]+)\"");
 

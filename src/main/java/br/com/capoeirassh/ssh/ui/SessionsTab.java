@@ -1853,8 +1853,6 @@ public class SessionsTab {
         if (searchText != null && !searchText.isDisposed()) searchText.setFocus();
     }
 
-    public void reload(Runnable ignored) { reload(); }
-
     public void notifyUpdateAvailable(String version) {
         if (aboutIconBox == null || aboutIconBox.isDisposed()) return;
         updateAvailable = true;

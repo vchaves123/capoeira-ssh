@@ -20,10 +20,6 @@ public class TerminalAppearanceDialog {
     private RGB    fgColor;
     private RGB    bgColor;
 
-    public TerminalAppearanceDialog(Shell parent) {
-        this(parent, MonoFonts.DEFAULT, 14, new RGB(204, 204, 204), new RGB(0, 0, 0));
-    }
-
     public TerminalAppearanceDialog(Shell parent, String fontName, int fontSize, RGB fg, RGB bg) {
         this.parent   = parent;
         this.fontName = (fontName != null && !fontName.isBlank()) ? fontName : MonoFonts.DEFAULT;
