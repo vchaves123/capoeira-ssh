@@ -40,7 +40,7 @@ class GroupManagerDialog {
         gl.marginWidth = 12; gl.marginHeight = 12; gl.verticalSpacing = 8;
         dlg.setLayout(gl);
 
-        list = new List(dlg, SWT.SINGLE | SWT.BORDER | SWT.V_SCROLL);
+        list = new List(dlg, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL);
         GridData gdList = new GridData(SWT.FILL, SWT.FILL, true, true);
         gdList.widthHint = 320; gdList.heightHint = 220;
         list.setLayoutData(gdList);
@@ -58,7 +58,7 @@ class GroupManagerDialog {
 
         btnNew.addListener(SWT.Selection, e -> createGroup());
         btnRename.addListener(SWT.Selection, e -> renameSelectedGroup());
-        btnDelete.addListener(SWT.Selection, e -> deleteSelectedGroup());
+        btnDelete.addListener(SWT.Selection, e -> deleteSelectedGroups());
         btnClose.addListener(SWT.Selection, e -> dlg.dispose());
 
         refreshList();
@@ -92,9 +92,13 @@ class GroupManagerDialog {
         if (rowGroups.isEmpty()) list.add("(no groups yet)");
     }
 
-    private String selectedGroup() {
-        int idx = list.getSelectionIndex();
-        return (rowGroups != null && idx >= 0 && idx < rowGroups.size()) ? rowGroups.get(idx) : null;
+    /** All currently selected group names (List's own multi-selection). */
+    private java.util.List<String> selectedGroups() {
+        java.util.List<String> result = new java.util.ArrayList<>();
+        if (rowGroups == null) return result;
+        for (int idx : list.getSelectionIndices())
+            if (idx >= 0 && idx < rowGroups.size()) result.add(rowGroups.get(idx));
+        return result;
     }
 
     private void createGroup() {
@@ -111,8 +115,12 @@ class GroupManagerDialog {
     }
 
     private void renameSelectedGroup() {
-        String group = selectedGroup();
-        if (group == null) return;
+        java.util.List<String> sel = selectedGroups();
+        if (sel.size() != 1) {
+            if (sel.size() > 1) error("Select a single group to rename.");
+            return;
+        }
+        String group = sel.get(0);
         InputDialog input = new InputDialog(dlg, "Rename Group", "New name:");
         input.setInitialValue(group);
         String newName = input.open();
@@ -126,19 +134,22 @@ class GroupManagerDialog {
         }
     }
 
-    private void deleteSelectedGroup() {
-        String group = selectedGroup();
-        if (group == null) return;
+    private void deleteSelectedGroups() {
+        java.util.List<String> groups = selectedGroups();
+        if (groups.isEmpty()) return;
 
-        java.util.List<SessionInfo> members = SessionStorage.loadAll().stream()
-            .filter(s -> group.equals(s.group)).toList();
+        java.util.List<SessionInfo> allSessions = SessionStorage.loadAll();
+        java.util.List<SessionInfo> members = allSessions.stream()
+            .filter(s -> groups.contains(s.group)).toList();
 
         MessageBox mb = new MessageBox(dlg, SWT.ICON_WARNING | SWT.YES | SWT.NO);
-        mb.setText("Delete Group");
-        mb.setMessage(members.isEmpty()
-            ? "Delete the empty group \"" + group + "\"?"
-            : "Delete group \"" + group + "\"?\n\n" + members.size()
-                + " session(s) inside will be moved to Ungrouped, not deleted.");
+        mb.setText("Delete Group" + (groups.size() == 1 ? "" : "s"));
+        String groupList = String.join(", ", groups.stream().map(g -> "\"" + g + "\"").toList());
+        mb.setMessage((groups.size() == 1
+                ? "Delete group " + groupList + "?"
+                : "Delete " + groups.size() + " groups (" + groupList + ")?")
+            + (members.isEmpty() ? ""
+                : "\n\n" + members.size() + " session(s) inside will be moved to Ungrouped, not deleted."));
         if (mb.open() != SWT.YES) return;
 
         // Move every member out first (same delete-old-file-then-resave pattern as
@@ -150,13 +161,12 @@ class GroupManagerDialog {
             s.group = "";
             try { SessionStorage.save(s); } catch (Exception ignored) {}
         }
-        try {
-            SessionStorage.deleteGroup(group);
-            changed = true;
-            refreshList();
-        } catch (Exception ex) {
-            error("Failed to delete group:\n" + ex.getMessage());
+        for (String group : groups) {
+            try { SessionStorage.deleteGroup(group); }
+            catch (Exception ex) { error("Failed to delete group \"" + group + "\":\n" + ex.getMessage()); }
         }
+        changed = true;
+        refreshList();
     }
 
     private void error(String message) {
