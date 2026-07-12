@@ -1142,7 +1142,9 @@ public class SessionsTab {
     private void buildTagBadges(Composite parent, Display display, java.util.List<String> tags) {
         Composite strip = new Composite(parent, SWT.NONE);
         strip.setBackground(cBg);
-        strip.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        // Doesn't grab excess width — like the group badge, it should take just the space its
+        // own badges need and leave any leftover row width to the name/host column.
+        strip.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         RowLayout rl = new RowLayout(SWT.HORIZONTAL);
         rl.spacing = 4; rl.marginWidth = 0; rl.marginHeight = 0; rl.wrap = true;
         strip.setLayout(rl);
@@ -1188,7 +1190,7 @@ public class SessionsTab {
         // Store session for filtering
         row.setData("session", session);
 
-        GridLayout gl = new GridLayout(5, false);
+        GridLayout gl = new GridLayout(6, false);
         gl.marginWidth = 12; gl.marginHeight = 8;
         gl.horizontalSpacing = 10;
         row.setLayout(gl);
@@ -1250,8 +1252,12 @@ public class SessionsTab {
         hostL.addDisposeListener(e -> hostF.dispose());
         hostL.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
+        // Tag badges column — right side, before the group badge
         if (session.tags != null && !session.tags.isEmpty()) {
-            buildTagBadges(nameCol, display, session.tags);
+            buildTagBadges(row, display, session.tags);
+        } else {
+            Label tagGap = new Label(row, SWT.NONE);
+            tagGap.setBackground(cBg);
         }
 
         // Group badge column
@@ -1583,7 +1589,8 @@ public class SessionsTab {
         return q.isEmpty()
             || (s.name  != null && s.name.toLowerCase().contains(q))
             || (s.host  != null && s.host.toLowerCase().contains(q))
-            || (s.group != null && s.group.toLowerCase().contains(q));
+            || (s.group != null && s.group.toLowerCase().contains(q))
+            || (s.tags  != null && s.tags.stream().anyMatch(t -> t.toLowerCase().contains(q)));
     }
 
     /** Recursively filters session cards in card-view mode; a "cardBlock"-tagged
