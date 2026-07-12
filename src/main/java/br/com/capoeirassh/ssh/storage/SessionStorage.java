@@ -57,6 +57,7 @@ public final class SessionStorage {
         p.setProperty("sshVerbose",    String.valueOf(s.sshVerbose));
         p.setProperty("sortOrder",     String.valueOf(s.sortOrder));
         p.setProperty("tags",          String.join(",", s.tags));
+        for (String tag : s.tags) TagRegistry.register(tag);
 
         Path file = dir.resolve(s.fileName());
         try (OutputStream out = SecureFiles.openAppend(file)) {
@@ -98,6 +99,11 @@ public final class SessionStorage {
                     .filter(p -> p.getFileName().toString().endsWith(EXT))
                     .forEach(p -> load(p, group).ifPresent(list::add));
             });
+
+        // Self-heals TagRegistry against sessions saved by an older build (before the
+        // registry existed) or a manually-restored/edited *.session file — every tag any
+        // session carries ends up registered, register() being a no-op if already known.
+        for (SessionInfo s : list) for (String tag : s.tags) TagRegistry.register(tag);
 
         return list;
     }

@@ -927,11 +927,8 @@ public class SessionsTab {
             statSessions.setText(String.valueOf(sessions.size()));
         if (statGroups != null && !statGroups.isDisposed())
             statGroups.setText(String.valueOf(groups.size()));
-        if (statTags != null && !statTags.isDisposed()) {
-            Set<String> distinctTags = new java.util.HashSet<>();
-            for (SessionInfo s : sessions) distinctTags.addAll(s.tags);
-            statTags.setText(String.valueOf(distinctTags.size()));
-        }
+        if (statTags != null && !statTags.isDisposed())
+            statTags.setText(String.valueOf(br.com.capoeirassh.ssh.storage.TagRegistry.getAll().size()));
 
         // Rebuild recent cards
         if (recentCardsRow != null && !recentCardsRow.isDisposed()) {
@@ -1158,9 +1155,12 @@ public class SessionsTab {
         Composite badge = new Composite(parent, SWT.NONE);
         badge.setBackground(cBlack);
 
+        Color tagColor = new Color(display, br.com.capoeirassh.ssh.storage.TagRegistry.getColor(tag));
+        badge.addDisposeListener(e -> tagColor.dispose());
+
         badge.addListener(SWT.Paint, e -> {
             Rectangle b = badge.getBounds();
-            e.gc.setForeground(cBorder);
+            e.gc.setForeground(tagColor);
             e.gc.drawRoundRectangle(0, 0, b.width - 1, b.height - 1, 3, 3);
         });
 
@@ -1171,7 +1171,7 @@ public class SessionsTab {
         Label lbl = new Label(badge, SWT.NONE);
         lbl.setText(tag);
         lbl.setBackground(cBlack);
-        lbl.setForeground(cGreen);
+        lbl.setForeground(tagColor);
         Font f = new Font(display, "Arial", 8, SWT.NORMAL);
         lbl.setFont(f);
         lbl.addDisposeListener(e -> f.dispose());
