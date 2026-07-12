@@ -69,8 +69,8 @@ public class MainWindow {
         });
 
         shell.open();
-        br.com.capoeirassh.ssh.UpdateChecker.checkAsync(v ->
-            display.asyncExec(() -> { if (sessionsTab != null) sessionsTab.notifyUpdateAvailable(v); }));
+        br.com.capoeirassh.ssh.UpdateChecker.checkAsync(info ->
+            display.asyncExec(() -> { if (sessionsTab != null) sessionsTab.notifyUpdateAvailable(info); }));
         while (!shell.isDisposed()) {
             if (!display.readAndDispatch()) display.sleep();
         }
