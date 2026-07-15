@@ -892,7 +892,7 @@ public class SessionsTab {
         paintAvatar(icon, session);
 
         Label hostLbl = new Label(halo, SWT.CENTER);
-        hostLbl.setText(shortHostLabel(session.host));
+        hostLbl.setText(shortHostLabel(session.name));
         hostLbl.setBackground(normalBg);
         hostLbl.setForeground(cDim);
         Font hostFont = new Font(halo.getDisplay(), "Arial", 7, SWT.NORMAL);
@@ -928,11 +928,15 @@ public class SessionsTab {
         wireSessionInteractions(halo, session);
     }
 
-    /** IP addresses are shown as-is; a FQDN is trimmed to just its first label
-     *  (e.g. "db1.prod.example.com" -> "db1") so card-view tiles stay compact while
+    /** Trims the session's display name to just its first label when it looks like a FQDN
+     *  (e.g. "db1.prod.example.com" -> "db1"); an IP address or a plain name is shown as-is.
+     *  A "user@host" display name is trimmed to just the host part first, so the tile shows
+     *  the host's first label instead of the username. Keeps card-view tiles compact while
      *  still telling apart same-icon sessions without needing to hover for the tooltip. */
-    private static String shortHostLabel(String host) {
-        if (host == null || host.isBlank()) return "";
+    private static String shortHostLabel(String name) {
+        if (name == null || name.isBlank()) return "";
+        int at = name.indexOf('@');
+        String host = at >= 0 && at < name.length() - 1 ? name.substring(at + 1) : name;
         boolean looksLikeIp = host.matches("[0-9.]+") || host.contains(":");
         String label = looksLikeIp || !host.contains(".") ? host : host.substring(0, host.indexOf('.'));
         return label.length() > 12 ? label.substring(0, 11) + "…" : label;
