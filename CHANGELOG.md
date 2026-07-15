@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.6] — 2026-07-15
+
+### Fixed
+- **Terminal text selection** stayed pinned to the same screen rows instead of following the
+  selected content when scrolling the scrollback after making a selection; copying could grab
+  the wrong text. Selection is now tracked by absolute buffer position instead of viewport
+  position.
+- Dragging a selection to the top (or bottom) edge of the terminal now auto-scrolls, so text
+  that had already scrolled off-screen can be selected and copied.
+- **Tab traversal** in password fields (Master Password, Connect, Credential Manager, Export
+  backup, etc.) stopped on the hold-to-reveal "eye" button instead of moving to the dialog's
+  next field.
+- **Card view** tile labels now show the session's display name (trimmed the same FQDN-aware
+  way as before) instead of its host — a "user@host"-style name no longer renders as an
+  awkward "vicente@Tes…" truncation.
+
 ## [1.4.5] — 2026-07-12
 
 ### Added
