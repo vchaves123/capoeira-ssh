@@ -97,9 +97,12 @@ public class TerminalTab {
     private Listener fKeyFilter;
 
     // ── Text selection state ─────────────────────────────────────────────────
-    /** Selection anchor (col, row) in terminal cell coordinates; -1 = no selection. */
+    /** Selection anchor (col, absolute buffer row — see {@link TerminalEmulator#getCellAbs});
+     *  -1 = no selection. Stored as an absolute row (not viewport-relative) so the selected
+     *  text stays anchored to the same content as the user scrolls the scrollback instead of
+     *  visually detaching from it. */
     private int selAnchorCol = -1, selAnchorRow = -1;
-    /** Selection end — updated as the mouse moves. */
+    /** Selection end — updated as the mouse moves. Same absolute-row coordinate space. */
     private int selEndCol    = -1, selEndRow    = -1;
     /** True while the trailing MouseUp of a double-click should be ignored. */
     private boolean suppressNextMouseUp = false;
@@ -237,7 +240,7 @@ public class TerminalTab {
             if (e.button == 1) {
                 // Start selection
                 selAnchorCol = e.x / charWidth;
-                selAnchorRow = e.y / charHeight;
+                selAnchorRow = toAbsRow(e.y / charHeight);
                 selEndCol    = selAnchorCol;
                 selEndRow    = selAnchorRow;
                 canvas.redraw();
@@ -248,8 +251,20 @@ public class TerminalTab {
 
         canvas.addListener(SWT.MouseMove, e -> {
             if (selAnchorCol < 0 || (e.stateMask & SWT.BUTTON1) == 0) return;
-            selEndCol = Math.max(0, Math.min(e.x / charWidth,  emulator.getCols() - 1));
-            selEndRow = Math.max(0, Math.min(e.y / charHeight, visibleRows() - 1));
+            selEndCol = Math.max(0, Math.min(e.x / charWidth, emulator.getCols() - 1));
+
+            // Auto-scroll while dragging past the top/bottom edge of the visible area, so
+            // text that has already scrolled off-screen becomes reachable mid-selection
+            // instead of being un-copyable once it leaves the viewport.
+            int viewportRow = e.y / charHeight;
+            if (viewportRow < 0) {
+                scroll(viewportRow);
+                viewportRow = 0;
+            } else if (viewportRow >= visibleRows()) {
+                if (scrollOffset > 0) scroll(viewportRow - visibleRows() + 1);
+                viewportRow = visibleRows() - 1;
+            }
+            selEndRow = toAbsRow(viewportRow);
             canvas.redraw();
         });
 
@@ -257,7 +272,7 @@ public class TerminalTab {
             if (e.button != 1 || selAnchorCol < 0) return;
             if (suppressNextMouseUp) { suppressNextMouseUp = false; return; }
             selEndCol = Math.max(0, Math.min(e.x / charWidth,  emulator.getCols() - 1));
-            selEndRow = Math.max(0, Math.min(e.y / charHeight, visibleRows() - 1));
+            selEndRow = toAbsRow(Math.max(0, Math.min(e.y / charHeight, visibleRows() - 1)));
             String text = getSelectedText();
             if (text != null && !text.isEmpty()) copyToClipboard(text);
             else clearSelection();
@@ -277,8 +292,9 @@ public class TerminalTab {
             // expand right
             int endCol = col;
             while (endCol < cols - 1 && isWordChar(emulator.getCell(row, endCol + 1, scrollOffset))) endCol++;
-            selAnchorCol = startCol; selAnchorRow = row;
-            selEndCol    = endCol;   selEndRow    = row;
+            int absRow = toAbsRow(row);
+            selAnchorCol = startCol; selAnchorRow = absRow;
+            selEndCol    = endCol;   selEndRow    = absRow;
             suppressNextMouseUp = true;
             canvas.redraw();
             String text = getSelectedText();
@@ -475,18 +491,26 @@ public class TerminalTab {
             // ── Selection highlight overlay ──────────────────────────────
             if (selAnchorCol >= 0 && hasSelection()) {
                 int[] norm = normalizedSelection();
-                int r0 = norm[0], c0 = norm[1], r1 = norm[2], c1 = norm[3];
-                gc.setAlpha(80);
-                if (colSelection == null || colSelection.isDisposed())
-                    colSelection = new Color(display, 100, 160, 255);
-                gc.setBackground(colSelection);
-                for (int sr = r0; sr <= r1; sr++) {
-                    int sc = (sr == r0) ? c0 : 0;
-                    int ec = (sr == r1) ? c1 : cols - 1;
-                    gc.fillRectangle(sc * charWidth, sr * charHeight,
-                                     (ec - sc + 1) * charWidth, charHeight);
+                // Selection rows are absolute buffer rows; reproject onto the current
+                // viewport (which moves as scrollOffset changes) and clip to what's on
+                // screen right now — the rest of the selection still exists for copying,
+                // it's just scrolled out of view.
+                int r0 = fromAbsRow(norm[0]), c0 = norm[1];
+                int r1 = fromAbsRow(norm[2]), c1 = norm[3];
+                int cr0 = Math.max(r0, 0), cr1 = Math.min(r1, rows - 1);
+                if (cr0 <= cr1) {
+                    gc.setAlpha(80);
+                    if (colSelection == null || colSelection.isDisposed())
+                        colSelection = new Color(display, 100, 160, 255);
+                    gc.setBackground(colSelection);
+                    for (int sr = cr0; sr <= cr1; sr++) {
+                        int sc = (sr == r0) ? c0 : 0;
+                        int ec = (sr == r1) ? c1 : cols - 1;
+                        gc.fillRectangle(sc * charWidth, sr * charHeight,
+                                         (ec - sc + 1) * charWidth, charHeight);
+                    }
+                    gc.setAlpha(255);
                 }
-                gc.setAlpha(255);
             }
 
             if (disconnected) {
@@ -910,6 +934,19 @@ public class TerminalTab {
         return charHeight > 0 ? r.height / charHeight : emulator.getRows();
     }
 
+    /** Converts a viewport-relative row (as seen right now, with the current scrollOffset)
+     *  into an absolute buffer row — see {@link TerminalEmulator#getCellAbs}. */
+    private int toAbsRow(int viewportRow) {
+        return viewportRow + emulator.getScrollbackSize() - scrollOffset;
+    }
+
+    /** Inverse of {@link #toAbsRow} — reprojects a stored absolute row onto the CURRENT
+     *  viewport, using the live scrollOffset. Used only for painting; text extraction reads
+     *  absolute rows directly via {@link TerminalEmulator#getCellAbs} instead. */
+    private int fromAbsRow(int absRow) {
+        return absRow - emulator.getScrollbackSize() + scrollOffset;
+    }
+
     private boolean hasSelection() {
         return selAnchorCol >= 0
             && (selAnchorRow != selEndRow || selAnchorCol != selEndCol);
@@ -937,7 +974,7 @@ public class TerminalTab {
             int ec = (r == r1) ? c1 : cols - 1;
             StringBuilder line = new StringBuilder();
             for (int c = sc; c <= ec; c++) {
-                TerminalCell cell = emulator.getCell(r, c, scrollOffset);
+                TerminalCell cell = emulator.getCellAbs(r, c);
                 line.append(cell != null && cell.character != '\0' ? cell.character : ' ');
             }
             // Strip trailing spaces from each line (except last segment)

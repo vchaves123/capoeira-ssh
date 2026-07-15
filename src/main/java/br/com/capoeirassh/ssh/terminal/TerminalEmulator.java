@@ -826,17 +826,33 @@ public class TerminalEmulator {
      * with {@code scrollOffset} lines scrolled back (0 = showing current buffer bottom).
      */
     public synchronized TerminalCell getCell(int visibleRow, int col, int scrollOffset) {
-        int histSize     = scrollback.size();
-        int totalRows    = histSize + rows;
-        int absRow       = visibleRow + (totalRows - rows - scrollOffset);
+        int histSize  = scrollback.size();
+        int totalRows = histSize + rows;
+        int absRow    = visibleRow + (totalRows - rows - scrollOffset);
+        return getCellAbs(absRow, col);
+    }
+
+    /**
+     * Returns the cell at absolute buffer row {@code absRow} (0 = oldest scrollback line,
+     * {@link #getTotalRows()} exclusive upper bound), independent of any viewport/scrollOffset.
+     * Used for text selections, whose extent must stay anchored to specific content even as
+     * the user scrolls, rather than to whatever happens to be on-screen right now.
+     */
+    public synchronized TerminalCell getCellAbs(int absRow, int col) {
+        int histSize = scrollback.size();
+        if (absRow < 0 || absRow >= histSize + rows) return null;
         if (absRow < histSize) {
             TerminalCell[] row = scrollback.get(absRow);
             return col < row.length ? row[col] : null;
         }
         int bufRow = absRow - histSize;
-        if (bufRow < 0 || bufRow >= rows || col >= cols) return null;
+        if (col >= cols) return null;
         return activeBuffer[bufRow][col];
     }
+
+    /** Total addressable rows right now (scrollback + live buffer) — the exclusive upper
+     *  bound for {@link #getCellAbs}. */
+    public synchronized int getTotalRows() { return scrollback.size() + rows; }
 
     // -----------------------------------------------------------------------
     // Color resolution
