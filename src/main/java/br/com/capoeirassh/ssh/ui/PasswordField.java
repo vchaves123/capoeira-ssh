@@ -46,6 +46,11 @@ public final class PasswordField {
         eye.addListener(SWT.MouseDown, e -> txt.setEchoChar((char) 0));
         eye.addListener(SWT.MouseUp,   e -> txt.setEchoChar(echo[0]));
 
+        // Exclude the eye button from Tab traversal — Tab from the password field should
+        // move to the dialog's next field, not stop on the hold-to-reveal button. This only
+        // affects keyboard traversal order; the button is still clickable with the mouse.
+        cmp.setTabList(new Control[]{ txt });
+
         return txt;
     }
 
