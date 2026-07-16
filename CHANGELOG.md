@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.7] — 2026-07-16
+
+### Fixed
+- **Update check** could crash with a `StackOverflowError` (`update-check` thread) while parsing
+  a release's notes: the body-field regex used a repeated capturing group, which Java's regex
+  engine matches recursively — one stack frame per character — guaranteed to overflow on any
+  release with normal-length notes. Replaced with a manual character scanner instead of regex.
+
 ## [1.4.6] — 2026-07-15
 
 ### Fixed
