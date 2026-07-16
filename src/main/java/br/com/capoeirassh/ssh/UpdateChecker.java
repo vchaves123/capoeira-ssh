@@ -6,8 +6,6 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Checks GitHub for a newer release than the one currently running.
@@ -19,10 +17,6 @@ public final class UpdateChecker {
         "https://api.github.com/repos/vchaves123/capoeira-ssh/releases/latest";
     private static final String FALLBACK_URL =
         "https://github.com/vchaves123/capoeira-ssh/releases/latest";
-
-    private static final Pattern TAG_PATTERN  = Pattern.compile("\"tag_name\"\\s*:\\s*\"v?([^\"]+)\"");
-    private static final Pattern URL_PATTERN  = Pattern.compile("\"html_url\"\\s*:\\s*\"([^\"]*)\"");
-    private static final Pattern BODY_PATTERN = Pattern.compile("\"body\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
 
     /** Bound the read: a MITM/compromised endpoint must not be able to OOM this thread. */
     private static final int MAX_RESPONSE_BYTES = 256 * 1024;
@@ -63,29 +57,42 @@ public final class UpdateChecker {
             byte[] raw = in.readNBytes(MAX_RESPONSE_BYTES);
             String json = new String(raw, StandardCharsets.UTF_8);
 
-            Matcher mv = TAG_PATTERN.matcher(json);
-            if (!mv.find()) return null;
-            String version = mv.group(1);
+            String tag = extractJsonString(json, "tag_name");
+            if (tag == null) return null;
+            String version = tag.startsWith("v") ? tag.substring(1) : tag;
 
-            Matcher mu = URL_PATTERN.matcher(json);
-            String url = mu.find() ? mu.group(1) : FALLBACK_URL;
+            String url   = extractJsonString(json, "html_url");
+            String notes = extractJsonString(json, "body");
 
-            Matcher mb = BODY_PATTERN.matcher(json);
-            String notes = mb.find() ? unescapeJson(mb.group(1)) : "";
-
-            return new UpdateInfo(version, url, notes);
+            return new UpdateInfo(version, url != null ? url : FALLBACK_URL, notes != null ? notes : "");
         } finally {
             conn.disconnect();
         }
     }
 
-    /** Minimal JSON string-escape decoder — just enough for GitHub's release body/URL fields. */
-    private static String unescapeJson(String s) {
-        StringBuilder out = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                char next = s.charAt(++i);
+    /**
+     * Finds {@code "key": "value"} in a JSON document and returns the decoded value, or null
+     * if not found / unterminated. Scans character-by-character rather than matching a regex
+     * against the (potentially several-KB) value — Java's {@code Pattern} implements a
+     * repeated group like {@code (?:\\.|[^"])*} recursively, one stack frame per matched
+     * character, so applying that shape to a normal-sized release-notes body reliably threw
+     * {@code StackOverflowError} on the background update-check thread.
+     */
+    private static String extractJsonString(String json, String key) {
+        String marker = "\"" + key + "\"";
+        int idx = json.indexOf(marker);
+        if (idx < 0) return null;
+        idx = json.indexOf(':', idx + marker.length());
+        if (idx < 0) return null;
+        idx = json.indexOf('"', idx + 1);
+        if (idx < 0) return null;
+
+        StringBuilder out = new StringBuilder();
+        for (int i = idx + 1; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (c == '"') return out.toString();
+            if (c == '\\' && i + 1 < json.length()) {
+                char next = json.charAt(++i);
                 switch (next) {
                     case 'n' -> out.append('\n');
                     case 'r' -> out.append('\r');
@@ -94,9 +101,9 @@ public final class UpdateChecker {
                     case '\\' -> out.append('\\');
                     case '/' -> out.append('/');
                     case 'u' -> {
-                        if (i + 4 < s.length()) {
+                        if (i + 4 < json.length()) {
                             try {
-                                out.append((char) Integer.parseInt(s.substring(i + 1, i + 5), 16));
+                                out.append((char) Integer.parseInt(json.substring(i + 1, i + 5), 16));
                                 i += 4;
                             } catch (NumberFormatException ignored) {}
                         }
@@ -107,7 +114,7 @@ public final class UpdateChecker {
                 out.append(c);
             }
         }
-        return out.toString();
+        return null; // unterminated — truncated by MAX_RESPONSE_BYTES or malformed
     }
 
     /** Compares dotted numeric versions, e.g. "1.0.10" > "1.0.9". */
