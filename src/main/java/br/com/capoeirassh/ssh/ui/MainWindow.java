@@ -2,6 +2,7 @@ package br.com.capoeirassh.ssh.ui;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.SWTError;
 import org.eclipse.swt.custom.*;
 import org.eclipse.swt.graphics.*;
 import org.eclipse.swt.layout.*;
@@ -365,11 +366,20 @@ public class MainWindow {
             + "(you have v" + br.com.capoeirassh.ssh.BuildInfo.VERSION + ").");
         lblTitle.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        Text notes = new Text(dlg, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL | SWT.WRAP | SWT.READ_ONLY);
-        notes.setText(info.releaseNotes().isBlank() ? "(no release notes provided)" : info.releaseNotes());
         GridData gdNotes = new GridData(SWT.FILL, SWT.FILL, true, true);
         gdNotes.widthHint = 460; gdNotes.heightHint = 260;
-        notes.setLayoutData(gdNotes);
+        String notesText = info.releaseNotes().isBlank() ? "(no release notes provided)" : info.releaseNotes();
+        try {
+            org.eclipse.swt.browser.Browser browser = new org.eclipse.swt.browser.Browser(dlg, SWT.BORDER);
+            browser.setLayoutData(gdNotes);
+            browser.setText(ReleaseNotesHtml.render(notesText));
+        } catch (SWTError swtError) {
+            // No browser engine available on this system (e.g. WebKitGTK missing on Linux) —
+            // fall back to plain text rather than losing the dialog entirely.
+            Text notes = new Text(dlg, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL | SWT.WRAP | SWT.READ_ONLY);
+            notes.setText(notesText);
+            notes.setLayoutData(gdNotes);
+        }
 
         Composite btns = new Composite(dlg, SWT.NONE);
         btns.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
