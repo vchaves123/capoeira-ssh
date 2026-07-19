@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.9] — 2026-07-16
+
+### Changed
+- The "Update Available" dialog now renders the release notes as proper HTML (headers,
+  **bold**, tables, links, lists) instead of raw markdown text, via a new self-contained,
+  escape-first markdown-to-HTML converter and an embedded browser widget (with a plain-text
+  fallback if no browser engine is available on the platform).
+
 ## [1.4.8] — 2026-07-16
 
 ### Changed
