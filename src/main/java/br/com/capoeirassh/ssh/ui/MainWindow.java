@@ -69,8 +69,6 @@ public class MainWindow {
         });
 
         shell.open();
-        br.com.capoeirassh.ssh.UpdateChecker.checkAsync(info ->
-            display.asyncExec(() -> { if (sessionsTab != null) sessionsTab.notifyUpdateAvailable(info); }));
         while (!shell.isDisposed()) {
             if (!display.readAndDispatch()) display.sleep();
         }
@@ -300,14 +298,95 @@ public class MainWindow {
         link.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
         link.addListener(SWT.Selection, e -> Program.launch(e.text));
 
-        Button ok = new Button(dlg, SWT.PUSH);
-        ok.setText("  OK  ");
-        ok.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
-        ok.addListener(SWT.Selection, e -> dlg.close());
+        Composite btns = new Composite(dlg, SWT.NONE);
+        btns.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, true, false));
+        RowLayout rl = new RowLayout(); rl.spacing = 8;
+        btns.setLayout(rl);
 
+        Button btnCheckUpdates = new Button(btns, SWT.PUSH);
+        btnCheckUpdates.setText("  Check for Updates  ");
+        Button ok = new Button(btns, SWT.PUSH);
+        ok.setText("  OK  ");
+        ok.addListener(SWT.Selection, e -> dlg.close());
         dlg.setDefaultButton(ok);
+
+        btnCheckUpdates.addListener(SWT.Selection, e -> checkForUpdates(dlg, btnCheckUpdates));
+
         dlg.pack();
         Rectangle pb = shell.getBounds();
+        org.eclipse.swt.graphics.Point sz = dlg.getSize();
+        dlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
+        dlg.open();
+        while (!dlg.isDisposed()) {
+            if (!display.readAndDispatch()) display.sleep();
+        }
+    }
+
+    /** Runs an explicit update check triggered from the About dialog's button — always gives
+     *  feedback (update found / already up to date / couldn't check), unlike a passive
+     *  background check. There is no automatic check anywhere else in the app. */
+    private void checkForUpdates(Shell aboutDlg, Button trigger) {
+        String originalText = trigger.getText();
+        trigger.setEnabled(false);
+        trigger.setText("  Checking…  ");
+        br.com.capoeirassh.ssh.UpdateChecker.checkNow(result -> display.asyncExec(() -> {
+            if (trigger.isDisposed()) return;
+            trigger.setEnabled(true);
+            trigger.setText(originalText);
+            switch (result.status()) {
+                case UPDATE_AVAILABLE -> showUpdateAvailableDialog(aboutDlg, result.info());
+                case UP_TO_DATE -> {
+                    MessageBox mb = new MessageBox(aboutDlg, SWT.ICON_INFORMATION | SWT.OK);
+                    mb.setText("No Updates Available");
+                    mb.setMessage("You're on the latest version (v" + br.com.capoeirassh.ssh.BuildInfo.VERSION + ").");
+                    mb.open();
+                }
+                case ERROR -> {
+                    MessageBox mb = new MessageBox(aboutDlg, SWT.ICON_WARNING | SWT.OK);
+                    mb.setText("Check for Updates");
+                    mb.setMessage("Could not check for updates. Check your internet connection and try again.");
+                    mb.open();
+                }
+            }
+        }));
+    }
+
+    /** Shows the new version's release notes with an option to open the release page. */
+    private void showUpdateAvailableDialog(Shell parent, br.com.capoeirassh.ssh.UpdateChecker.UpdateInfo info) {
+        Shell dlg = new Shell(parent, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM | SWT.RESIZE);
+        dlg.setText("Update Available");
+        AppIcon.apply(dlg);
+        GridLayout gl = new GridLayout(1, false);
+        gl.marginWidth = 16; gl.marginHeight = 12; gl.verticalSpacing = 10;
+        dlg.setLayout(gl);
+
+        Label lblTitle = new Label(dlg, SWT.NONE);
+        lblTitle.setText("Capoeira SSH v" + info.version() + " is available "
+            + "(you have v" + br.com.capoeirassh.ssh.BuildInfo.VERSION + ").");
+        lblTitle.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+
+        Text notes = new Text(dlg, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL | SWT.WRAP | SWT.READ_ONLY);
+        notes.setText(info.releaseNotes().isBlank() ? "(no release notes provided)" : info.releaseNotes());
+        GridData gdNotes = new GridData(SWT.FILL, SWT.FILL, true, true);
+        gdNotes.widthHint = 460; gdNotes.heightHint = 260;
+        notes.setLayoutData(gdNotes);
+
+        Composite btns = new Composite(dlg, SWT.NONE);
+        btns.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
+        RowLayout rl = new RowLayout(); rl.spacing = 8;
+        btns.setLayout(rl);
+
+        Button btnOpen = new Button(btns, SWT.PUSH);
+        btnOpen.setText("  Open in browser  ");
+        Button btnClose = new Button(btns, SWT.PUSH);
+        btnClose.setText("  Close  ");
+        dlg.setDefaultButton(btnOpen);
+
+        btnClose.addListener(SWT.Selection, e -> dlg.dispose());
+        btnOpen.addListener(SWT.Selection, e -> Program.launch(info.releaseUrl()));
+
+        dlg.pack();
+        Rectangle pb = parent.getBounds();
         org.eclipse.swt.graphics.Point sz = dlg.getSize();
         dlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
         dlg.open();

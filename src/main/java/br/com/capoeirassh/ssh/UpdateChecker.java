@@ -26,22 +26,27 @@ public final class UpdateChecker {
     /** Everything the UI needs to show an "update available" prompt. */
     public record UpdateInfo(String version, String releaseUrl, String releaseNotes) {}
 
-    /**
-     * Runs the check on a background thread and delivers the newer release's
-     * info to {@code onUpdateFound}, or nothing at all if already up to date,
-     * offline, disabled by the user, or the request fails for any reason.
-     */
-    public static void checkAsync(Consumer<UpdateInfo> onUpdateFound) {
-        if (br.com.capoeirassh.ssh.storage.UiState.isUpdateAlertsDisabled()) return;
+    public enum Status { UPDATE_AVAILABLE, UP_TO_DATE, ERROR }
+
+    /** Result of an explicit, user-initiated check — unlike a passive background check,
+     *  this always reports something so a "Check for Updates" button can give feedback
+     *  even when already up to date or the request failed. */
+    public record CheckResult(Status status, UpdateInfo info) {}
+
+    /** Runs the check on a background thread, invoked only from the About dialog's
+     *  "Check for Updates" button — there is no automatic/startup check. */
+    public static void checkNow(Consumer<CheckResult> callback) {
         Thread t = new Thread(() -> {
+            CheckResult result;
             try {
                 UpdateInfo info = fetchLatestRelease();
-                if (info != null && isNewer(info.version(), BuildInfo.VERSION)) {
-                    onUpdateFound.accept(info);
-                }
-            } catch (Exception ignored) {
-                // No internet, rate-limited, or malformed response — fail silently.
+                result = (info != null && isNewer(info.version(), BuildInfo.VERSION))
+                    ? new CheckResult(Status.UPDATE_AVAILABLE, info)
+                    : new CheckResult(Status.UP_TO_DATE, info);
+            } catch (Exception e) {
+                result = new CheckResult(Status.ERROR, null);
             }
+            callback.accept(result);
         }, "update-check");
         t.setDaemon(true);
         t.start();

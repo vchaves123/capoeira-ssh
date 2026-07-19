@@ -19,9 +19,6 @@ public final class UiState {
     /** ALL SESSIONS list rendering mode — false = flat list, true = cards grouped by group. */
     private static boolean sessionsCardView = false;
 
-    /** User dismissed an update-available prompt with "don't ask again" — suppresses future checks. */
-    private static boolean updateAlertsDisabled = false;
-
     static { load(); }
 
     private UiState() {}
@@ -33,27 +30,18 @@ public final class UiState {
         save();
     }
 
-    public static boolean isUpdateAlertsDisabled() { return updateAlertsDisabled; }
-
-    public static void setUpdateAlertsDisabled(boolean disabled) {
-        updateAlertsDisabled = disabled;
-        save();
-    }
-
     private static void load() {
         if (!Files.exists(FILE)) return;
         Properties p = new Properties();
         try (InputStream in = Files.newInputStream(FILE)) {
             p.load(in);
             sessionsCardView = Boolean.parseBoolean(p.getProperty("sessionsCardView", "false"));
-            updateAlertsDisabled = Boolean.parseBoolean(p.getProperty("updateAlertsDisabled", "false"));
         } catch (Exception ignored) {}
     }
 
     private static void save() {
         Properties p = new Properties();
         p.setProperty("sessionsCardView", String.valueOf(sessionsCardView));
-        p.setProperty("updateAlertsDisabled", String.valueOf(updateAlertsDisabled));
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             p.store(baos, null);

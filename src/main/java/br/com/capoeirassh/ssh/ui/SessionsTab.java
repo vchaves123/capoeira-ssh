@@ -11,7 +11,6 @@ import org.eclipse.swt.custom.ScrolledComposite;
 import org.eclipse.swt.dnd.*;
 import org.eclipse.swt.graphics.*;
 import org.eclipse.swt.layout.*;
-import org.eclipse.swt.program.Program;
 import org.eclipse.swt.widgets.*;
 
 import java.nio.file.Path;
@@ -62,8 +61,6 @@ public class SessionsTab {
     private Text searchText;
     private Composite aboutIconBox;
     private Composite ioIconBox;
-    private boolean updateAvailable = false;
-    private br.com.capoeirassh.ssh.UpdateChecker.UpdateInfo pendingUpdate;
     /** ALL SESSIONS list rendering mode — false = flat list (default), true = cards grouped by group. */
     private boolean cardView = br.com.capoeirassh.ssh.storage.UiState.isSessionsCardView();
 
@@ -275,19 +272,6 @@ public class SessionsTab {
         Runnable openIoMenu = () -> openImportExportMenu(ioIconBox);
         ioIconBox.addListener(SWT.MouseUp, e -> openIoMenu.run());
         for (Control c : ioIconBox.getChildren()) c.addListener(SWT.MouseUp, e -> openIoMenu.run());
-
-        // Update badge overlay. Registered on BOTH the box and its child label: the label
-        // fills the box's entire client area (GridData FILL/FILL), so a badge painted only
-        // on the box would be silently covered by the label control stacked on top of it.
-        Listener updateBadgePaint = e -> {
-            if (!updateAvailable) return;
-            int sz = 8;
-            Point size = ((Control) e.widget).getSize();
-            e.gc.setBackground(cGold);
-            e.gc.fillOval(size.x - sz - 2, 2, sz, sz);
-        };
-        ioIconBox.addListener(SWT.Paint, updateBadgePaint);
-        for (Control c : ioIconBox.getChildren()) c.addListener(SWT.Paint, updateBadgePaint);
 
         // About icon (bottom)
         aboutIconBox = createSidebarIcon(sidebar, display, "ℹ", false);
@@ -1750,83 +1734,9 @@ public class SessionsTab {
         miBackup.setText("Import from Capoeira backup...");
         miBackup.addListener(SWT.Selection, e -> openImportBackup());
 
-        if (updateAvailable && pendingUpdate != null) {
-            new MenuItem(menu, SWT.SEPARATOR);
-            MenuItem miUpdate = new MenuItem(menu, SWT.PUSH);
-            miUpdate.setText("New version available: v" + pendingUpdate.version() + "...");
-            miUpdate.addListener(SWT.Selection, e -> openUpdateAvailableDialog());
-        }
-
         Point loc = anchor.toDisplay(anchor.getSize().x, anchor.getSize().y);
         menu.setLocation(loc);
         menu.setVisible(true);
-    }
-
-    /** Shows the new version's release notes with options to open it in a browser or
-     *  permanently dismiss update checks — reached via the Import/Export context menu. */
-    private void openUpdateAvailableDialog() {
-        if (pendingUpdate == null) return;
-        br.com.capoeirassh.ssh.UpdateChecker.UpdateInfo info = pendingUpdate;
-
-        Shell dlg = new Shell(shell, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM | SWT.RESIZE);
-        dlg.setText("Update Available");
-        AppIcon.apply(dlg);
-        GridLayout gl = new GridLayout(1, false);
-        gl.marginWidth = 16; gl.marginHeight = 12; gl.verticalSpacing = 10;
-        dlg.setLayout(gl);
-
-        Label lblTitle = new Label(dlg, SWT.NONE);
-        lblTitle.setText("Capoeira SSH v" + info.version() + " is available "
-            + "(you have v" + br.com.capoeirassh.ssh.BuildInfo.VERSION + ").");
-        lblTitle.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
-
-        Text notes = new Text(dlg, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL | SWT.WRAP | SWT.READ_ONLY);
-        notes.setText(info.releaseNotes().isBlank() ? "(no release notes provided)" : info.releaseNotes());
-        GridData gdNotes = new GridData(SWT.FILL, SWT.FILL, true, true);
-        gdNotes.widthHint = 460; gdNotes.heightHint = 260;
-        notes.setLayoutData(gdNotes);
-
-        Composite btns = new Composite(dlg, SWT.NONE);
-        btns.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
-        RowLayout rl = new RowLayout(); rl.spacing = 8;
-        btns.setLayout(rl);
-
-        Button btnIgnore = new Button(btns, SWT.PUSH);
-        btnIgnore.setText("  Ignore (don't ask again)  ");
-        Button btnOpen = new Button(btns, SWT.PUSH);
-        btnOpen.setText("  Open in browser  ");
-        Button btnClose = new Button(btns, SWT.PUSH);
-        btnClose.setText("  Close  ");
-        dlg.setDefaultButton(btnOpen);
-
-        btnClose.addListener(SWT.Selection, e -> dlg.dispose());
-        btnOpen.addListener(SWT.Selection, e -> Program.launch(info.releaseUrl()));
-        btnIgnore.addListener(SWT.Selection, e -> {
-            br.com.capoeirassh.ssh.storage.UiState.setUpdateAlertsDisabled(true);
-            clearUpdateAvailable();
-            dlg.dispose();
-        });
-
-        dlg.pack();
-        Rectangle pb = shell.getBounds();
-        Point sz = dlg.getSize();
-        dlg.setLocation(pb.x + (pb.width - sz.x) / 2, pb.y + (pb.height - sz.y) / 2);
-        dlg.open();
-        Display display = shell.getDisplay();
-        while (!dlg.isDisposed()) { if (!display.readAndDispatch()) display.sleep(); }
-    }
-
-    /** Clears the update badge/tooltip after the user dismisses it for good. */
-    private void clearUpdateAvailable() {
-        updateAvailable = false;
-        pendingUpdate = null;
-        if (ioIconBox == null || ioIconBox.isDisposed()) return;
-        ioIconBox.setToolTipText("Import / Export");
-        for (Control c : ioIconBox.getChildren()) {
-            c.setToolTipText(ioIconBox.getToolTipText());
-            c.redraw();
-        }
-        ioIconBox.redraw();
     }
 
     // -----------------------------------------------------------------------
@@ -2039,19 +1949,5 @@ public class SessionsTab {
      *  on a control from whatever tab was previously focused. */
     public void focusDefault() {
         if (searchText != null && !searchText.isDisposed()) searchText.setFocus();
-    }
-
-    /** Called once a newer release is detected — badges the Import/Export icon and makes
-     *  the release notes reachable from its context menu. */
-    public void notifyUpdateAvailable(br.com.capoeirassh.ssh.UpdateChecker.UpdateInfo info) {
-        if (ioIconBox == null || ioIconBox.isDisposed()) return;
-        updateAvailable = true;
-        pendingUpdate = info;
-        ioIconBox.setToolTipText("Import / Export  •  Update available: v" + info.version());
-        for (Control c : ioIconBox.getChildren()) {
-            c.setToolTipText(ioIconBox.getToolTipText());
-            c.redraw();
-        }
-        ioIconBox.redraw();
     }
 }
