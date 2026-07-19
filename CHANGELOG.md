@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.8] — 2026-07-16
+
+### Changed
+- **Update checking is now manual.** The app no longer checks for a new release automatically
+  on startup — the About dialog gained a "Check for Updates" button instead, which always
+  reports a result (update available with release notes, already up to date, or couldn't
+  check). Removed the update badge/tooltip/menu item from the Import/Export sidebar icon.
+
 ## [1.4.7] — 2026-07-16
 
 ### Fixed
