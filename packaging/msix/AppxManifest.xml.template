@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Template for the MSIX package submitted to the Microsoft Store (Product: "capoeira ssh").
+  __VERSION__ is substituted by the release workflow with a 4-part version (e.g. 1.4.9.0) —
+  MSIX requires exactly four numeric segments, and the Store requires the last one to be 0.
+
+  Identity/Publisher below are the exact values from Partner Center > capoeira ssh >
+  Product Identity — they must match precisely or the package fails Store validation.
+  This app is submitted unsigned: Microsoft Store re-signs MSIX packages for free during
+  certification, unlike EXE/MSI submissions which require the developer's own paid
+  code-signing certificate.
+-->
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    IgnorableNamespaces="uap rescap">
+
+  <Identity
+      Name="MolhoLtda.capoeirassh"
+      Publisher="CN=5B01C25E-F41C-469B-8FAC-C2D2534BCD3B"
+      Version="__VERSION__" />
+
+  <Properties>
+    <DisplayName>Capoeira SSH</DisplayName>
+    <PublisherDisplayName>Molho Ltda.</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="CapoeiraSSH" Executable="Capoeira SSH.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+          DisplayName="Capoeira SSH"
+          Description="Lightweight SSH terminal client"
+          Square150x150Logo="Assets\Square150x150Logo.png"
+          Square44x44Logo="Assets\Square44x44Logo.png"
+          BackgroundColor="#1A1814" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

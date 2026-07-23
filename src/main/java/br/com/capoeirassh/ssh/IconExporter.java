@@ -16,7 +16,9 @@ public class IconExporter {
         String outDir = args.length > 0 ? args[0] : "target";
         new File(outDir).mkdirs();
 
-        for (int sz : new int[]{16, 32, 48, 64, 128, 256}) {
+        // 44/50/150 are Windows MSIX package asset sizes (Square44x44Logo, StoreLogo,
+        // Square150x150Logo) — see packaging/msix/AppxManifest.xml.template.
+        for (int sz : new int[]{16, 32, 44, 48, 50, 64, 128, 150, 256}) {
             BufferedImage img = buildIcon(sz);
             ImageIO.write(img, "PNG", new File(outDir, "icon-" + sz + ".png"));
         }

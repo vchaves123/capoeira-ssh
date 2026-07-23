@@ -174,6 +174,37 @@ jobs:
           Compress-Archive -Path "installer-portable\Capoeira SSH\*" `
             -DestinationPath "installer\capoeira-ssh-windows-portable-${{ steps.ver.outputs.app }}.zip"
 
+      - name: Package MSIX for Microsoft Store (Windows)
+        if: matrix.runner == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.app }}"
+          $stage = "msix-stage"
+          New-Item -ItemType Directory -Force -Path "$stage\Assets" | Out-Null
+
+          Copy-Item "installer-portable\Capoeira SSH\*" -Destination $stage -Recurse -Force
+
+          # MSIX requires exactly four numeric version segments, and the Microsoft Store
+          # requires the fourth to be 0.
+          (Get-Content packaging\msix\AppxManifest.xml.template) `
+            -replace '__VERSION__', "$ver.0" |
+            Set-Content "$stage\AppxManifest.xml" -Encoding utf8
+
+          Copy-Item target\icon-44.png  "$stage\Assets\Square44x44Logo.png"    -Force
+          Copy-Item target\icon-150.png "$stage\Assets\Square150x150Logo.png" -Force
+          Copy-Item target\icon-50.png  "$stage\Assets\StoreLogo.png"         -Force
+
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" `
+            -Recurse -Filter makeappx.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*x64*' } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $makeappx) { Write-Error "makeappx.exe not found"; exit 1 }
+
+          & $makeappx pack /d $stage /p "installer\capoeira-ssh-windows-$ver.msix" /overwrite
+          if ($LASTEXITCODE -ne 0) { Write-Error "makeappx failed with exit code $LASTEXITCODE"; exit 1 }
+          Write-Host "Built: installer\capoeira-ssh-windows-$ver.msix"
+
       - name: Install rpmbuild (Linux)
         if: matrix.runner == 'ubuntu-latest'
         run: sudo apt-get update -qq && sudo apt-get install -y rpm
@@ -340,6 +371,7 @@ jobs:
             echo "|----------|------|"
             echo "| Windows (installer) | \`capoeira-ssh-windows-${VERSION}.exe\` |"
             echo "| Windows (portable, no install / no admin required — unzip and run \`Capoeira SSH.exe\`) | \`capoeira-ssh-windows-portable-${VERSION}.zip\` |"
+            echo "| Windows (MSIX, for sideloading/testing — the Microsoft Store listing is the supported way to install this format) | \`capoeira-ssh-windows-${VERSION}.msix\` |"
             echo "| Linux (Debian/Ubuntu) | \`capoeira-ssh-linux-${VERSION}.deb\` |"
             echo "| Linux (RHEL/OEL/AlmaLinux/Rocky Linux/SUSE/etc.) | \`capoeira-ssh-linux-${VERSION}.rpm\` |"
             echo "| Linux (portable, no install — unpack and run \`bin/capoeira-ssh\`) | \`capoeira-ssh-linux-${VERSION}.tar.gz\` |"
