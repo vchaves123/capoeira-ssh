@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.4.10] — 2026-07-23
+
+### Added
+- **MSIX packaging** for Windows releases, alongside the existing installer/portable builds —
+  built for submission to the Microsoft Store (chosen over a plain EXE/MSI submission because
+  the Store re-signs MSIX for free during certification, avoiding the cost of a code-signing
+  certificate).
+
 ## [1.4.9] — 2026-07-16
 
 ### Changed
