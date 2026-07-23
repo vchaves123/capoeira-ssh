@@ -1,6 +1,6 @@
 ﻿# Privacy Policy — Capoeira SSH
 
-**Last updated: July 1, 2026**
+**Last updated: July 23, 2026**
 
 Capoeira SSH ("the App") is a desktop SSH terminal client developed by Vicente Melo / Molho Ltda.
 This policy explains what data the App handles and how.
@@ -10,7 +10,8 @@ This policy explains what data the App handles and how.
 **Capoeira SSH does not collect, transmit, or sell any personal data to the developer.**
 All application data is stored locally on your device. The only network connections the App
 makes are (1) the SSH connections you explicitly configure to your own servers, and (2) an
-anonymous check against GitHub's public API to see if a newer version is available.
+anonymous check against GitHub's public API, run only when you click "Check for Updates" in
+the About dialog, to see if a newer version is available.
 
 ## Data Stored Locally
 
@@ -37,12 +38,14 @@ The App makes network connections only in these two cases:
 1. **SSH connections you initiate.** When you connect to a server, the App opens a direct SSH
    connection between your computer and that server. The developer has no visibility into
    this connection, its contents, or the servers you connect to.
-2. **Update check.** On startup, the App makes a single anonymous HTTPS request to GitHub's
-   public API (`api.github.com`) to check whether a newer release is available. This request
-   does not include any personal information, account identifiers, or usage data — it is a
-   plain, unauthenticated HTTP GET, functionally identical to visiting a public webpage. As
-   with any internet request, your IP address is visible to GitHub as the network operator,
-   subject to [GitHub's own privacy policy](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+2. **Update check.** Only when you click "Check for Updates" in the About dialog, the App
+   makes a single anonymous HTTPS request to GitHub's public API (`api.github.com`) to check
+   whether a newer release is available. There is no automatic or background check — nothing
+   happens unless you explicitly click that button. The request does not include any personal
+   information, account identifiers, or usage data — it is a plain, unauthenticated HTTP GET,
+   functionally identical to visiting a public webpage. As with any internet request, your IP
+   address is visible to GitHub as the network operator, subject to
+   [GitHub's own privacy policy](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
    This check can fail silently (e.g. offline use) without affecting the App.
 
 The App does not include analytics, telemetry, crash reporters, or advertising SDKs of any kind.
