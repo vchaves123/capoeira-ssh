@@ -1029,12 +1029,22 @@ public class TerminalTab {
     }
 
     /** Strip control bytes (especially ESC) from pasted text so a crafted clipboard can't
-     *  inject terminal escape sequences into the shell; tab/newline/carriage-return are kept. */
+     *  inject terminal escape sequences into the shell; tab is kept. Line endings are
+     *  normalized to a single '\r' per line — matching what the Enter key sends (see
+     *  mapKey()) — so a Windows clipboard's CRLF doesn't submit each line twice (the \r
+     *  submits it, then a passed-through \n would be a second, blank line-feed). */
     private static String sanitizePaste(String s) {
         StringBuilder b = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c == '\t' || c == '\n' || c == '\r' || (c >= 0x20 && c != 0x7F)) b.append(c);
+            if (c == '\r') {
+                b.append('\r');
+                if (i + 1 < s.length() && s.charAt(i + 1) == '\n') i++; // collapse CRLF
+            } else if (c == '\n') {
+                b.append('\r');
+            } else if (c == '\t' || (c >= 0x20 && c != 0x7F)) {
+                b.append(c);
+            }
         }
         return b.toString();
     }
