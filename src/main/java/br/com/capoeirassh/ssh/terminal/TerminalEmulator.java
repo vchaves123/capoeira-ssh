@@ -283,21 +283,86 @@ public class TerminalEmulator {
     }
 
     private void processCodePoint(int cp) {
+        boolean lineDrawing = (useG1 ? g1LineDrawing : g0LineDrawing) && cp >= 0x60 && cp <= 0x7E;
         char ch = cp < 0x10000 ? (char) cp : '?';
         // ACS line-drawing translation
-        if ((useG1 ? g1LineDrawing : g0LineDrawing) && cp >= 0x60 && cp <= 0x7E)
-            ch = ACS_MAP[cp - 0x60];
+        if (lineDrawing) ch = ACS_MAP[cp - 0x60];
+
+        // A double-width glyph occupies two columns. The remote side counts it as two when
+        // positioning the cursor, so we must too — otherwise every wide character (CJK, emoji,
+        // the box-drawing/status glyphs modern CLIs use) shifts our idea of the cursor column
+        // one further left than the server's, and subsequent ESC[K / cursor addressing lands in
+        // the wrong place, leaving stale text on screen. Line-drawing ACS output is always
+        // single-width regardless of the mapped glyph.
+        int width = lineDrawing ? 1 : charWidth(cp);
+        // Zero-width (combining marks, variation selectors, ZWJ): consume no column and leave
+        // the previously written cell alone. Rendering the mark itself would need per-cell
+        // grapheme clusters, which this single-char-per-cell model doesn't have — but silently
+        // dropping it keeps the cursor in sync, which is what matters for screen correctness.
+        if (width == 0) return;
 
         if (wrapPending) {
             wrapPending = false;
             cursorCol   = 0;
             advanceLine();
         }
+        // A wide glyph that no longer fits in the current line wraps whole, rather than being
+        // split across the boundary.
+        if (width == 2 && cursorCol == cols - 1) {
+            eraseCell(activeBuffer[cursorRow][cursorCol]);
+            cursorCol = 0;
+            advanceLine();
+        }
 
         writeCell(cursorRow, cursorCol, ch);
+        if (width == 2) {
+            writeCell(cursorRow, cursorCol + 1, ' ');
+            if (cursorCol + 1 < cols) activeBuffer[cursorRow][cursorCol + 1].wideTrailer = true;
+        }
 
-        if (cursorCol < cols - 1) cursorCol++;
+        if (cursorCol + width <= cols - 1) cursorCol += width;
         else wrapPending = true;
+    }
+
+    /**
+     * Columns occupied by a code point: 2 for East Asian Wide/Fullwidth characters and emoji,
+     * 0 for combining marks, 1 otherwise. This is the {@code wcwidth} behaviour every terminal
+     * and every well-behaved remote program assumes, so it must match theirs for cursor
+     * positioning to stay in sync.
+     */
+    static int charWidth(int cp) {
+        // Combining marks / zero-width — attach to the previous cell, consume no column.
+        if (cp == 0x200B || cp == 0xFEFF
+            || (cp >= 0x0300 && cp <= 0x036F)   // combining diacritical marks
+            || (cp >= 0x200C && cp <= 0x200F)   // ZWNJ/ZWJ, LRM/RLM
+            || (cp >= 0xFE00 && cp <= 0xFE0F))  // variation selectors
+            return 0;
+
+        if (cp < 0x1100) return 1;              // fast path: Latin/Greek/Cyrillic/etc.
+
+        if ((cp >= 0x1100 && cp <= 0x115F)      // Hangul Jamo initial consonants
+            || (cp >= 0x2E80 && cp <= 0x303E)   // CJK radicals, Kangxi, CJK symbols
+            || (cp >= 0x3041 && cp <= 0x33FF)   // Hiragana, Katakana, Hangul Compat, CJK compat
+            || (cp >= 0x3400 && cp <= 0x4DBF)   // CJK Unified Ext A
+            || (cp >= 0x4E00 && cp <= 0x9FFF)   // CJK Unified Ideographs
+            || (cp >= 0xA000 && cp <= 0xA4CF)   // Yi
+            || (cp >= 0xAC00 && cp <= 0xD7A3)   // Hangul syllables
+            || (cp >= 0xF900 && cp <= 0xFAFF)   // CJK compatibility ideographs
+            || (cp >= 0xFE10 && cp <= 0xFE19)   // vertical forms
+            || (cp >= 0xFE30 && cp <= 0xFE6F)   // CJK compatibility forms
+            || (cp >= 0xFF00 && cp <= 0xFF60)   // fullwidth forms
+            || (cp >= 0xFFE0 && cp <= 0xFFE6))  // fullwidth signs
+            return 2;
+
+        // Emoji and pictographs (the ranges modern CLIs use for status indicators).
+        if ((cp >= 0x1F300 && cp <= 0x1F64F)
+            || (cp >= 0x1F680 && cp <= 0x1F6FF)
+            || (cp >= 0x1F900 && cp <= 0x1F9FF)
+            || (cp >= 0x1FA70 && cp <= 0x1FAFF)
+            || (cp >= 0x20000 && cp <= 0x3FFFD)) // CJK Unified Ext B-F
+            return 2;
+
+        return 1;
     }
 
     private void processEscape(int b) {
@@ -742,6 +807,9 @@ public class TerminalEmulator {
         cell.underline = currentAttrs.underline;
         cell.reverse   = currentAttrs.reverse;
         cell.blink     = currentAttrs.blink;
+        // Caller sets this afterward for the trailer half of a wide glyph; any ordinary write
+        // must clear a stale flag left by a wide glyph previously occupying this column.
+        cell.wideTrailer = false;
     }
 
     private void clearLineRange(int row, int colStart, int colEnd) {
@@ -764,8 +832,9 @@ public class TerminalEmulator {
      * existing colour avoids this without breaking intentional explicit-colour erases.
      */
     private void eraseCell(TerminalCell cell) {
-        cell.character = ' ';
-        cell.fgColor   = DEFAULT_COLOR;
+        cell.character   = ' ';
+        cell.wideTrailer = false;
+        cell.fgColor     = DEFAULT_COLOR;
         if (currentAttrs.bgColor != DEFAULT_COLOR) {
             cell.bgColor = currentAttrs.bgColor;
         } else if (altBufferActive && cell.bgColor != DEFAULT_COLOR) {

@@ -451,7 +451,10 @@ public class TerminalTab {
                         if (!isCursor) rowBg = bg; // don't leak cursor highlight into right margin
                     }
 
-                    if (cell.character != ' ' && cell.character != '\0') {
+                    // The trailer half of a double-width glyph carries no character of its own —
+                    // its background was painted above (so a wide glyph's highlight covers both
+                    // columns), but the glyph itself is drawn from the leading cell.
+                    if (cell.character != ' ' && cell.character != '\0' && !cell.wideTrailer) {
                         Color cfg = fg >= 0 ? swtRgb(fg) : null;
                         gc.setForeground(cfg != null ? cfg : defaultFg);
 
@@ -975,6 +978,9 @@ public class TerminalTab {
             StringBuilder line = new StringBuilder();
             for (int c = sc; c <= ec; c++) {
                 TerminalCell cell = emulator.getCellAbs(r, c);
+                // Skip the trailer half of a double-width glyph — it's a placeholder column,
+                // not a character, so copying it would inject a spurious space.
+                if (cell != null && cell.wideTrailer) continue;
                 line.append(cell != null && cell.character != '\0' ? cell.character : ' ');
             }
             // Strip trailing spaces from each line (except last segment)

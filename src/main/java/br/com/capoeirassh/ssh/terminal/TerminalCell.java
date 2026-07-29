@@ -9,28 +9,35 @@ public final class TerminalCell {
     public boolean underline = false;
     public boolean reverse   = false;
     public boolean blink     = false;
+    /** True for the second cell of a double-width character (CJK, emoji): it holds no
+     *  character of its own, it only reserves the column the wide glyph spills into. The
+     *  renderer must skip it (the wide glyph is drawn from the first cell) — see
+     *  {@link TerminalEmulator#charWidth}. */
+    public boolean wideTrailer = false;
 
     public TerminalCell() {}
 
     public TerminalCell(TerminalCell src) { copyFrom(src); }
 
     public void copyFrom(TerminalCell src) {
-        this.character = src.character;
-        this.fgColor   = src.fgColor;
-        this.bgColor   = src.bgColor;
-        this.bold      = src.bold;
-        this.underline = src.underline;
-        this.reverse   = src.reverse;
-        this.blink     = src.blink;
+        this.character   = src.character;
+        this.fgColor     = src.fgColor;
+        this.bgColor     = src.bgColor;
+        this.bold        = src.bold;
+        this.underline   = src.underline;
+        this.reverse     = src.reverse;
+        this.blink       = src.blink;
+        this.wideTrailer = src.wideTrailer;
     }
 
     public void resetAttrs() {
-        fgColor   = TerminalEmulator.DEFAULT_COLOR;
-        bgColor   = TerminalEmulator.DEFAULT_COLOR;
-        bold      = false;
-        underline = false;
-        reverse   = false;
-        blink     = false;
+        fgColor     = TerminalEmulator.DEFAULT_COLOR;
+        bgColor     = TerminalEmulator.DEFAULT_COLOR;
+        bold        = false;
+        underline   = false;
+        reverse     = false;
+        blink       = false;
+        wideTrailer = false;
     }
 
     public void clear() {
