@@ -122,7 +122,10 @@ public class SshConnection {
      *  reconnect needed, since the Logger registered in connect() re-checks this on every call. */
     public void setVerbose(boolean on) { this.verboseEnabled = on; }
 
-    public void send(byte[] data) throws IOException {
+    /** Synchronized: a multi-line paste is now sent line-by-line from a background thread
+     *  (see TerminalTab.sendPastedLines), so this can race with the UI thread's own key-typed
+     *  sends onto the same OutputStream without this guard. */
+    public synchronized void send(byte[] data) throws IOException {
         output.write(data);
         output.flush();
     }

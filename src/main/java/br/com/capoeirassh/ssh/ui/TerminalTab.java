@@ -1014,18 +1014,44 @@ public class TerminalTab {
         cb.dispose();
         if (text == null || text.isEmpty()) return;
 
-        // Confirm multi-line pastes
-        if (text.contains("\n") || text.contains("\r")) {
-            if (!confirmMultilinePaste(text)) return;
-        }
+        boolean multiline = text.contains("\n") || text.contains("\r");
+        if (multiline && !confirmMultilinePaste(text)) return;
 
         // Clear selection on paste
         clearSelection();
         canvas.redraw();
 
-        try {
-            connection.send(sanitizePaste(text).getBytes(StandardCharsets.UTF_8));
-        } catch (IOException ignored) {}
+        String sanitized = sanitizePaste(text);
+        if (multiline) {
+            sendPastedLines(sanitized);
+        } else {
+            try { connection.send(sanitized.getBytes(StandardCharsets.UTF_8)); } catch (IOException ignored) {}
+        }
+    }
+
+    /** Sends a multi-line paste one line at a time, with a small delay between lines, instead
+     *  of as one big burst. Some remote shells' line editors — bash/readline's backslash-line-
+     *  continuation in particular — can misbehave when a multi-line command arrives all at once
+     *  with none of the natural pacing of a human typing it, executing a continuation line
+     *  prematurely. Runs on a background thread since it sleeps between lines; connection.send()
+     *  is synchronized so this can't race with the UI thread's own key-typed sends. */
+    private void sendPastedLines(String sanitized) {
+        boolean trailingCr = sanitized.endsWith("\r");
+        String body = trailingCr ? sanitized.substring(0, sanitized.length() - 1) : sanitized;
+        String[] lines = body.split("\r", -1);
+        Thread t = new Thread(() -> {
+            try {
+                for (int i = 0; i < lines.length; i++) {
+                    if (!connection.isConnected()) return;
+                    boolean lastLine = i == lines.length - 1;
+                    String chunk = lines[i] + (!lastLine || trailingCr ? "\r" : "");
+                    connection.send(chunk.getBytes(StandardCharsets.UTF_8));
+                    if (!lastLine) Thread.sleep(30);
+                }
+            } catch (IOException | InterruptedException ignored) {}
+        }, "paste-lines");
+        t.setDaemon(true);
+        t.start();
     }
 
     /** Strip control bytes (especially ESC) from pasted text so a crafted clipboard can't
