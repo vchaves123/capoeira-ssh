@@ -46,6 +46,8 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     private Font  termFont;
     private Font  termFontBold;   // cached bold variant, rebuilt on font/size change
+    /** Supplies a substitute font for code points termFont has no glyph for. */
+    private GlyphFallback glyphFallback;
     private Font  overlayFont;    // cached 16pt bold for the disconnected overlay
     private Color colSelection;   // selection highlight  (lazy; disposed in dispose)
     private Color colOverlayScrim;// disconnected dim scrim
@@ -196,6 +198,10 @@ public class TerminalTab {
         termFontBold = null;   // rebuilt lazily in render() for the new font/size
         overlayFont  = null;
         termFont = new Font(display, fontName, termFontSize, SWT.NORMAL);
+
+        // Coverage and substitute fonts are both specific to this family/size pair.
+        if (glyphFallback != null) glyphFallback.dispose();
+        glyphFallback = new GlyphFallback(display, fontName, termFontSize);
 
         GC gc = new GC(display);
         gc.setFont(termFont);
@@ -455,20 +461,28 @@ public class TerminalTab {
                     // its background was painted above (so a wide glyph's highlight covers both
                     // columns), but the glyph itself is drawn from the leading cell.
                     if (cell.character != ' ' && cell.character != '\0' && !cell.wideTrailer) {
+                        String glyph = glyphOf(cell.character);
                         Color cfg = fg >= 0 ? swtRgb(fg) : null;
                         gc.setForeground(cfg != null ? cfg : defaultFg);
 
-                        if (cell.bold) {
+                        // A code point the terminal font has no glyph for is drawn with a
+                        // substitute font instead of a tofu box (see GlyphFallback).
+                        Font drawFont = glyphFallback != null
+                                ? glyphFallback.fontFor(cell.character, cell.bold) : null;
+                        if (drawFont == null && cell.bold) {
                             // Reuse a cached bold font — creating and disposing a native Font per
                             // bold cell per frame let a hostile server churn GDI/X11 font handles
                             // and freeze the whole UI thread.
                             if (termFontBold == null || termFontBold.isDisposed())
                                 termFontBold = new Font(display, termFont.getFontData()[0].getName(), termFontSize, SWT.BOLD);
-                            gc.setFont(termFontBold);
-                            gc.drawString(String.valueOf(cell.character), px, py, true);
+                            drawFont = termFontBold;
+                        }
+                        if (drawFont != null) {
+                            gc.setFont(drawFont);
+                            gc.drawString(glyph, px, py, true);
                             gc.setFont(termFont);
                         } else {
-                            gc.drawString(String.valueOf(cell.character), px, py, true);
+                            gc.drawString(glyph, px, py, true);
                         }
 
                         if (cell.underline) {
@@ -550,6 +564,15 @@ public class TerminalTab {
 
         screen.drawImage(offscreenBuffer, 0, 0);
         updateScrollBar();
+    }
+
+    /** A cell's code point as a drawable string. BMP code points take the single-char fast path;
+     *  only the rare non-BMP ones (emoji, Nerd Fonts' U+F0000 icon range) need a surrogate pair.
+     *  This runs per visible cell per frame, hence the fast path. */
+    private static String glyphOf(int codePoint) {
+        return codePoint < 0x10000
+            ? String.valueOf((char) codePoint)
+            : new String(Character.toChars(codePoint));
     }
 
     private Color swtRgb(int rgb) {
@@ -981,7 +1004,9 @@ public class TerminalTab {
                 // Skip the trailer half of a double-width glyph — it's a placeholder column,
                 // not a character, so copying it would inject a spurious space.
                 if (cell != null && cell.wideTrailer) continue;
-                line.append(cell != null && cell.character != '\0' ? cell.character : ' ');
+                // appendCodePoint, not append: the field is an int code point, so append(int)
+                // would write the numeric value instead of the character.
+                line.appendCodePoint(cell != null && cell.character != '\0' ? cell.character : ' ');
             }
             // Strip trailing spaces from each line (except last segment)
             if (r < r1) {
@@ -1000,7 +1025,7 @@ public class TerminalTab {
     }
 
     private static boolean isWordChar(TerminalCell cell) {
-        char c = cell.character;
+        int c = cell.character;
         return Character.isLetterOrDigit(c) || c == '_' || c == '-' || c == '.' || c == '/' || c == ':' || c == '@' || c == '~' || c == '$';
     }
 
@@ -1330,6 +1355,7 @@ public class TerminalTab {
             if (colorDisconnectedRed != null && !colorDisconnectedRed.isDisposed()) colorDisconnectedRed.dispose();
             if (termFontBold != null && !termFontBold.isDisposed()) termFontBold.dispose();
             if (overlayFont  != null && !overlayFont.isDisposed())  overlayFont.dispose();
+            if (glyphFallback != null) glyphFallback.dispose();
             if (colSelection    != null && !colSelection.isDisposed())    colSelection.dispose();
             if (colOverlayScrim != null && !colOverlayScrim.isDisposed()) colOverlayScrim.dispose();
             if (colOverlayText  != null && !colOverlayText.isDisposed())  colOverlayText.dispose();

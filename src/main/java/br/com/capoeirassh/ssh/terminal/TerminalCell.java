@@ -2,7 +2,10 @@ package br.com.capoeirassh.ssh.terminal;
 
 public final class TerminalCell {
 
-    public char    character = ' ';
+    /** Unicode code point, not a UTF-16 unit — an {@code int} so that characters outside the
+     *  BMP (emoji, and the U+F0000 private-use range newer Nerd Fonts put their icons in) can
+     *  be stored instead of being replaced by '?'. */
+    public int     character = ' ';
     public int     fgColor   = TerminalEmulator.DEFAULT_COLOR;
     public int     bgColor   = TerminalEmulator.DEFAULT_COLOR;
     public boolean bold      = false;

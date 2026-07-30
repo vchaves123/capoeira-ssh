@@ -283,10 +283,15 @@ public class TerminalEmulator {
     }
 
     private void processCodePoint(int cp) {
+        // Reject what the incremental UTF-8 decoder can produce from malformed input: values
+        // past the Unicode maximum, and lone surrogates (never valid as UTF-8). Storing either
+        // would make Character.toChars() throw on the render thread — i.e. a malformed or
+        // hostile byte stream could kill the terminal tab.
+        if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return;
+
         boolean lineDrawing = (useG1 ? g1LineDrawing : g0LineDrawing) && cp >= 0x60 && cp <= 0x7E;
-        char ch = cp < 0x10000 ? (char) cp : '?';
-        // ACS line-drawing translation
-        if (lineDrawing) ch = ACS_MAP[cp - 0x60];
+        // Stored as a code point, so characters outside the BMP survive instead of becoming '?'.
+        int ch = lineDrawing ? ACS_MAP[cp - 0x60] : cp;
 
         // A double-width glyph occupies two columns. The remote side counts it as two when
         // positioning the cursor, so we must too — otherwise every wide character (CJK, emoji,
@@ -297,7 +302,7 @@ public class TerminalEmulator {
         int width = lineDrawing ? 1 : charWidth(cp);
         // Zero-width (combining marks, variation selectors, ZWJ): consume no column and leave
         // the previously written cell alone. Rendering the mark itself would need per-cell
-        // grapheme clusters, which this single-char-per-cell model doesn't have — but silently
+        // grapheme clusters, which this one-code-point-per-cell model doesn't have — but silently
         // dropping it keeps the cursor in sync, which is what matters for screen correctness.
         if (width == 0) return;
 
@@ -797,7 +802,7 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     // Write / clear helpers
     // -----------------------------------------------------------------------
-    private void writeCell(int row, int col, char ch) {
+    private void writeCell(int row, int col, int ch) {
         if (row < 0 || row >= rows || col < 0 || col >= cols) return;
         TerminalCell cell = activeBuffer[row][col];
         cell.character = ch;
