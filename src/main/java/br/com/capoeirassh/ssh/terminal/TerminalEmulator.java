@@ -820,28 +820,26 @@ public class TerminalEmulator {
 
     /**
      * Erases a single cell using the current SGR background colour.
-     * VT100 spec: erase operations fill with space + current bg, not DEFAULT_COLOR.
-     * This is what makes ncurses/YaST coloured backgrounds render correctly.
+     * VT100 spec (background-color-erase): erase operations fill with space + the CURRENT SGR
+     * background, unconditionally. That includes clearing the cell back to DEFAULT_COLOR when
+     * the current background is default — an erase after \e[0m must leave no colour behind.
      *
-     * Special case for alternate buffer (ncurses TUI apps like YaST/vim):
-     * when the current SGR background is DEFAULT_COLOR (i.e. after \e[0m reset),
-     * preserve the cell's existing explicit background rather than wiping it to
-     * DEFAULT_COLOR.  ncurses relies on background-color-erase (bce) but on
-     * navigation it issues \e[0m + \e[K for rows that visually should keep their
-     * coloured background, causing "black stripes" in gap areas.  Preserving the
-     * existing colour avoids this without breaking intentional explicit-colour erases.
+     * An earlier revision kept a cell's existing colour here when the alt buffer was active and
+     * the current background was default, to hide "black stripes" seen in ncurses TUI apps
+     * (YaST). That was a symptom-level patch: the real cause, found hours later, was deleteChars
+     * using System.arraycopy on the TerminalCell[] — copying references, so cells in a row
+     * aliased one object and writes corrupted their neighbours (fixed in build 30, the deep-copy
+     * copyFrom loop). ncurses/MC lean heavily on deleteChars, which is why the corruption showed
+     * up there. With that root cause gone the workaround was obsolete, and it actively broke
+     * modern TUI apps: an erased cell kept its old background, leaving solid coloured blocks
+     * stuck to screen positions, smeared further by scrollRegion() erasing rows that still held
+     * their previous cells.
      */
     private void eraseCell(TerminalCell cell) {
         cell.character   = ' ';
         cell.wideTrailer = false;
         cell.fgColor     = DEFAULT_COLOR;
-        if (currentAttrs.bgColor != DEFAULT_COLOR) {
-            cell.bgColor = currentAttrs.bgColor;
-        } else if (altBufferActive && cell.bgColor != DEFAULT_COLOR) {
-            // preserve the cell's existing coloured background in TUI apps
-        } else {
-            cell.bgColor = DEFAULT_COLOR;
-        }
+        cell.bgColor     = currentAttrs.bgColor;
         cell.bold      = false;
         cell.underline = false;
         cell.reverse   = false;
