@@ -1053,7 +1053,14 @@ public class TerminalTab {
         canvas.redraw();
 
         String sanitized = sanitizePaste(text);
-        if (multiline) {
+        if (emulator.isBracketedPaste()) {
+            // The program asked for bracketed paste, so it will treat everything between the
+            // markers as pasted data rather than typing — no line splitting or pacing needed,
+            // and the shell won't run anything until the user actually presses Enter.
+            try {
+                connection.send(("\033[200~" + sanitized + "\033[201~").getBytes(StandardCharsets.UTF_8));
+            } catch (IOException ignored) {}
+        } else if (multiline) {
             sendPastedLines(sanitized);
         } else {
             try { connection.send(sanitized.getBytes(StandardCharsets.UTF_8)); } catch (IOException ignored) {}
@@ -1089,7 +1096,11 @@ public class TerminalTab {
      *  inject terminal escape sequences into the shell; tab is kept. Line endings are
      *  normalized to a single '\r' per line — matching what the Enter key sends (see
      *  mapKey()) — so a Windows clipboard's CRLF doesn't submit each line twice (the \r
-     *  submits it, then a passed-through \n would be a second, blank line-feed). */
+     *  submits it, then a passed-through \n would be a second, blank line-feed).
+     *
+     *  Dropping ESC is what makes bracketed paste safe: clipboard content cannot forge the
+     *  ESC[201~ terminator to break out of the paste block and have the rest of itself run as
+     *  typed commands. Keep that guarantee in mind before relaxing the filter. */
     private static String sanitizePaste(String s) {
         StringBuilder b = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {

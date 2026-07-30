@@ -97,6 +97,11 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     private boolean appCursorKeys  = false;
     private boolean cursorVisible  = true;
+    /** DECSET 2004. When on, the program wants pasted text wrapped in ESC[200~ / ESC[201~ so it
+     *  can tell a paste from typing — readline enables it by default, and without the markers a
+     *  pasted newline is indistinguishable from Enter, so the shell runs each line on arrival
+     *  instead of leaving the whole thing in the edit buffer. */
+    private boolean bracketedPaste = false;
     private boolean altBufferActive = false;
     private int     altBufferDepth  = 0;   // nesting counter for apps that stack alt-screen
 
@@ -161,6 +166,9 @@ public class TerminalEmulator {
         useG1         = false;
         appCursorKeys = false;
         cursorVisible = true;
+        // RIS clears this too: the mode belongs to the program that asked for it, and a stale
+        // "on" would make us wrap pastes in markers a plain shell would echo as literal text.
+        bracketedPaste = false;
     }
 
     // -----------------------------------------------------------------------
@@ -454,8 +462,8 @@ public class TerminalEmulator {
                 case 25          -> cursorVisible = true;
                 case 47, 1047    -> activateAltBuffer(true);
                 case 1049        -> activateAltBuffer(true);
+                case 2004        -> bracketedPaste = true;
                 // commonly sent by vim/bash — safe to ignore
-                case 2004        -> {} // bracketed paste enable
                 case 1000, 1002,
                      1003, 1006  -> {} // mouse tracking
                 case 1004        -> {} // focus events
@@ -469,7 +477,7 @@ public class TerminalEmulator {
                 case 25          -> cursorVisible = false;
                 case 47, 1047    -> deactivateAltBuffer(true);
                 case 1049        -> deactivateAltBuffer(true);
-                case 2004        -> {} // bracketed paste disable
+                case 2004        -> bracketedPaste = false;
                 case 1000, 1002,
                      1003, 1006  -> {} // mouse tracking
                 case 1004        -> {} // focus events
@@ -892,6 +900,9 @@ public class TerminalEmulator {
     public synchronized boolean isAppCursorKeys() { return appCursorKeys; }
     public synchronized int  getScrollbackSize()  { return scrollback.size(); }
     public synchronized boolean isAltBufferActive() { return altBufferActive; }
+    /** True when the program has enabled DECSET 2004 and expects pasted text to arrive wrapped
+     *  in ESC[200~ / ESC[201~. */
+    public synchronized boolean isBracketedPaste()  { return bracketedPaste; }
 
     /**
      * Returns the cell at visible row {@code visibleRow}, column {@code col},
