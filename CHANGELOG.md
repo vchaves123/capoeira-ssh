@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.5.0] — 2026-07-30
+
+### Added
+- **Per-glyph font fallback**: a character the chosen terminal font has no glyph for is now
+  drawn with a substitute font that does, instead of showing an empty "tofu" box, while the
+  surrounding text keeps the chosen font. This is what modern CLIs need — `U+23F5` (⏵), used in
+  Claude Code's status line, is missing from *every* monospace font on a typical Windows install,
+  Nerd Fonts included, so no font choice alone could render it.
+- **The font picker now lists every installed monospace font**, detected by measuring character
+  advance widths, rather than a hardcoded list of twelve names. Installing a font — a Nerd Font,
+  say — is now enough for it to appear. Symbol/dingbat faces and vertical CJK variants are
+  filtered out.
+- **Bracketed paste (DECSET 2004)** is now honoured, so a program that asks for it receives
+  pasted text wrapped in the standard markers and can tell a paste from typing.
+- Characters outside the Basic Multilingual Plane — emoji, and the range newer Nerd Fonts use
+  for their icons — are no longer replaced by `?`.
+
+### Fixed
+- **Pasted lines no longer execute as they arrive.** A multi-line command pasted at a shell
+  prompt (a backslash-continued one especially) was run line by line instead of being placed in
+  the edit buffer, because bracketed paste was ignored and each newline was indistinguishable
+  from Enter. readline enables that mode by default, so this affected plain bash too.
+- **Solid coloured blocks no longer stick to the screen** in full-screen terminal applications.
+  Erasing now always fills with the current background, per VT100; an older workaround preserved
+  the previous colour instead, and scrolling smeared it further.
+- **Double-width characters** (CJK, emoji) now occupy two columns, keeping the cursor in step
+  with the remote side. Previously every such character shifted our cursor one column left of
+  the server's, so line erases landed in the wrong place and left stale text behind.
+- Pasting text with Windows CRLF line endings no longer inserts a blank line after every line.
+
 ## [1.4.10] — 2026-07-23
 
 ### Added
