@@ -52,6 +52,9 @@ public class TerminalAppearanceDialog {
         if (!fontChoices.contains(fontName)) fontChoices.add(0, fontName);
         Combo fontCombo = new Combo(dlg, SWT.DROP_DOWN | SWT.READ_ONLY);
         fontCombo.setItems(fontChoices.toArray(new String[0]));
+        // The list now covers every installed monospace family, which can run to dozens of
+        // entries — cap the dropdown height so it stays usable instead of filling the screen.
+        fontCombo.setVisibleItemCount(15);
         int fontIdx = fontChoices.indexOf(fontName);
         fontCombo.select(fontIdx >= 0 ? fontIdx : 0);
         fontCombo.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
