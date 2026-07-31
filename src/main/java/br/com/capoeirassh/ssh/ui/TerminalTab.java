@@ -438,7 +438,7 @@ public class TerminalTab {
             int bottomMargin = rows * charHeight;
 
             for (int r = 0; r < rows; r++) {
-                int rowBg = -1; // last non-cursor bg for right-margin fill
+                int lastColBg = -1; // rightmost column's own bg, for right-margin fill
                 for (int c = 0; c < cols; c++) {
                     TerminalCell cell = emulator.getCell(r, c, scrollOffset);
                     if (cell == null) continue;
@@ -468,8 +468,11 @@ public class TerminalTab {
                         gc.setBackground(cbg);
                         gc.fillRectangle(px, py, charWidth, charHeight);
                         cbg.dispose();
-                        if (!isCursor) rowBg = bg; // don't leak cursor highlight into right margin
                     }
+                    // The fractional-column gap at the right must match the actual rightmost
+                    // cell's own background — not whichever earlier column last had an explicit
+                    // colour — so a colour run that ends mid-row doesn't bleed into the border.
+                    if (c == cols - 1 && !isCursor) lastColBg = bg;
 
                     // The trailer half of a double-width glyph carries no character of its own —
                     // its background was painted above (so a wide glyph's highlight covers both
@@ -507,8 +510,8 @@ public class TerminalTab {
                     }
                 }
                 // Extend last cell's background into the fractional-column gap at the right.
-                if (rightMargin < area.width && rowBg >= 0) {
-                    Color cbg = swtRgb(rowBg);
+                if (rightMargin < area.width && lastColBg >= 0) {
+                    Color cbg = swtRgb(lastColBg);
                     gc.setBackground(cbg);
                     gc.fillRectangle(rightMargin, r * charHeight, area.width - rightMargin, charHeight);
                     cbg.dispose();
@@ -615,6 +618,15 @@ public class TerminalTab {
     private void handleKey(org.eclipse.swt.events.KeyEvent e) {
         // Alt+key is handled entirely by altFilter — skip here to avoid double-send
         if ((e.stateMask & SWT.ALT) != 0) return;
+
+        // Local diagnostic shortcut: dumps the emulator's actual internal buffer state to a
+        // file instead of sending anything to the remote. Checked before the generic Ctrl+letter
+        // passthrough below, since SWT reports the same control character for Ctrl+D and
+        // Ctrl+Shift+D — without this check first, it would be swallowed as a Ctrl+D send.
+        if ((e.stateMask & (SWT.CTRL | SWT.SHIFT)) == (SWT.CTRL | SWT.SHIFT) && e.keyCode == 'd') {
+            dumpBufferToFile();
+            return;
+        }
 
         if (scrollOffset != 0) { scrollOffset = 0; updateScrollBar(); }
         if (hasSelection()) { clearSelection(); canvas.redraw(); }
@@ -1060,7 +1072,12 @@ public class TerminalTab {
         if (text == null || text.isEmpty()) return;
 
         boolean multiline = text.contains("\n") || text.contains("\r");
-        if (multiline && !confirmMultilinePaste(text)) return;
+        if (multiline) {
+            text = confirmMultilinePaste(text);
+            if (text == null) return;
+            // The user may have edited it down to (or up from) a single line.
+            multiline = text.contains("\n") || text.contains("\r");
+        }
 
         // Clear selection on paste
         clearSelection();
@@ -1131,7 +1148,8 @@ public class TerminalTab {
         return b.toString();
     }
 
-    private boolean confirmMultilinePaste(String text) {
+    /** @return the (possibly user-edited) text to paste, or null if the user cancelled. */
+    private String confirmMultilinePaste(String text) {
         Shell dlg = new Shell(canvas.getShell(), SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM | SWT.RESIZE);
         dlg.setText("Paste confirmation");
         dlg.setSize(520, 340);
@@ -1144,12 +1162,12 @@ public class TerminalTab {
         dlg.setLayout(gl);
 
         Label lbl = new Label(dlg, SWT.WRAP);
-        lbl.setText("The text to be pasted contains multiple lines. Paste anyway?");
+        lbl.setText("The text to be pasted contains multiple lines. You can edit it below before pasting.");
         lbl.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
-        Text preview = new Text(dlg, SWT.BORDER | SWT.MULTI | SWT.READ_ONLY | SWT.V_SCROLL | SWT.H_SCROLL);
-        preview.setText(text);
-        preview.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+        Text editor = new Text(dlg, SWT.BORDER | SWT.MULTI | SWT.V_SCROLL | SWT.H_SCROLL);
+        editor.setText(text);
+        editor.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
 
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
         cmpBtns.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
@@ -1160,15 +1178,60 @@ public class TerminalTab {
         Button btnCancel = new Button(cmpBtns, SWT.PUSH); btnCancel.setText("Cancel");
         dlg.setDefaultButton(btnPaste);
 
-        boolean[] result = { false };
-        btnPaste.addListener(SWT.Selection,  e -> { result[0] = true;  dlg.dispose(); });
-        btnCancel.addListener(SWT.Selection, e -> { result[0] = false; dlg.dispose(); });
-        dlg.addListener(SWT.Close,           e -> result[0] = false);
+        String[] result = { null };
+        btnPaste.addListener(SWT.Selection,  e -> { result[0] = editor.getText(); dlg.dispose(); });
+        btnCancel.addListener(SWT.Selection, e -> { result[0] = null; dlg.dispose(); });
+        dlg.addListener(SWT.Close,           e -> result[0] = null);
 
         dlg.open();
         Display d = dlg.getDisplay();
         while (!dlg.isDisposed()) { if (!d.readAndDispatch()) d.sleep(); }
         return result[0];
+    }
+
+    /** Ctrl+Shift+D — writes what the emulator actually has stored (not just how it currently
+     *  renders) to a file, so a "the screen looks wrong" moment can be checked against real
+     *  state instead of guessing whether it was just a redraw caught mid-frame. */
+    private void dumpBufferToFile() {
+        try {
+            Path dir = Path.of(System.getProperty("user.home"), ".capoeira", "buffer-dumps");
+            br.com.capoeirassh.ssh.storage.SecureFiles.createDirectories(dir);
+            String ts = LocalDateTime.now().format(LOG_TS);
+            String base = sessionInfo.host == null || sessionInfo.host.isBlank()
+                    ? "session" : sessionInfo.host.replaceAll("[^\\w\\-.]", "_");
+            Path file = dir.resolve(ts + "_" + base + ".txt");
+            if (Files.exists(file)) file = dir.resolve(ts + "_" + base + "_" + LOG_SEQ.incrementAndGet() + ".txt");
+            br.com.capoeirassh.ssh.storage.SecureFiles.write(file, emulator.dumpBuffer().getBytes(StandardCharsets.UTF_8));
+            showToast("Buffer dump saved: " + file.getFileName());
+        } catch (IOException ignored) {
+            showToast("Buffer dump failed — see app.log");
+        }
+    }
+
+    /** Brief, non-modal on-screen message that disposes itself — used only for the buffer-dump
+     *  confirmation above, so the user gets feedback without an interaction-blocking dialog. */
+    private void showToast(String message) {
+        Shell toast = new Shell(canvas.getShell(), SWT.NO_TRIM | SWT.ON_TOP);
+        Color bg = new Color(display, 30, 30, 30);
+        Color fg = new Color(display, 230, 230, 230);
+        toast.setBackground(bg);
+        toast.addDisposeListener(e -> { bg.dispose(); fg.dispose(); });
+
+        GridLayout gl = new GridLayout(1, false);
+        gl.marginWidth = 12; gl.marginHeight = 8;
+        toast.setLayout(gl);
+
+        Label lbl = new Label(toast, SWT.NONE);
+        lbl.setText(message);
+        lbl.setBackground(bg);
+        lbl.setForeground(fg);
+
+        toast.pack();
+        Rectangle sb = canvas.getShell().getBounds();
+        Point sz = toast.getSize();
+        toast.setLocation(sb.x + (sb.width - sz.x) / 2, sb.y + sb.height - sz.y - 60);
+        toast.open();
+        display.timerExec(2000, () -> { if (!toast.isDisposed()) toast.dispose(); });
     }
 
     private void notifyActivity() {

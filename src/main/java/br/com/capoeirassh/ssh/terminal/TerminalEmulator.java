@@ -921,6 +921,51 @@ public class TerminalEmulator {
     public synchronized boolean isBracketedPaste()  { return bracketedPaste; }
 
     /**
+     * Dumps the live buffer's internal state to text — every cell's exact code point (not just
+     * how it renders) plus cursor position and parser flags — so a "the screen looks wrong" report
+     * can be checked against what this emulator actually has stored, independent of whether a
+     * screenshot merely caught the remote side's own redraw animation mid-frame. Bound to a
+     * keyboard shortcut in TerminalTab rather than exposed as a general diagnostic, since it's
+     * meant for one-off investigation, not routine use.
+     */
+    public synchronized String dumpBuffer() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Capoeira SSH terminal buffer dump ===\n");
+        sb.append("cols=").append(cols).append(" rows=").append(rows).append('\n');
+        sb.append("cursorRow=").append(cursorRow).append(" cursorCol=").append(cursorCol)
+          .append(" wrapPending=").append(wrapPending).append('\n');
+        sb.append("altBufferActive=").append(altBufferActive)
+          .append(" bracketedPaste=").append(bracketedPaste).append('\n');
+        sb.append("scrollbackSize=").append(scrollback.size()).append('\n');
+        sb.append('\n');
+
+        sb.append("--- Rendered text (trailing blanks trimmed) ---\n");
+        for (int r = 0; r < rows; r++) {
+            StringBuilder line = new StringBuilder();
+            for (int c = 0; c < cols; c++) {
+                TerminalCell cell = activeBuffer[r][c];
+                if (cell.wideTrailer) continue;
+                line.appendCodePoint(cell.character == 0 ? ' ' : cell.character);
+            }
+            int end = line.length();
+            while (end > 0 && line.charAt(end - 1) == ' ') end--;
+            sb.append(String.format("%2d%s| %s%n", r, r == cursorRow ? "*" : " ", line.substring(0, end)));
+        }
+
+        sb.append("\n--- Raw code points (one row per line, hex, space-separated) ---\n");
+        for (int r = 0; r < rows; r++) {
+            sb.append(String.format("%2d: ", r));
+            for (int c = 0; c < cols; c++) {
+                TerminalCell cell = activeBuffer[r][c];
+                String marker = (r == cursorRow && c == cursorCol) ? "^" : "";
+                sb.append(String.format("%04X%s ", cell.character, marker));
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
+    /**
      * Returns the cell at visible row {@code visibleRow}, column {@code col},
      * with {@code scrollOffset} lines scrolled back (0 = showing current buffer bottom).
      */
