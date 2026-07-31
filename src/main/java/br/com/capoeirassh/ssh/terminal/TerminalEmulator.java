@@ -224,6 +224,15 @@ public class TerminalEmulator {
     // Byte-level processing
     // -----------------------------------------------------------------------
     private void processByte(int b) {
+        // OSC/DCS/SOS/PM/APC string content is opaque bytes until its terminator (BEL, ST, or
+        // ESC \) — it must never be run through UTF-8 decoding or C1 interpretation below. A
+        // multi-byte character embedded in one of these strings (e.g. a spinner glyph in an
+        // OSC "set window title" sequence) has a UTF-8 continuation byte that can itself fall
+        // in the 0x80-0x9F C1 range; decoding it as a real character called processCodePoint(),
+        // which WRITES to the visible screen and moves the cursor — corrupting on-screen
+        // content with fragments of a title that was only ever supposed to be swallowed.
+        if (state == State.OSC || state == State.OSC_ESC) { processOscByte(b); return; }
+
         if (utf8Remaining > 0) {
             if ((b & 0xC0) == 0x80) {
                 utf8Codepoint = (utf8Codepoint << 6) | (b & 0x3F);
@@ -239,6 +248,20 @@ public class TerminalEmulator {
         else if ((b & 0xE0) == 0xC0) { utf8Codepoint = b & 0x1F; utf8Remaining = 1; }
         else if ((b & 0xF0) == 0xE0) { utf8Codepoint = b & 0x0F; utf8Remaining = 2; }
         else if ((b & 0xF8) == 0xF0) { utf8Codepoint = b & 0x07; utf8Remaining = 3; }
+    }
+
+    /** Buffers one raw byte of an OSC/DCS/SOS/PM/APC string, recognizing only its terminators
+     *  (BEL, the 8-bit ST 0x9C, or ESC \) — see the caller for why this must run before any
+     *  UTF-8/C1 interpretation. */
+    private void processOscByte(int b) {
+        if (state == State.OSC_ESC) {
+            if (b == '\\') { state = State.NORMAL; oscBuffer.setLength(0); }
+            else           { state = State.OSC; if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b); }
+            return;
+        }
+        if      (b == 0x1B)             state = State.OSC_ESC;
+        else if (b == 0x07 || b == 0x9C) { state = State.NORMAL; oscBuffer.setLength(0); }
+        else if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b);
     }
 
     private void processC1(int b) {
@@ -274,13 +297,6 @@ public class TerminalEmulator {
             processEscape(b);
         } else if (state == State.CSI) {
             processCSI(b);
-        } else if (state == State.OSC) {
-            if      (b == 0x1B) state = State.OSC_ESC;
-            else if (b == 0x07) { state = State.NORMAL; oscBuffer.setLength(0); }
-            else if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b);
-        } else if (state == State.OSC_ESC) {
-            if (b == '\\') { state = State.NORMAL; oscBuffer.setLength(0); }
-            else           { state = State.OSC; if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b); }
         } else if (state == State.CHARSET_G0) {
             g0LineDrawing = (b == '0');
             state = State.NORMAL;

@@ -72,6 +72,10 @@ public class TerminalTab {
     private volatile boolean disconnected  = false;
     private boolean          cursorBlink   = false;
     private int              scrollOffset  = 0;    // 0 = pinned to bottom
+    /** Guards against flooding the UI event queue with one asyncExec per processBytes() call
+     *  during a fast stream — see the changeListener in the constructor. */
+    private final java.util.concurrent.atomic.AtomicBoolean redrawPending =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private final SessionInfo sessionInfo;
     private String            tabTitle;
@@ -147,13 +151,23 @@ public class TerminalTab {
         initFont();
 
         emulator = new TerminalEmulator(80, 24);
-        emulator.setChangeListener(() ->
-            display.asyncExec(() -> {
-                if (canvas.isDisposed()) return;
-                if (hasSelection()) clearSelection();
-                canvas.redraw();
-            })
-        );
+        emulator.setChangeListener(() -> {
+            // Coalesce bursts into at most one pending asyncExec. The SSH reader thread calls
+            // this once per socket read — during a fast stream (e.g. a CLI printing many small
+            // updates back to back) that can fire dozens of times a second. Scheduling a fresh
+            // asyncExec every time floods the Win32 message queue with normal-priority posted
+            // messages, and WM_PAINT — the actual repaint — is only delivered once that queue
+            // goes idle. A continuous stream of updates can starve it for minutes: canvas.redraw()
+            // keeps marking the widget dirty, but Windows never gets a quiet moment to paint it.
+            if (redrawPending.compareAndSet(false, true)) {
+                display.asyncExec(() -> {
+                    redrawPending.set(false);
+                    if (canvas.isDisposed()) return;
+                    if (hasSelection()) clearSelection();
+                    canvas.redraw();
+                });
+            }
+        });
 
         connection = new SshConnection();
 
