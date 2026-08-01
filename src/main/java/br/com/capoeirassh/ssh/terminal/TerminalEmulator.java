@@ -517,10 +517,21 @@ public class TerminalEmulator {
             params.set(idx, (int) Math.min((long) params.get(idx) * 10 + (b - '0'), MAX_CSI_PARAM_VALUE));
             return;
         }
-        // Cap the parameter list — a hostile server streaming endless ';' must not grow it
-        // without bound (would exhaust the heap and crash the whole app). Real terminals
-        // ignore excess parameters, so dropping them past the cap is spec-compatible.
-        if (b == ';') { if (params.size() < MAX_CSI_PARAMS) params.add(0); return; }
+        // ';' ends the current parameter and opens the next. Arriving with nothing accumulated
+        // means the parameter it ends was omitted, which stands for 0 — record that before
+        // opening the next one. Without it "ESC[;7m" collapsed to a single parameter 7: the
+        // leading reset was lost, so SGR attributes accumulated across sequences instead of
+        // being cleared (vttest's rendition table ended up with blink and underline bleeding
+        // into the "reversed" column), and "ESC[;5H" addressed row 5 instead of row 1 column 5.
+        //
+        // The cap stops a hostile server streaming endless ';' from growing the list without
+        // bound (which would exhaust the heap). Real terminals ignore excess parameters, so
+        // dropping them past the cap is spec-compatible.
+        if (b == ';') {
+            if (params.isEmpty()) params.add(0);
+            if (params.size() < MAX_CSI_PARAMS) params.add(0);
+            return;
+        }
 
         state = State.NORMAL;
 
