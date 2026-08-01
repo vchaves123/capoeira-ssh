@@ -47,6 +47,7 @@ public class Main {
         System.out.println(sep);
         System.out.printf("  Capoeira SSH  v%s  build #%d  —  started %s%n",
             BuildInfo.VERSION, BuildInfo.BUILD, ts);
+        if (TraceMode.enabled) System.out.println("  Trace mode: ENABLED (--trace)");
         System.out.println(sep);
         System.out.printf("  Java      : %s  (%s)%n",
             System.getProperty("java.version"),
@@ -63,7 +64,6 @@ public class Main {
             System.getProperty("user.home"));
         System.out.printf("  Encoding  : %s%n",
             System.getProperty("file.encoding"));
-        if (TraceMode.enabled) System.out.println("  Trace mode: ENABLED (--trace)");
         System.out.println(sep);
         System.out.println();
     }

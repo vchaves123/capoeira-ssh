@@ -1233,8 +1233,9 @@ public class TerminalTab {
         }
     }
 
-    /** Captures the whole Shell window (not just this tab's canvas) as a PNG alongside the
-     *  buffer dump, so a "the screen looks wrong" report also has a visual reference. */
+    /** Captures the whole terminal window to a PNG alongside the buffer dump (same timestamp/host
+     *  naming) — trace-mode only, see {@link #dumpBufferToFile}. Returns null on failure (the text
+     *  dump above already succeeded independently, so a screenshot failure alone isn't fatal). */
     private Path captureScreenshot(Path dir, String ts, String base) {
         Shell shell = canvas.getShell();
         if (shell == null || shell.isDisposed()) return null;

@@ -9,6 +9,10 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+/** Writes every raw byte chunk sent/received over an SSH channel to a per-connection trace file,
+ *  timestamped and hex-dumped, for post-hoc wire-level analysis (see {@code --trace}). Only ever
+ *  instantiated when {@link br.com.capoeirassh.ssh.TraceMode#enabled} is true — this is not a
+ *  general session log (that already exists, ANSI-stripped, via TerminalTab's own logging). */
 public final class PacketTraceLogger {
 
     private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
@@ -16,6 +20,7 @@ public final class PacketTraceLogger {
 
     private final OutputStream out;
 
+    /** Opens (creating if needed) {@code ~/.capoeira/trace/<timestamp>_<host>.trace.log}. */
     public PacketTraceLogger(String host) throws IOException {
         Path dir = Path.of(System.getProperty("user.home"), ".capoeira", "trace");
         SecureFiles.createDirectories(dir);
@@ -26,6 +31,7 @@ public final class PacketTraceLogger {
     }
 
     public synchronized void logRx(byte[] buf, int len) { log("RX", buf, 0, len); }
+
     public synchronized void logTx(byte[] buf)          { log("TX", buf, 0, buf.length); }
 
     private void log(String direction, byte[] buf, int off, int len) {
@@ -37,7 +43,9 @@ public final class PacketTraceLogger {
             sb.append('\n');
             out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
             out.flush();
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+            // Best-effort diagnostic logging — never let a trace-write failure break the session.
+        }
     }
 
     private static void appendHexDump(StringBuilder sb, byte[] buf, int off, int len) {

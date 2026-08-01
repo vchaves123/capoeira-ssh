@@ -254,16 +254,24 @@ public class TerminalEmulator {
     }
 
     /** Buffers one raw byte of an OSC/DCS/SOS/PM/APC string, recognizing only its terminators
-     *  (BEL, the 8-bit ST 0x9C, or ESC \) — see the caller for why this must run before any
-     *  UTF-8/C1 interpretation. */
+     *  (BEL or ESC \) — see the caller for why this must run before any UTF-8/C1 interpretation.
+     *  Deliberately does NOT treat the raw 8-bit ST byte (0x9C) as a terminator here: 0x9C is
+     *  also a valid UTF-8 continuation byte (10011100, inside the 0x80-0xBF range), so any
+     *  multi-byte character embedded in the string — e.g. a spinner glyph — whose 2nd or 3rd
+     *  byte happens to equal 0x9C would otherwise end the OSC mid-string. Everything after that
+     *  false terminator would then be parsed as normal text and printed straight onto the
+     *  screen at the cursor's position (a real, reproduced bug: an OSC 0 title containing "✳ "
+     *  before its text leaked "Ativar auto mode permanentemente no Claude Code" onto the grid).
+     *  BEL (0x07) and ESC (0x1B) are both below 0x80 and can never appear as a UTF-8 continuation
+     *  byte, so they remain unambiguous terminators. */
     private void processOscByte(int b) {
         if (state == State.OSC_ESC) {
             if (b == '\\') finishOsc();
             else           { state = State.OSC; if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b); }
             return;
         }
-        if      (b == 0x1B)             state = State.OSC_ESC;
-        else if (b == 0x07 || b == 0x9C) finishOsc();
+        if      (b == 0x1B) state = State.OSC_ESC;
+        else if (b == 0x07) finishOsc();
         else if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b);
     }
 
