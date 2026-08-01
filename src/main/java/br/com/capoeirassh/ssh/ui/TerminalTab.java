@@ -629,6 +629,14 @@ public class TerminalTab {
             return;
         }
 
+        // Local diagnostic shortcut: toggles RX/TX packet-trace logging on/off at runtime.
+        // Same Ctrl+D/Ctrl+Shift+D ordering concern applies to Ctrl+P/Ctrl+Shift+P.
+        if ((e.stateMask & (SWT.CTRL | SWT.SHIFT)) == (SWT.CTRL | SWT.SHIFT) && e.keyCode == 'p') {
+            if (br.com.capoeirassh.ssh.TraceMode.enabled) togglePacketCapture();
+            else showToast("Captura de pacotes disponível apenas em modo trace (--trace)");
+            return;
+        }
+
         if (scrollOffset != 0) { scrollOffset = 0; updateScrollBar(); }
         if (hasSelection()) { clearSelection(); canvas.redraw(); }
 
@@ -1235,6 +1243,24 @@ public class TerminalTab {
             gc.dispose();
             image.dispose();
         }
+    }
+
+    private static final String TRACE_TITLE_SUFFIX = "  —  ● TRACE (capturando pacotes)";
+
+    /** Flips the global packet-capture switch and reflects it in the main window's title bar —
+     *  the flag is global (see {@link br.com.capoeirassh.ssh.TraceMode#packetCaptureEnabled}) so
+     *  this affects every open tab's connection, not just this one. */
+    private void togglePacketCapture() {
+        boolean nowOn = !br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled;
+        br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled = nowOn;
+        updateTraceTitleIndicator();
+        showToast("Captura de pacotes: " + (nowOn ? "LIGADA" : "DESLIGADA"));
+    }
+
+    private void updateTraceTitleIndicator() {
+        Shell shell = canvas.getShell();
+        if (shell == null || shell.isDisposed()) return;
+        shell.setText("Capoeira SSH" + (br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled ? TRACE_TITLE_SUFFIX : ""));
     }
 
     /** Brief, non-modal on-screen message that disposes itself — used only for the buffer-dump

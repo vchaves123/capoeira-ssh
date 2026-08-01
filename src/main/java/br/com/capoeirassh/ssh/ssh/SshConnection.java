@@ -31,6 +31,7 @@ public class SshConnection {
      *  JSch's logger fires on. */
     private volatile boolean verboseEnabled;
     private PacketTraceLogger traceLogger;
+    private String traceHost;
 
     /**
      * @param info        session configuration
@@ -44,10 +45,8 @@ public class SshConnection {
     public void connect(SessionInfo info, char[] password, Display display,
                          java.util.function.Consumer<String> verboseSink) throws Exception {
         try {
-            if (br.com.capoeirassh.ssh.TraceMode.enabled) {
-                try { traceLogger = new PacketTraceLogger(info.host); }
-                catch (IOException e) { traceLogger = null; } // best-effort — tracing must never block a connection
-            }
+            traceHost = info.host;
+            updateTraceLogger(); // picks up packet capture if it's already on when this tab connects
 
             jsch = new JSch();
 
@@ -132,15 +131,33 @@ public class SshConnection {
      *  (see TerminalTab.sendPastedLines), so this can race with the UI thread's own key-typed
      *  sends onto the same OutputStream without this guard. */
     public synchronized void send(byte[] data) throws IOException {
+        updateTraceLogger();
         if (traceLogger != null) traceLogger.logTx(data);
         output.write(data);
         output.flush();
     }
 
     /** Called by the reader loop (see TerminalTab.readSsh) for each chunk received — a no-op
-     *  unless {@code --trace} enabled a logger for this connection in {@link #connect}. */
+     *  unless packet capture is currently on (see {@link br.com.capoeirassh.ssh.TraceMode#packetCaptureEnabled}). */
     public void traceRx(byte[] buf, int len) {
+        updateTraceLogger();
         if (traceLogger != null) traceLogger.logRx(buf, len);
+    }
+
+    /** Opens or closes this connection's trace logger to match the live global toggle —
+     *  checked on every send/receive so turning capture on or off (Ctrl+Shift+P) takes effect
+     *  immediately on all open tabs, not just new connections. Each time capture is turned on,
+     *  a fresh timestamped trace file is started. */
+    private synchronized void updateTraceLogger() {
+        boolean want = br.com.capoeirassh.ssh.TraceMode.enabled
+                && br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled;
+        if (want && traceLogger == null) {
+            try { traceLogger = new PacketTraceLogger(traceHost); }
+            catch (IOException e) { traceLogger = null; } // best-effort — tracing must never block a connection
+        } else if (!want && traceLogger != null) {
+            traceLogger.close();
+            traceLogger = null;
+        }
     }
 
     public void updatePtySize(int cols, int rows, int widthPx, int heightPx) {
