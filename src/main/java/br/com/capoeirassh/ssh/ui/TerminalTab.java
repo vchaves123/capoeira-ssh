@@ -240,16 +240,17 @@ public class TerminalTab {
         overlayFont  = null;
         termFont = new Font(display, fontName, termFontSize, SWT.NORMAL);
 
-        // Coverage and substitute fonts are both specific to this family/size pair.
-        if (glyphFallback != null) glyphFallback.dispose();
-        glyphFallback = new GlyphFallback(display, fontName, termFontSize);
-
         GC gc = new GC(display);
         gc.setFont(termFont);
         Point sz = gc.stringExtent("W");
         charWidth  = sz.x;
         charHeight = gc.getFontMetrics().getHeight();
         gc.dispose();
+
+        // Coverage and substitute fonts are both specific to this family/size pair, and the
+        // substitutes have to be sized against the cell — so this must come after the measurement.
+        if (glyphFallback != null) glyphFallback.dispose();
+        glyphFallback = new GlyphFallback(display, fontName, termFontSize, charWidth);
     }
 
     // -----------------------------------------------------------------------
@@ -569,7 +570,11 @@ public class TerminalTab {
                         }
                         if (drawFont != null) {
                             gc.setFont(drawFont);
-                            gc.drawString(glyph, px, py, true);
+                            // Substitute glyphs are sized to fit the cell but keep the substitute
+                            // font's own side bearings, so centre them in the columns they own
+                            // rather than hanging them off the left edge.
+                            int gx = glyphFallback != null ? glyphFallback.xOffsetFor(cell.character) : 0;
+                            gc.drawString(glyph, px + gx, py, true);
                             gc.setFont(termFont);
                         } else {
                             gc.drawString(glyph, px, py, true);

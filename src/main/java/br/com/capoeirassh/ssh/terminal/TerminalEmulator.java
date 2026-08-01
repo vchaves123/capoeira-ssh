@@ -446,7 +446,7 @@ public class TerminalEmulator {
      * and every well-behaved remote program assumes, so it must match theirs for cursor
      * positioning to stay in sync.
      */
-    static int charWidth(int cp) {
+    public static int charWidth(int cp) {
         // Combining marks / zero-width — attach to the previous cell, consume no column.
         if (cp == 0x200B || cp == 0xFEFF
             || (cp >= 0x0300 && cp <= 0x036F)   // combining diacritical marks
