@@ -134,6 +134,13 @@ public class TerminalTab {
      *  arrived yet. Applied to the main window's title bar only while this tab is selected. */
     private volatile String remoteTitle;
 
+    /** Visible phase of the SGR-5 blink attribute: false hides the glyphs of blinking cells.
+     *  Its timer only runs while blinking text is actually on screen (see {@link #render}), so a
+     *  session that never uses the attribute — almost all of them — pays nothing for it. */
+    private boolean textBlinkOn      = true;
+    private boolean textBlinkRunning = false;
+    private static final int TEXT_BLINK_MS = 500;
+
     // -----------------------------------------------------------------------
     // Constructor
     // -----------------------------------------------------------------------
@@ -458,6 +465,8 @@ public class TerminalTab {
         Rectangle area = canvas.getClientArea();
         if (area.width <= 0 || area.height <= 0) return;
 
+        boolean sawBlinkingCell = false;
+
         if (offscreenBuffer == null
                 || offscreenBuffer.getBounds().width  != area.width
                 || offscreenBuffer.getBounds().height != area.height) {
@@ -515,6 +524,13 @@ public class TerminalTab {
                     // cell's own background — not whichever earlier column last had an explicit
                     // colour — so a colour run that ends mid-row doesn't bleed into the border.
                     if (c == cols - 1 && !isCursor) lastColBg = bg;
+
+                    // SGR 5: the glyph is hidden on the off phase, but its background still gets
+                    // painted above, so a blinking cell pulses its text rather than its block.
+                    if (cell.blink) {
+                        sawBlinkingCell = true;
+                        if (!textBlinkOn) { if (c == cols - 1 && !isCursor) lastColBg = bg; continue; }
+                    }
 
                     // The trailer half of a double-width glyph carries no character of its own —
                     // its background was painted above (so a wide glyph's highlight covers both
@@ -623,6 +639,27 @@ public class TerminalTab {
 
         screen.drawImage(offscreenBuffer, 0, 0);
         updateScrollBar();
+        syncTextBlinkTimer(sawBlinkingCell);
+    }
+
+    /** Starts the blink timer the moment blinking text appears on screen and stops it once none
+     *  is left, so the repaint it costs is only paid while something is actually blinking. */
+    private void syncTextBlinkTimer(boolean blinkingVisible) {
+        if (blinkingVisible == textBlinkRunning) return;
+        textBlinkRunning = blinkingVisible;
+        if (!blinkingVisible) {
+            textBlinkOn = true;   // leave the text visible when it stops blinking
+            return;
+        }
+        Runnable tick = new Runnable() {
+            @Override public void run() {
+                if (canvas.isDisposed() || !textBlinkRunning) return;
+                textBlinkOn = !textBlinkOn;
+                canvas.redraw();
+                display.timerExec(TEXT_BLINK_MS, this);
+            }
+        };
+        display.timerExec(TEXT_BLINK_MS, tick);
     }
 
     /** A cell's code point as a drawable string. BMP code points take the single-char fast path;

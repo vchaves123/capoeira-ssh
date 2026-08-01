@@ -49,9 +49,15 @@ public class TerminalEmulator {
     private int     cursorCol;
     private boolean wrapPending = false;
 
-    // Saved cursor (ESC 7 / ESC 8)
+    // Saved cursor (ESC 7 / ESC 8). DECSC saves more than the position: the SGR attributes, the
+    // character-set selection and origin mode all travel with it, and a program that swaps
+    // charset between a save and a restore relies on the restore putting it back.
     private int          savedRow;
     private int          savedCol;
+    private boolean      savedG0LineDrawing;
+    private boolean      savedG1LineDrawing;
+    private boolean      savedUseG1;
+    private boolean      savedOriginMode;
     private final TerminalCell savedAttrs = new TerminalCell();
 
     // Saved state for alternate buffer switch (ESC[?1049h / ESC[?1049l)
@@ -91,6 +97,10 @@ public class TerminalEmulator {
     private boolean g0LineDrawing = false;
     private boolean g1LineDrawing = false;
     private boolean useG1         = false;
+
+    /** Horizontal tab stops, one flag per column. Programs move these around with HTS (ESC H)
+     *  and TBC (CSI g), so TAB can't just be arithmetic on a fixed interval. */
+    private boolean[] tabStops = new boolean[0];
 
     // -----------------------------------------------------------------------
     // Terminal modes
@@ -184,6 +194,7 @@ public class TerminalEmulator {
         // "on" would make us wrap pastes in markers a plain shell would echo as literal text.
         bracketedPaste = false;
         originMode     = false;
+        resetTabStops();   // RIS restores the default every-8-columns stops
     }
 
     // -----------------------------------------------------------------------
@@ -226,6 +237,13 @@ public class TerminalEmulator {
         scrollTop    = 0;
         scrollBottom = rows - 1;
         wrapPending  = false;
+
+        // Keep whatever stops the program set for columns that still exist, and give brand-new
+        // columns the default every-8 pattern rather than leaving them with no stops at all.
+        boolean[] oldStops = tabStops;
+        tabStops = new boolean[newCols];
+        for (int c = 0; c < newCols; c++)
+            tabStops[c] = c < oldStops.length ? oldStops[c] : (c % 8 == 0 && c > 0);
     }
 
     // -----------------------------------------------------------------------
@@ -479,6 +497,7 @@ public class TerminalEmulator {
             case '7' -> saveCursor();
             case '8' -> restoreCursor();
             case 'c' -> ris();
+            case 'H' -> hts();          // set tab stop at the cursor column
             case 'D' -> ind();
             case 'E' -> nel();
             case 'M' -> ri();
@@ -532,6 +551,7 @@ public class TerminalEmulator {
             case 'S' -> scrollUp(Math.max(1, p1));
             case 'T' -> scrollDown(Math.max(1, p1));
             case 'd' -> moveCursor(Math.max(1, p1) - 1, cursorCol);
+            case 'g' -> tbc(p1);
             case 'm' -> processSGR();
             case 'n' -> processDSR(p1);
             case 'r' -> decstbm();
@@ -924,12 +944,20 @@ public class TerminalEmulator {
     private void saveCursor() {
         savedRow = cursorRow; savedCol = cursorCol;
         savedAttrs.copyFrom(currentAttrs);
+        savedG0LineDrawing = g0LineDrawing;
+        savedG1LineDrawing = g1LineDrawing;
+        savedUseG1         = useG1;
+        savedOriginMode    = originMode;
     }
 
     private void restoreCursor() {
         cursorRow   = Math.min(savedRow, rows - 1);
         cursorCol   = Math.min(savedCol, cols - 1);
         currentAttrs.copyFrom(savedAttrs);
+        g0LineDrawing = savedG0LineDrawing;
+        g1LineDrawing = savedG1LineDrawing;
+        useG1         = savedUseG1;
+        originMode    = savedOriginMode;
         wrapPending = false;
     }
 
@@ -941,8 +969,32 @@ public class TerminalEmulator {
 
     private void advanceLine() { lineFeed(); }
 
+    /** Rebuilds the tab stops at the power-on default: every 8th column. */
+    private void resetTabStops() {
+        tabStops = new boolean[Math.max(1, cols)];
+        for (int c = 8; c < tabStops.length; c += 8) tabStops[c] = true;
+    }
+
+    /** HTS (ESC H) — set a tab stop at the cursor's column. */
+    private void hts() {
+        if (cursorCol >= 0 && cursorCol < tabStops.length) tabStops[cursorCol] = true;
+    }
+
+    /** TBC (CSI g): 0 clears the stop under the cursor, 3 clears every stop. */
+    private void tbc(int mode) {
+        if (mode == 3) {
+            java.util.Arrays.fill(tabStops, false);
+        } else if (mode == 0 && cursorCol >= 0 && cursorCol < tabStops.length) {
+            tabStops[cursorCol] = false;
+        }
+    }
+
     private void advanceTab() {
-        cursorCol   = Math.min(((cursorCol / 8) + 1) * 8, cols - 1);
+        for (int c = cursorCol + 1; c < cols && c < tabStops.length; c++) {
+            if (tabStops[c]) { cursorCol = c; wrapPending = false; return; }
+        }
+        // No stop left on this line — TAB parks at the right margin.
+        cursorCol   = Math.max(0, cols - 1);
         wrapPending = false;
     }
 
