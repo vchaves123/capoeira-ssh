@@ -115,6 +115,9 @@ public class TerminalEmulator {
     /** DECOM (ESC[?6h). When set, CUP/HVP row coordinates are relative to the scrolling region's
      *  top margin instead of the screen, and the cursor is confined to the region. */
     private boolean originMode = false;
+    /** DECAWM (ESC[?7h/l), on by default. When off, writing past the right margin overwrites the
+     *  last column instead of continuing on the next line. */
+    private boolean autoWrap = true;
     private boolean altBufferActive = false;
     private int     altBufferDepth  = 0;   // nesting counter for apps that stack alt-screen
 
@@ -194,6 +197,7 @@ public class TerminalEmulator {
         // "on" would make us wrap pastes in markers a plain shell would echo as literal text.
         bracketedPaste = false;
         originMode     = false;
+        autoWrap       = true;   // DECAWM is set at power-on
         resetTabStops();   // RIS restores the default every-8-columns stops
     }
 
@@ -423,8 +427,8 @@ public class TerminalEmulator {
             advanceLine();
         }
         // A wide glyph that no longer fits in the current line wraps whole, rather than being
-        // split across the boundary.
-        if (width == 2 && cursorCol == cols - 1) {
+        // split across the boundary — but only when wrapping is allowed at all.
+        if (autoWrap && width == 2 && cursorCol == cols - 1) {
             eraseCell(activeBuffer[cursorRow][cursorCol]);
             cursorCol = 0;
             advanceLine();
@@ -437,7 +441,9 @@ public class TerminalEmulator {
         }
 
         if (cursorCol + width <= cols - 1) cursorCol += width;
-        else wrapPending = true;
+        // With DECAWM off the cursor stays put at the right margin and further writes overwrite
+        // that last column, instead of continuing on the next line.
+        else if (autoWrap) wrapPending = true;
     }
 
     /**
@@ -580,6 +586,7 @@ public class TerminalEmulator {
                 case 1           -> appCursorKeys = true;
                 case 3           -> deccolm(true);   // 132-column mode
                 case 6           -> decom(true);     // origin mode
+                case 7           -> autoWrap = true;  // DECAWM
                 case 12          -> {} // cursor blink on  — ignored
                 case 25          -> cursorVisible = true;
                 case 47, 1047    -> activateAltBuffer(true);
@@ -595,6 +602,7 @@ public class TerminalEmulator {
                 case 1           -> appCursorKeys = false;
                 case 3           -> deccolm(false);  // 80-column mode
                 case 6           -> decom(false);    // origin mode off
+                case 7           -> { autoWrap = false; wrapPending = false; }  // DECAWM off
                 case 4           -> {} // smooth scroll — ignored
                 case 12          -> {} // cursor blink off — ignored
                 case 25          -> cursorVisible = false;
