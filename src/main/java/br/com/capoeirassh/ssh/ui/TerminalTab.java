@@ -60,6 +60,11 @@ public class TerminalTab {
 
     private Color defaultBg;
     private Color defaultFg;
+    /** The same two colours packed as 0xRRGGBB. Reverse video has to swap concrete colours, and
+     *  the cell values are the DEFAULT_COLOR sentinel far more often than not — resolving that
+     *  sentinel per cell per frame via Color.getRGB() would allocate inside the render loop. */
+    private int   defaultFgRgb;
+    private int   defaultBgRgb;
     private int   termFontSize = 12;
     private String termFontName = MonoFonts.DEFAULT;
 
@@ -156,8 +161,8 @@ public class TerminalTab {
         canvas = new Canvas(folder, SWT.NO_BACKGROUND | SWT.V_SCROLL);
         tabItem.setControl(canvas);
 
-        defaultBg = new Color(display, 0,   0,   0  );
-        defaultFg = new Color(display, 255, 176, 0  ); // classic amber phosphor
+        setDefaultColors(new Color(display, 255, 176, 0), // classic amber phosphor
+                         new Color(display, 0,   0,   0));
 
         initFont();
 
@@ -497,8 +502,18 @@ public class TerminalTab {
                     int fg = TerminalEmulator.resolveColor(cell.fgColor);
                     int bg = TerminalEmulator.resolveColor(cell.bgColor);
 
+                    // Reverse video swaps foreground and background. resolveColor returns -1 for
+                    // "the terminal default", and swapping -1 with -1 is a no-op — which is why
+                    // reverse used to render identically to normal text whenever the cell kept
+                    // the default colours (the common case: tput rev, status bars, vttest's
+                    // "negative"). Resolve the sentinel to the real colour before swapping.
                     boolean rev = cell.reverse;
-                    if (rev) { int tmp = fg; fg = bg; bg = tmp; }
+                    if (rev) {
+                        int realFg = (fg < 0) ? defaultFgRgb : fg;
+                        int realBg = (bg < 0) ? defaultBgRgb : bg;
+                        fg = realBg;
+                        bg = realFg;
+                    }
 
                     // Cursor highlight (only when scrolled to bottom)
                     boolean isCursor = scrollOffset == 0
@@ -1458,6 +1473,17 @@ public class TerminalTab {
         }
     }
 
+    /** Single place that assigns the default colours, so the packed RGB ints used by reverse
+     *  video can never drift out of step with the Color objects used for drawing. Takes
+     *  ownership of both Colors. */
+    private void setDefaultColors(Color fg, Color bg) {
+        defaultFg = fg;
+        defaultBg = bg;
+        RGB f = fg.getRGB(), b = bg.getRGB();
+        defaultFgRgb = (f.red << 16) | (f.green << 8) | f.blue;
+        defaultBgRgb = (b.red << 16) | (b.green << 8) | b.blue;
+    }
+
     public int[] getAppearance() {
         // returns [fontSize, fgR, fgG, fgB, bgR, bgG, bgB]
         RGB fg = defaultFg.getRGB();
@@ -1473,8 +1499,7 @@ public class TerminalTab {
         termFontSize = newFontSize;
         if (!defaultBg.isDisposed()) defaultBg.dispose();
         if (!defaultFg.isDisposed()) defaultFg.dispose();
-        defaultBg = new Color(display, bg);
-        defaultFg = new Color(display, fg);
+        setDefaultColors(new Color(display, fg), new Color(display, bg));
         initFont();
         canvas.setBackground(defaultBg);
         disposeOffscreen();
