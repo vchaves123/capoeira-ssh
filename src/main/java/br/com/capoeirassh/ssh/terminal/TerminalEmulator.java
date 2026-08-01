@@ -324,23 +324,39 @@ public class TerminalEmulator {
         }
     }
 
+    /** Executes a C0 control character. Kept separate from the parser state machine because
+     *  these fire both in normal text and from inside an unfinished escape sequence. */
+    private void executeC0(int b) {
+        switch (b) {
+            case 0x07 -> {}                                              // BEL
+            case 0x08 -> { if (cursorCol > 0) { cursorCol--; wrapPending = false; } }
+            case 0x09 -> advanceTab();
+            case 0x0A, 0x0B, 0x0C -> lineFeed();
+            case 0x0D -> { cursorCol = 0; wrapPending = false; }
+            case 0x0E -> useG1 = true;
+            case 0x0F -> useG1 = false;
+            default   -> {}
+        }
+    }
+
     private void processASCII(int b) {
         // ESC always (re)starts an escape sequence, regardless of current parser state.
         // CAN (0x18) and SUB (0x1A) also cancel the current sequence.
         if (b == 0x1B) { state = State.ESC; return; }
         if (b == 0x18 || b == 0x1A) { state = State.NORMAL; return; }
 
+        // A C0 control arriving part-way through an escape/control sequence is executed straight
+        // away and the sequence carries on parsing where it left off (ECMA-48 §5.3) — only ESC,
+        // CAN and SUB, handled above, may interrupt one. Letting it fall through to the CSI
+        // parser instead would abandon the sequence, and its remaining bytes would then be
+        // printed as text: "ESC [ 2 C" with a control spliced in showed up on screen as "2C".
+        // OSC/DCS string content never reaches here — processByte diverts it first — so BEL
+        // still terminates a title as it should.
+        if (b < 0x20 && state != State.NORMAL) { executeC0(b); return; }
+
         if (state == State.NORMAL) {
-            switch (b) {
-                case 0x07 -> {}
-                case 0x08 -> { if (cursorCol > 0) { cursorCol--; wrapPending = false; } }
-                case 0x09 -> advanceTab();
-                case 0x0A, 0x0B, 0x0C -> lineFeed();
-                case 0x0D -> { cursorCol = 0; wrapPending = false; }
-                case 0x0E -> useG1 = true;
-                case 0x0F -> useG1 = false;
-                default   -> { if (b >= 0x20) processCodePoint(b); }
-            }
+            if (b < 0x20) executeC0(b);
+            else          processCodePoint(b);
         } else if (state == State.ESC) {
             processEscape(b);
         } else if (state == State.ESC_HASH) {
