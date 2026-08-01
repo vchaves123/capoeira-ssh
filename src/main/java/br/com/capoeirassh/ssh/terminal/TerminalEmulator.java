@@ -28,7 +28,7 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     // Parser states
     // -----------------------------------------------------------------------
-    private enum State { NORMAL, ESC, CSI, OSC, OSC_ESC, CHARSET_G0, CHARSET_G1 }
+    private enum State { NORMAL, ESC, ESC_HASH, CSI, OSC, OSC_ESC, CHARSET_G0, CHARSET_G1 }
 
     // -----------------------------------------------------------------------
     // Buffers
@@ -328,6 +328,11 @@ public class TerminalEmulator {
             }
         } else if (state == State.ESC) {
             processEscape(b);
+        } else if (state == State.ESC_HASH) {
+            // Only DECALN is acted on; DECDHL/DECDWL (3,4,5,6) and anything else are consumed
+            // and ignored — the point is that the final byte must never reach the screen.
+            state = State.NORMAL;
+            if (b == '8') decaln();
         } else if (state == State.CSI) {
             processCSI(b);
         } else if (state == State.CHARSET_G0) {
@@ -436,6 +441,10 @@ public class TerminalEmulator {
             case 'P', '_', '^', 'X', 'k' -> { state = State.OSC; oscBuffer.setLength(0); }
             case '(' -> state = State.CHARSET_G0;
             case ')' -> state = State.CHARSET_G1;
+            // ESC # <digit> — DEC line-size / alignment sequences. Must consume the digit in a
+            // dedicated state: without it the '#' was dropped, the parser fell back to NORMAL,
+            // and the digit was printed as literal text on screen.
+            case '#' -> state = State.ESC_HASH;
             case '7' -> saveCursor();
             case '8' -> restoreCursor();
             case 'c' -> ris();
@@ -556,6 +565,30 @@ public class TerminalEmulator {
         if (altBufferActive) { altBufferActive = false; activeBuffer = primaryBuffer; }
         altBufferDepth = 0;
         resetState();
+    }
+
+    /**
+     * DECALN (ESC # 8) — Screen Alignment Pattern: fills the whole visible screen with 'E',
+     * resets the scrolling region to the full screen, and homes the cursor. A DEC diagnostic
+     * for checking screen alignment, but terminal test suites lean on it as a bulk "paint every
+     * cell" primitive — vttest fills the screen with E and then carves the pattern it wants back
+     * out with erase operations, so a no-op here doesn't just lose the E's, it also leaves
+     * whatever was on screen before showing through wherever the test doesn't draw.
+     * Fills with default attributes (not the current SGR), matching xterm.
+     */
+    private void decaln() {
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                TerminalCell cell = activeBuffer[r][c];
+                cell.clear();
+                cell.character = 'E';
+            }
+        }
+        scrollTop    = 0;
+        scrollBottom = rows - 1;
+        cursorRow    = 0;
+        cursorCol    = 0;
+        wrapPending  = false;
     }
 
     private void decstbm() {
