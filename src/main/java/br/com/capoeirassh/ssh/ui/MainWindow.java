@@ -134,6 +134,10 @@ public class MainWindow {
                 terminalTabs.remove(t);
                 t.dispose();
                 reloadSessionsTab();
+                // Closing the current tab makes SWT auto-select another one without reliably
+                // firing the selection listener (same reasoning as every other setSelection()
+                // call site in this class), so the title bar needs an explicit refresh here too.
+                refreshWindowTitleForSelection();
                 // If all terminal tabs closed, go back to Sessions tab
                 display.asyncExec(() -> {
                     if (!tabFolder.isDisposed() && tabFolder.getItemCount() <= 1) {
@@ -269,6 +273,10 @@ public class MainWindow {
                 t.dispose();
                 current.dispose();
                 reloadSessionsTab();
+                // Same reasoning as the close-button handler above: disposing the current item
+                // makes SWT auto-select another tab without reliably firing the selection
+                // listener, so the title bar needs an explicit refresh.
+                refreshWindowTitleForSelection();
                 if (tabFolder.getItemCount() <= 1) showSessionsTab();
             });
     }
