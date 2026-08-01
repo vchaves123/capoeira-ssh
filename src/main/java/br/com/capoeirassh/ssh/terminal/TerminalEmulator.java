@@ -102,6 +102,9 @@ public class TerminalEmulator {
      *  pasted newline is indistinguishable from Enter, so the shell runs each line on arrival
      *  instead of leaving the whole thing in the edit buffer. */
     private boolean bracketedPaste = false;
+    /** DECOM (ESC[?6h). When set, CUP/HVP row coordinates are relative to the scrolling region's
+     *  top margin instead of the screen, and the cursor is confined to the region. */
+    private boolean originMode = false;
     private boolean altBufferActive = false;
     private int     altBufferDepth  = 0;   // nesting counter for apps that stack alt-screen
 
@@ -180,6 +183,7 @@ public class TerminalEmulator {
         // RIS clears this too: the mode belongs to the program that asked for it, and a stale
         // "on" would make us wrap pastes in markers a plain shell would echo as literal text.
         bracketedPaste = false;
+        originMode     = false;
     }
 
     // -----------------------------------------------------------------------
@@ -494,14 +498,14 @@ public class TerminalEmulator {
         int p2 = params.size() < 2      ? 0 : params.get(1);
 
         switch ((char) b) {
-            case 'A' -> moveCursor(cursorRow - Math.max(1, p1), cursorCol);
-            case 'B' -> moveCursor(cursorRow + Math.max(1, p1), cursorCol);
+            case 'A' -> moveCursorInRegion(cursorRow - Math.max(1, p1), cursorCol);
+            case 'B' -> moveCursorInRegion(cursorRow + Math.max(1, p1), cursorCol);
             case 'C' -> moveCursor(cursorRow, cursorCol + Math.max(1, p1));
             case 'D' -> moveCursor(cursorRow, cursorCol - Math.max(1, p1));
             case 'E' -> moveCursor(cursorRow + Math.max(1, p1), 0);
             case 'F' -> moveCursor(cursorRow - Math.max(1, p1), 0);
             case 'G' -> moveCursor(cursorRow, Math.max(1, p1) - 1);
-            case 'H', 'f' -> moveCursor(Math.max(1, p1) - 1, Math.max(1, p2) - 1);
+            case 'H', 'f' -> cup(Math.max(1, p1) - 1, Math.max(1, p2) - 1);
             case 'J' -> eraseDisplay(p1);
             case 'K' -> eraseLine(p1);
             case 'L' -> insertLines(Math.max(1, p1));
@@ -528,6 +532,7 @@ public class TerminalEmulator {
             switch (p1) {
                 case 1           -> appCursorKeys = true;
                 case 3           -> deccolm(true);   // 132-column mode
+                case 6           -> decom(true);     // origin mode
                 case 12          -> {} // cursor blink on  — ignored
                 case 25          -> cursorVisible = true;
                 case 47, 1047    -> activateAltBuffer(true);
@@ -542,6 +547,7 @@ public class TerminalEmulator {
             switch (p1) {
                 case 1           -> appCursorKeys = false;
                 case 3           -> deccolm(false);  // 80-column mode
+                case 6           -> decom(false);    // origin mode off
                 case 4           -> {} // smooth scroll — ignored
                 case 12          -> {} // cursor blink off — ignored
                 case 25          -> cursorVisible = false;
@@ -630,13 +636,28 @@ public class TerminalEmulator {
         if (columnModeListener != null) columnModeListener.onColumnModeChanged(target);
     }
 
+    /**
+     * DECOM (ESC[?6h / ESC[?6l) — origin mode. Switching it either way homes the cursor, and
+     * "home" itself depends on the mode: the top margin of the scrolling region when set, the
+     * top of the screen when reset.
+     */
+    private void decom(boolean on) {
+        originMode = on;
+        cursorRow   = on ? scrollTop : 0;
+        cursorCol   = 0;
+        wrapPending = false;
+    }
+
     private void decstbm() {
         int top = params.isEmpty()       ? 1     : params.get(0);
         int bot = params.size() < 2      ? rows  : params.get(1);
         scrollTop    = Math.max(0, top - 1);
         scrollBottom = Math.min(rows - 1, bot - 1);
         if (scrollTop >= scrollBottom) { scrollTop = 0; scrollBottom = rows - 1; }
-        cursorRow   = 0; cursorCol = 0; wrapPending = false;
+        // DECSTBM homes the cursor; in origin mode home is the region's top margin.
+        cursorRow   = originMode ? scrollTop : 0;
+        cursorCol   = 0;
+        wrapPending = false;
     }
 
     private void eraseDisplay(int mode) {
@@ -865,6 +886,23 @@ public class TerminalEmulator {
         cursorRow   = Math.max(0, Math.min(rows - 1, row));
         cursorCol   = Math.max(0, Math.min(cols - 1, col));
         wrapPending = false;
+    }
+
+    /**
+     * CUP/HVP. {@code row} arrives 0-based and screen-relative; under DECOM it is instead
+     * relative to the scrolling region's top margin, and the cursor cannot be placed outside
+     * the region.
+     */
+    private void cup(int row, int col) {
+        if (originMode) moveCursor(Math.min(scrollTop + row, scrollBottom), col);
+        else            moveCursor(row, col);
+    }
+
+    /** Vertical cursor movement (CUU/CUD): under DECOM the cursor stays inside the scrolling
+     *  region rather than running to the screen edges. */
+    private void moveCursorInRegion(int row, int col) {
+        if (originMode) row = Math.max(scrollTop, Math.min(scrollBottom, row));
+        moveCursor(row, col);
     }
 
     private void saveCursor() {
