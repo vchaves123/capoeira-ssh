@@ -13,6 +13,9 @@ import java.time.format.DateTimeFormatter;
 public class Main {
 
     public static void main(String[] args) {
+        for (String arg : args) {
+            if ("--trace".equalsIgnoreCase(arg)) TraceMode.enabled = true;
+        }
         redirectConsoleToLog();
         Display display = new Display();
         try {
@@ -60,6 +63,7 @@ public class Main {
             System.getProperty("user.home"));
         System.out.printf("  Encoding  : %s%n",
             System.getProperty("file.encoding"));
+        if (TraceMode.enabled) System.out.println("  Trace mode: ENABLED (--trace)");
         System.out.println(sep);
         System.out.println();
     }

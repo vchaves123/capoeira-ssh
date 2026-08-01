@@ -931,6 +931,9 @@ public class TerminalEmulator {
     public synchronized String dumpBuffer() {
         StringBuilder sb = new StringBuilder();
         sb.append("=== Capoeira SSH terminal buffer dump ===\n");
+        sb.append("version=").append(br.com.capoeirassh.ssh.BuildInfo.VERSION)
+          .append(" build=").append(br.com.capoeirassh.ssh.BuildInfo.BUILD)
+          .append(" buildDate=").append(br.com.capoeirassh.ssh.BuildInfo.DATE).append('\n');
         sb.append("cols=").append(cols).append(" rows=").append(rows).append('\n');
         sb.append("cursorRow=").append(cursorRow).append(" cursorCol=").append(cursorCol)
           .append(" wrapPending=").append(wrapPending).append('\n');

@@ -624,7 +624,8 @@ public class TerminalTab {
         // passthrough below, since SWT reports the same control character for Ctrl+D and
         // Ctrl+Shift+D — without this check first, it would be swallowed as a Ctrl+D send.
         if ((e.stateMask & (SWT.CTRL | SWT.SHIFT)) == (SWT.CTRL | SWT.SHIFT) && e.keyCode == 'd') {
-            dumpBufferToFile();
+            if (br.com.capoeirassh.ssh.TraceMode.enabled) dumpBufferToFile();
+            else showToast("Buffer dump disponível apenas em modo trace (--trace)");
             return;
         }
 
@@ -960,6 +961,7 @@ public class TerminalTab {
             int         n;
             while (!closed && (n = in.read(buf)) != -1) {
                 writeLog(buf, n);
+                connection.traceRx(buf, n);
                 emulator.processBytes(buf, 0, n);
                 emulator.flushResponses();
                 if (n > 3) notifyActivity();
@@ -1202,9 +1204,36 @@ public class TerminalTab {
             Path file = dir.resolve(ts + "_" + base + ".txt");
             if (Files.exists(file)) file = dir.resolve(ts + "_" + base + "_" + LOG_SEQ.incrementAndGet() + ".txt");
             br.com.capoeirassh.ssh.storage.SecureFiles.write(file, emulator.dumpBuffer().getBytes(StandardCharsets.UTF_8));
-            showToast("Buffer dump saved: " + file.getFileName());
+            Path screenshot = captureScreenshot(dir, ts, base);
+            showToast(screenshot != null
+                ? "Buffer dump + screenshot saved: " + file.getFileName()
+                : "Buffer dump saved: " + file.getFileName() + " (screenshot failed)");
         } catch (IOException ignored) {
             showToast("Buffer dump failed — see app.log");
+        }
+    }
+
+    /** Captures the whole Shell window (not just this tab's canvas) as a PNG alongside the
+     *  buffer dump, so a "the screen looks wrong" report also has a visual reference. */
+    private Path captureScreenshot(Path dir, String ts, String base) {
+        Shell shell = canvas.getShell();
+        if (shell == null || shell.isDisposed()) return null;
+        Rectangle bounds = shell.getBounds();
+        Image image = new Image(display, bounds.width, bounds.height);
+        GC gc = new GC(shell);
+        try {
+            gc.copyArea(image, 0, 0);
+            Path file = dir.resolve(ts + "_" + base + ".png");
+            if (Files.exists(file)) file = dir.resolve(ts + "_" + base + "_" + LOG_SEQ.get() + ".png");
+            ImageLoader loader = new ImageLoader();
+            loader.data = new ImageData[]{ image.getImageData() };
+            loader.save(file.toString(), SWT.IMAGE_PNG);
+            return file;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            gc.dispose();
+            image.dispose();
         }
     }
 

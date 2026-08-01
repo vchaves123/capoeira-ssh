@@ -30,6 +30,7 @@ public class SshConnection {
      *  initial handshake). Volatile: flipped from the UI thread, read from whatever thread
      *  JSch's logger fires on. */
     private volatile boolean verboseEnabled;
+    private PacketTraceLogger traceLogger;
 
     /**
      * @param info        session configuration
@@ -43,6 +44,11 @@ public class SshConnection {
     public void connect(SessionInfo info, char[] password, Display display,
                          java.util.function.Consumer<String> verboseSink) throws Exception {
         try {
+            if (br.com.capoeirassh.ssh.TraceMode.enabled) {
+                try { traceLogger = new PacketTraceLogger(info.host); }
+                catch (IOException e) { traceLogger = null; } // best-effort — tracing must never block a connection
+            }
+
             jsch = new JSch();
 
             // Known-hosts file — host keys are stored here and verified on every connection.
@@ -126,8 +132,15 @@ public class SshConnection {
      *  (see TerminalTab.sendPastedLines), so this can race with the UI thread's own key-typed
      *  sends onto the same OutputStream without this guard. */
     public synchronized void send(byte[] data) throws IOException {
+        if (traceLogger != null) traceLogger.logTx(data);
         output.write(data);
         output.flush();
+    }
+
+    /** Called by the reader loop (see TerminalTab.readSsh) for each chunk received — a no-op
+     *  unless {@code --trace} enabled a logger for this connection in {@link #connect}. */
+    public void traceRx(byte[] buf, int len) {
+        if (traceLogger != null) traceLogger.logRx(buf, len);
     }
 
     public void updatePtySize(int cols, int rows, int widthPx, int heightPx) {
@@ -144,6 +157,7 @@ public class SshConnection {
     public void close() {
         try { if (channel != null) channel.disconnect();  } catch (Exception ignored) {}
         try { if (session != null) session.disconnect();  } catch (Exception ignored) {}
+        if (traceLogger != null) traceLogger.close();
     }
 
     // -----------------------------------------------------------------------
