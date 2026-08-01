@@ -13,9 +13,6 @@ import java.time.format.DateTimeFormatter;
 public class Main {
 
     public static void main(String[] args) {
-        for (String arg : args) {
-            if ("--trace".equalsIgnoreCase(arg)) TraceMode.enabled = true;
-        }
         redirectConsoleToLog();
         Display display = new Display();
         try {
@@ -47,7 +44,6 @@ public class Main {
         System.out.println(sep);
         System.out.printf("  Capoeira SSH  v%s  build #%d  —  started %s%n",
             BuildInfo.VERSION, BuildInfo.BUILD, ts);
-        if (TraceMode.enabled) System.out.println("  Trace mode: ENABLED (--trace)");
         System.out.println(sep);
         System.out.printf("  Java      : %s  (%s)%n",
             System.getProperty("java.version"),

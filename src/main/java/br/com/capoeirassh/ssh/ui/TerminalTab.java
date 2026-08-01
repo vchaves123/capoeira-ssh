@@ -631,24 +631,6 @@ public class TerminalTab {
         // Alt+key is handled entirely by altFilter — skip here to avoid double-send
         if ((e.stateMask & SWT.ALT) != 0) return;
 
-        // Local diagnostic shortcut: dumps the emulator's actual internal buffer state to a
-        // file instead of sending anything to the remote. Checked before the generic Ctrl+letter
-        // passthrough below, since SWT reports the same control character for Ctrl+D and
-        // Ctrl+Shift+D — without this check first, it would be swallowed as a Ctrl+D send.
-        if ((e.stateMask & (SWT.CTRL | SWT.SHIFT)) == (SWT.CTRL | SWT.SHIFT) && e.keyCode == 'd') {
-            if (br.com.capoeirassh.ssh.TraceMode.enabled) dumpBufferToFile();
-            else showToast("Buffer dump disponível apenas em modo trace (--trace)");
-            return;
-        }
-
-        // Local diagnostic shortcut: toggles RX/TX packet-trace logging on/off at runtime.
-        // Same Ctrl+D/Ctrl+Shift+D ordering concern applies to Ctrl+P/Ctrl+Shift+P.
-        if ((e.stateMask & (SWT.CTRL | SWT.SHIFT)) == (SWT.CTRL | SWT.SHIFT) && e.keyCode == 'p') {
-            if (br.com.capoeirassh.ssh.TraceMode.enabled) togglePacketCapture();
-            else showToast("Captura de pacotes disponível apenas em modo trace (--trace)");
-            return;
-        }
-
         if (scrollOffset != 0) { scrollOffset = 0; updateScrollBar(); }
         if (hasSelection()) { clearSelection(); canvas.redraw(); }
 
@@ -981,7 +963,6 @@ public class TerminalTab {
             int         n;
             while (!closed && (n = in.read(buf)) != -1) {
                 writeLog(buf, n);
-                connection.traceRx(buf, n);
                 emulator.processBytes(buf, 0, n);
                 emulator.flushResponses();
                 if (n > 3) notifyActivity();
@@ -1211,70 +1192,11 @@ public class TerminalTab {
         return result[0];
     }
 
-    /** Ctrl+Shift+D — writes what the emulator actually has stored (not just how it currently
-     *  renders) to a file, so a "the screen looks wrong" moment can be checked against real
-     *  state instead of guessing whether it was just a redraw caught mid-frame. */
-    private void dumpBufferToFile() {
-        try {
-            Path dir = Path.of(System.getProperty("user.home"), ".capoeira", "buffer-dumps");
-            br.com.capoeirassh.ssh.storage.SecureFiles.createDirectories(dir);
-            String ts = LocalDateTime.now().format(LOG_TS);
-            String base = sessionInfo.host == null || sessionInfo.host.isBlank()
-                    ? "session" : sessionInfo.host.replaceAll("[^\\w\\-.]", "_");
-            Path file = dir.resolve(ts + "_" + base + ".txt");
-            if (Files.exists(file)) file = dir.resolve(ts + "_" + base + "_" + LOG_SEQ.incrementAndGet() + ".txt");
-            br.com.capoeirassh.ssh.storage.SecureFiles.write(file, emulator.dumpBuffer().getBytes(StandardCharsets.UTF_8));
-            Path screenshot = captureScreenshot(dir, ts, base);
-            showToast(screenshot != null
-                ? "Buffer dump + screenshot saved: " + file.getFileName()
-                : "Buffer dump saved: " + file.getFileName() + " (screenshot failed)");
-        } catch (IOException ignored) {
-            showToast("Buffer dump failed — see app.log");
-        }
-    }
-
-    /** Captures the whole terminal window to a PNG alongside the buffer dump (same timestamp/host
-     *  naming) — trace-mode only, see {@link #dumpBufferToFile}. Returns null on failure (the text
-     *  dump above already succeeded independently, so a screenshot failure alone isn't fatal). */
-    private Path captureScreenshot(Path dir, String ts, String base) {
-        Shell shell = canvas.getShell();
-        if (shell == null || shell.isDisposed()) return null;
-        Rectangle bounds = shell.getBounds();
-        Image image = new Image(display, bounds.width, bounds.height);
-        GC gc = new GC(shell);
-        try {
-            gc.copyArea(image, 0, 0);
-            Path file = dir.resolve(ts + "_" + base + ".png");
-            if (Files.exists(file)) file = dir.resolve(ts + "_" + base + "_" + LOG_SEQ.get() + ".png");
-            ImageLoader loader = new ImageLoader();
-            loader.data = new ImageData[]{ image.getImageData() };
-            loader.save(file.toString(), SWT.IMAGE_PNG);
-            return file;
-        } catch (Exception e) {
-            return null;
-        } finally {
-            gc.dispose();
-            image.dispose();
-        }
-    }
-
-    private static final String TRACE_TITLE_SUFFIX = "  —  ● TRACE (capturando pacotes)";
-
-    /** Flips the global packet-capture switch and reflects it in the main window's title bar —
-     *  the flag is global (see {@link br.com.capoeirassh.ssh.TraceMode#packetCaptureEnabled}) so
-     *  this affects every open tab's connection, not just this one. */
-    private void togglePacketCapture() {
-        boolean nowOn = !br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled;
-        br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled = nowOn;
-        applyTitleIfActive();
-        showToast("Captura de pacotes: " + (nowOn ? "LIGADA" : "DESLIGADA"));
-    }
-
     /** Pushes this tab's title (remote OSC title, or the app default) to the main window's title
      *  bar — but only if this tab is the one currently selected in the folder, so a title change
      *  on a background tab doesn't clobber what the user is actively looking at. Called whenever
-     *  this tab's remote title changes, the trace indicator toggles, or (from {@link
-     *  br.com.capoeirassh.ssh.ui.MainWindow}) this tab just became the selected one. */
+     *  this tab's remote title changes, or (from {@link br.com.capoeirassh.ssh.ui.MainWindow})
+     *  this tab just became the selected one. */
     void applyTitleIfActive() {
         if (tabItem.isDisposed()) return;
         if (tabItem.getParent().getSelection() != tabItem) return;
@@ -1285,42 +1207,16 @@ public class TerminalTab {
         Shell shell = canvas.getShell();
         if (shell == null || shell.isDisposed()) return;
         if (remote != null && !remote.isBlank())
-            shell.setText(remote + (br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled ? TRACE_TITLE_SUFFIX : ""));
+            shell.setText(remote);
         else
             applyBaseWindowTitle(shell);
     }
 
-    /** Resets the shell title to the app default (plus the trace indicator, if on) — used when a
-     *  non-terminal tab (e.g. Sessions) becomes active, since it has no remote title of its own. */
+    /** Resets the shell title to the app default — used when a non-terminal tab (e.g. Sessions)
+     *  becomes active, since it has no remote title of its own. */
     static void applyBaseWindowTitle(Shell shell) {
         if (shell == null || shell.isDisposed()) return;
-        shell.setText("Capoeira SSH" + (br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled ? TRACE_TITLE_SUFFIX : ""));
-    }
-
-    /** Brief, non-modal on-screen message that disposes itself — used only for the buffer-dump
-     *  confirmation above, so the user gets feedback without an interaction-blocking dialog. */
-    private void showToast(String message) {
-        Shell toast = new Shell(canvas.getShell(), SWT.NO_TRIM | SWT.ON_TOP);
-        Color bg = new Color(display, 30, 30, 30);
-        Color fg = new Color(display, 230, 230, 230);
-        toast.setBackground(bg);
-        toast.addDisposeListener(e -> { bg.dispose(); fg.dispose(); });
-
-        GridLayout gl = new GridLayout(1, false);
-        gl.marginWidth = 12; gl.marginHeight = 8;
-        toast.setLayout(gl);
-
-        Label lbl = new Label(toast, SWT.NONE);
-        lbl.setText(message);
-        lbl.setBackground(bg);
-        lbl.setForeground(fg);
-
-        toast.pack();
-        Rectangle sb = canvas.getShell().getBounds();
-        Point sz = toast.getSize();
-        toast.setLocation(sb.x + (sb.width - sz.x) / 2, sb.y + sb.height - sz.y - 60);
-        toast.open();
-        display.timerExec(2000, () -> { if (!toast.isDisposed()) toast.dispose(); });
+        shell.setText("Capoeira SSH");
     }
 
     private void notifyActivity() {
