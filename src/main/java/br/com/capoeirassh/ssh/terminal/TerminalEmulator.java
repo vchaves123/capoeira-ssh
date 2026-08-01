@@ -273,12 +273,19 @@ public class TerminalEmulator {
      *  still just swallowed, same as before. */
     private void finishOsc() {
         state = State.NORMAL;
-        String osc = oscBuffer.toString();
+        String raw = oscBuffer.toString();
         oscBuffer.setLength(0);
-        int sep = osc.indexOf(';');
+        int sep = raw.indexOf(';');
         if (sep > 0 && titleListener != null) {
-            String ps = osc.substring(0, sep);
-            if (ps.equals("0") || ps.equals("2")) titleListener.onTitleChanged(osc.substring(sep + 1));
+            String ps = raw.substring(0, sep);
+            if (ps.equals("0") || ps.equals("2")) {
+                // oscBuffer holds one raw byte per char (0-255), never UTF-8-decoded — harmless
+                // while this buffer was only ever discarded, but the title text can contain
+                // accented characters or icon glyphs, so decode it properly before surfacing it.
+                byte[] bytes = new byte[raw.length() - sep - 1];
+                for (int i = 0; i < bytes.length; i++) bytes[i] = (byte) raw.charAt(sep + 1 + i);
+                titleListener.onTitleChanged(new String(bytes, StandardCharsets.UTF_8));
+            }
         }
     }
 
