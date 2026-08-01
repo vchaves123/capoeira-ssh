@@ -110,6 +110,7 @@ public class MainWindow {
                     sessionsTab.focusDefault();
                 }
                 refreshSelectionColor();
+                refreshWindowTitleForSelection();
             }
         });
 
@@ -155,6 +156,19 @@ public class MainWindow {
         tabFolder.setSelection(sessionsTab.getTabItem());
     }
 
+    /** Pushes the currently selected tab's title (its remote OSC title if it's a terminal, or the
+     *  app default for the Sessions tab) onto the shell — since {@code CTabFolder.setSelection}
+     *  called programmatically doesn't reliably fire the selection listener above, every call
+     *  site that changes the selection in code also calls this directly. */
+    private void refreshWindowTitleForSelection() {
+        if (shell.isDisposed() || tabFolder.isDisposed()) return;
+        CTabItem sel = tabFolder.getSelection();
+        terminalTabs.stream()
+            .filter(t -> t.getTabItem() == sel)
+            .findFirst()
+            .ifPresentOrElse(TerminalTab::applyTitleIfActive, () -> TerminalTab.applyBaseWindowTitle(shell));
+    }
+
     /** Keeps the CTabFolder's selection text colour in sync with the currently selected tab's state. */
     private void refreshSelectionColor() {
         if (tabFolder.isDisposed()) return;
@@ -166,8 +180,10 @@ public class MainWindow {
     }
 
     private void showSessionsTab() {
-        if (sessionsTab != null && !sessionsTab.getTabItem().isDisposed())
+        if (sessionsTab != null && !sessionsTab.getTabItem().isDisposed()) {
             tabFolder.setSelection(sessionsTab.getTabItem());
+            refreshWindowTitleForSelection();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -198,6 +214,7 @@ public class MainWindow {
         terminalTabs.add(tab);
         reloadSessionsTab();
         tabFolder.setSelection(tab.getTabItem());
+        refreshWindowTitleForSelection();
         // Re-assert correct selection colour after all pending asyncExec callbacks
         // (e.g. a prior disconnected tab's onStateChanged) have had a chance to run.
         display.asyncExec(this::refreshSelectionColor);
@@ -261,6 +278,7 @@ public class MainWindow {
         if (total == 0) return;
         int next = (tabFolder.getSelectionIndex() + delta + total) % total;
         tabFolder.setSelection(next);
+        refreshWindowTitleForSelection();
         // Focus the canvas of the selected terminal tab
         CTabItem sel = tabFolder.getSelection();
         terminalTabs.stream()

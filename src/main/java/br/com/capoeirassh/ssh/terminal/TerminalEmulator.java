@@ -118,10 +118,12 @@ public class TerminalEmulator {
     @FunctionalInterface public interface DataListener      { void onData(byte[] data); }
     @FunctionalInterface public interface ChangeListener   { void onChange(); }
     @FunctionalInterface public interface AltBufferListener { void onAltBufferChanged(boolean active); }
+    @FunctionalInterface public interface TitleListener     { void onTitleChanged(String title); }
 
     private DataListener      dataListener;
     private ChangeListener    changeListener;
     private AltBufferListener altBufferListener;
+    private TitleListener     titleListener;
 
     /** Queued terminal responses (DSR, DA, XTWINOPS). Populated inside processBytes;
      *  drained by the caller after the lock is released to avoid I/O under the lock. */
@@ -177,6 +179,7 @@ public class TerminalEmulator {
     public synchronized void setDataListener(DataListener l)         { this.dataListener = l; }
     public synchronized void setChangeListener(ChangeListener l)     { this.changeListener = l; }
     public synchronized void setAltBufferListener(AltBufferListener l) { this.altBufferListener = l; }
+    public synchronized void setTitleListener(TitleListener l)       { this.titleListener = l; }
 
     // -----------------------------------------------------------------------
     // Resize
@@ -255,13 +258,28 @@ public class TerminalEmulator {
      *  UTF-8/C1 interpretation. */
     private void processOscByte(int b) {
         if (state == State.OSC_ESC) {
-            if (b == '\\') { state = State.NORMAL; oscBuffer.setLength(0); }
+            if (b == '\\') finishOsc();
             else           { state = State.OSC; if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b); }
             return;
         }
         if      (b == 0x1B)             state = State.OSC_ESC;
-        else if (b == 0x07 || b == 0x9C) { state = State.NORMAL; oscBuffer.setLength(0); }
+        else if (b == 0x07 || b == 0x9C) finishOsc();
         else if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b);
+    }
+
+    /** Called on every OSC terminator (BEL, ST, or ESC \). Extracts the title text from a
+     *  "set window/icon title" sequence (Ps 0, 1, or 2 — see ECMA-48 / XTerm ctlseqs) and hands
+     *  it to the title listener; any other OSC (color queries, hyperlinks, clipboard, etc.) is
+     *  still just swallowed, same as before. */
+    private void finishOsc() {
+        state = State.NORMAL;
+        String osc = oscBuffer.toString();
+        oscBuffer.setLength(0);
+        int sep = osc.indexOf(';');
+        if (sep > 0 && titleListener != null) {
+            String ps = osc.substring(0, sep);
+            if (ps.equals("0") || ps.equals("2")) titleListener.onTitleChanged(osc.substring(sep + 1));
+        }
     }
 
     private void processC1(int b) {
@@ -270,7 +288,7 @@ public class TerminalEmulator {
             case 0x85 -> nel();
             case 0x8D -> ri();
             case 0x9B -> { state = State.CSI; params.clear(); csiPrivate = false; csiIntermediate = false; }
-            case 0x9C -> { state = State.NORMAL; oscBuffer.setLength(0); }  // ST — terminates any open string
+            case 0x9C -> finishOsc();  // ST — terminates any open string
             case 0x90, 0x98, 0x9D, 0x9E, 0x9F -> { state = State.OSC; oscBuffer.setLength(0); } // DCS/SOS/OSC/PM/APC
             default -> {}
         }

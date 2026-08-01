@@ -130,6 +130,10 @@ public class TerminalTab {
      *  character apart from an 8-bit C1 control byte (0x80-0x9F overlaps both ranges). */
     private int ansiUtf8Remaining = 0;
 
+    /** Last window title this tab's connection asked for via OSC 0/2, or {@code null} if none
+     *  arrived yet. Applied to the main window's title bar only while this tab is selected. */
+    private volatile String remoteTitle;
+
     // -----------------------------------------------------------------------
     // Constructor
     // -----------------------------------------------------------------------
@@ -193,6 +197,14 @@ public class TerminalTab {
                 canvas.redraw();
             })
         );
+
+        // OSC 0/2 "set window/icon title" — reflect it in the main window's title bar, but only
+        // while this tab is the one actually selected (a background tab's title change must not
+        // steal the shell title out from under whatever tab the user is looking at).
+        emulator.setTitleListener(title -> display.asyncExec(() -> {
+            remoteTitle = title;
+            applyTitleIfActive();
+        }));
 
         setupCanvas();
         setupScrollBar();
@@ -1253,12 +1265,33 @@ public class TerminalTab {
     private void togglePacketCapture() {
         boolean nowOn = !br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled;
         br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled = nowOn;
-        updateTraceTitleIndicator();
+        applyTitleIfActive();
         showToast("Captura de pacotes: " + (nowOn ? "LIGADA" : "DESLIGADA"));
     }
 
-    private void updateTraceTitleIndicator() {
+    /** Pushes this tab's title (remote OSC title, or the app default) to the main window's title
+     *  bar — but only if this tab is the one currently selected in the folder, so a title change
+     *  on a background tab doesn't clobber what the user is actively looking at. Called whenever
+     *  this tab's remote title changes, the trace indicator toggles, or (from {@link
+     *  br.com.capoeirassh.ssh.ui.MainWindow}) this tab just became the selected one. */
+    void applyTitleIfActive() {
+        if (tabItem.isDisposed()) return;
+        if (tabItem.getParent().getSelection() != tabItem) return;
+        setShellTitle(remoteTitle);
+    }
+
+    private void setShellTitle(String remote) {
         Shell shell = canvas.getShell();
+        if (shell == null || shell.isDisposed()) return;
+        if (remote != null && !remote.isBlank())
+            shell.setText(remote + (br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled ? TRACE_TITLE_SUFFIX : ""));
+        else
+            applyBaseWindowTitle(shell);
+    }
+
+    /** Resets the shell title to the app default (plus the trace indicator, if on) — used when a
+     *  non-terminal tab (e.g. Sessions) becomes active, since it has no remote title of its own. */
+    static void applyBaseWindowTitle(Shell shell) {
         if (shell == null || shell.isDisposed()) return;
         shell.setText("Capoeira SSH" + (br.com.capoeirassh.ssh.TraceMode.packetCaptureEnabled ? TRACE_TITLE_SUFFIX : ""));
     }
