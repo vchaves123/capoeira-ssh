@@ -119,11 +119,20 @@ public class TerminalEmulator {
     @FunctionalInterface public interface ChangeListener   { void onChange(); }
     @FunctionalInterface public interface AltBufferListener { void onAltBufferChanged(boolean active); }
     @FunctionalInterface public interface TitleListener     { void onTitleChanged(String title); }
+    /** Fired when the remote requests 80/132-column mode via DECCOLM. The emulator has already
+     *  resized its own buffer by the time this runs; the listener's job is to resize the window
+     *  to match. Called while holding this emulator's lock — implementations must hand off
+     *  asynchronously (Display.asyncExec), never block. */
+    @FunctionalInterface public interface ColumnModeListener { void onColumnModeChanged(int cols); }
 
     private DataListener      dataListener;
     private ChangeListener    changeListener;
     private AltBufferListener altBufferListener;
     private TitleListener     titleListener;
+    private ColumnModeListener columnModeListener;
+    /** Gates DECCOLM (see SessionInfo.allowColumnMode) — when false the sequence is ignored
+     *  outright, so a remote can't resize the window. */
+    private boolean allowColumnMode = false;
 
     /** Queued terminal responses (DSR, DA, XTWINOPS). Populated inside processBytes;
      *  drained by the caller after the lock is released to avoid I/O under the lock. */
@@ -180,6 +189,8 @@ public class TerminalEmulator {
     public synchronized void setChangeListener(ChangeListener l)     { this.changeListener = l; }
     public synchronized void setAltBufferListener(AltBufferListener l) { this.altBufferListener = l; }
     public synchronized void setTitleListener(TitleListener l)       { this.titleListener = l; }
+    public synchronized void setColumnModeListener(ColumnModeListener l) { this.columnModeListener = l; }
+    public synchronized void setAllowColumnMode(boolean on)          { this.allowColumnMode = on; }
 
     // -----------------------------------------------------------------------
     // Resize
@@ -516,6 +527,7 @@ public class TerminalEmulator {
         if (b == 'h') {
             switch (p1) {
                 case 1           -> appCursorKeys = true;
+                case 3           -> deccolm(true);   // 132-column mode
                 case 12          -> {} // cursor blink on  — ignored
                 case 25          -> cursorVisible = true;
                 case 47, 1047    -> activateAltBuffer(true);
@@ -529,7 +541,7 @@ public class TerminalEmulator {
         } else if (b == 'l') {
             switch (p1) {
                 case 1           -> appCursorKeys = false;
-                case 3           -> {} // 80-column mode — ignored
+                case 3           -> deccolm(false);  // 80-column mode
                 case 4           -> {} // smooth scroll — ignored
                 case 12          -> {} // cursor blink off — ignored
                 case 25          -> cursorVisible = false;
@@ -589,6 +601,33 @@ public class TerminalEmulator {
         cursorRow    = 0;
         cursorCol    = 0;
         wrapPending  = false;
+    }
+
+    /**
+     * DECCOLM (ESC[?3h / ESC[?3l) — switch between 132- and 80-column mode. On a real VT100 this
+     * changed the hardware column count; here it has to resize the window, so it is gated behind
+     * a per-session option (see {@link #setAllowColumnMode}) and simply ignored when off, which
+     * is how xterm treats it by default too.
+     *
+     * The buffer is resized SYNCHRONOUSLY here rather than waiting for the window resize to come
+     * back round: a program that sends DECCOLM starts drawing at the new width immediately, and
+     * the window resize is asynchronous (and debounced), so deferring would send that first
+     * screenful into a buffer still at the old width and wrap it.
+     *
+     * Per DEC STD 070 the mode change also clears the screen, homes the cursor and resets the
+     * scrolling region — programs rely on that instead of sending a separate clear.
+     */
+    private void deccolm(boolean wide) {
+        if (!allowColumnMode) return;
+        int target = wide ? 132 : 80;
+        resize(target, rows);
+        for (TerminalCell[] row : activeBuffer) for (TerminalCell c : row) c.clear();
+        cursorRow    = 0;
+        cursorCol    = 0;
+        wrapPending  = false;
+        scrollTop    = 0;
+        scrollBottom = rows - 1;
+        if (columnModeListener != null) columnModeListener.onColumnModeChanged(target);
     }
 
     private void decstbm() {

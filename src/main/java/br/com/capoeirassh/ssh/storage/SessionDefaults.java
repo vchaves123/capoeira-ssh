@@ -65,6 +65,7 @@ public final class SessionDefaults {
             // else would be narrowed to an arbitrary byte and sent to the SSH server.
             if (c.backspaceCode != 0x08 && c.backspaceCode != 0x7F) c.backspaceCode = 0x7F;
             c.sshVerbose = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
+            c.allowColumnMode = Boolean.parseBoolean(p.getProperty("allowColumnMode", "true"));
             current = c;
         } catch (Exception ignored) {}
     }
@@ -85,6 +86,7 @@ public final class SessionDefaults {
         p.setProperty("terminalType", current.terminalType);
         p.setProperty("backspaceCode", String.valueOf(current.backspaceCode));
         p.setProperty("sshVerbose", String.valueOf(current.sshVerbose));
+        p.setProperty("allowColumnMode", String.valueOf(current.allowColumnMode));
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             p.store(baos, null);

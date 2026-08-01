@@ -538,6 +538,7 @@ public class MainWindow {
         current.terminalType  = info.terminalType;
         current.backspaceCode = info.backspaceCode;
         current.sshVerbose    = info.sshVerbose;
+        current.allowColumnMode = info.allowColumnMode;
 
         ConfigurationSettingsDialog dlg = new ConfigurationSettingsDialog(shell, "Configuration Setting", current, info.host);
         if (!dlg.open()) return;
@@ -557,6 +558,8 @@ public class MainWindow {
         info.backspaceCode = s.backspaceCode;
         info.sshVerbose    = s.sshVerbose;
         terminal.setSshVerbose(s.sshVerbose);
+        info.allowColumnMode = s.allowColumnMode;
+        terminal.setAllowColumnMode(s.allowColumnMode);
     }
 
     private void closeAll() {

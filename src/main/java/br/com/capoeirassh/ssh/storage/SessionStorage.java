@@ -54,6 +54,7 @@ public final class SessionStorage {
         p.setProperty("terminalType",  s.terminalType != null && !s.terminalType.isBlank() ? s.terminalType : "xterm-256color");
         p.setProperty("backspaceCode", String.valueOf(s.backspaceCode));
         p.setProperty("sshVerbose",    String.valueOf(s.sshVerbose));
+        p.setProperty("allowColumnMode", String.valueOf(s.allowColumnMode));
         p.setProperty("sortOrder",     String.valueOf(s.sortOrder));
         p.setProperty("tags",          String.join(",", s.tags));
         for (String tag : s.tags) TagRegistry.register(tag);
@@ -194,6 +195,8 @@ public final class SessionStorage {
         s.backspaceCode = parseInt(p.getProperty("backspaceCode", "127"));
         if (s.backspaceCode != 0x08 && s.backspaceCode != 0x7F) s.backspaceCode = 0x7F;
         s.sshVerbose    = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
+        // Defaults to true, so sessions saved before this option existed get the new behaviour.
+        s.allowColumnMode = Boolean.parseBoolean(p.getProperty("allowColumnMode", "true"));
         s.sortOrder     = parseInt(p.getProperty("sortOrder", "0"));
         s.tags          = parseTags(p.getProperty("tags", ""));
         String at        = p.getProperty("authType", "PASSWORD");

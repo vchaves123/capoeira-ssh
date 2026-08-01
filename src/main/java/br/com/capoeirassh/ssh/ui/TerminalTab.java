@@ -198,6 +198,9 @@ public class TerminalTab {
             })
         );
 
+        emulator.setAllowColumnMode(info.allowColumnMode);
+        emulator.setColumnModeListener(cols -> display.asyncExec(() -> resizeWindowToColumns(cols)));
+
         // OSC 0/2 "set window/icon title" — reflect it in the main window's title bar, but only
         // while this tab is the one actually selected (a background tab's title change must not
         // steal the shell title out from under whatever tab the user is looking at).
@@ -411,6 +414,33 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     // Terminal size
     // -----------------------------------------------------------------------
+    /**
+     * Grows or shrinks the main window so this tab's canvas ends up exactly {@code targetCols}
+     * characters wide — the visible half of DECCOLM (the emulator has already resized its buffer
+     * by the time we get here).
+     *
+     * Only acts for the tab the user is actually looking at: tabs share one window, so honouring
+     * this for a background tab would resize the window out from under the foreground one.
+     * The width is clamped to the monitor's work area — if 132 columns don't physically fit, the
+     * window grows as far as it can and the debounced SWT.Resize that follows will settle the
+     * emulator back to whatever actually fits.
+     */
+    private void resizeWindowToColumns(int targetCols) {
+        if (canvas.isDisposed() || charWidth <= 0) return;
+        if (tabItem.isDisposed() || tabItem.getParent().getSelection() != tabItem) return;
+        Shell shell = canvas.getShell();
+        if (shell == null || shell.isDisposed() || shell.getMaximized()) return;
+
+        // Window chrome (tab bar, borders, scrollbar) is whatever the shell has beyond the
+        // canvas's client area — measure it rather than assuming a fixed inset.
+        Rectangle shellBounds = shell.getBounds();
+        int chromeWidth = shellBounds.width - canvas.getClientArea().width;
+        int wanted      = chromeWidth + targetCols * charWidth;
+
+        Rectangle screen = shell.getMonitor().getClientArea();
+        shell.setSize(Math.min(wanted, screen.width), shellBounds.height);
+    }
+
     private void updateTerminalSize() {
         if (canvas.isDisposed() || charWidth == 0 || charHeight == 0) return;
         Rectangle r = canvas.getClientArea();
@@ -1448,6 +1478,8 @@ public class TerminalTab {
     /** Turns SSH protocol diagnostics on/off for the live connection immediately — takes effect
      *  on the current session, no reconnect needed. */
     public void setSshVerbose(boolean on) { connection.setVerbose(on); }
+
+    public void setAllowColumnMode(boolean on) { emulator.setAllowColumnMode(on); }
 
     public String getLogDir() {
         SessionInfo s = sessionInfo;

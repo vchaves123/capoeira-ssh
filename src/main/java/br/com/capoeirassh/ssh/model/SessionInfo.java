@@ -36,6 +36,11 @@ public class SessionInfo {
     public int      backspaceCode = 0x7F;
     /** When true, the SSH handshake/negotiation is shown live in the terminal (like {@code ssh -vvv}). */
     public boolean  sshVerbose = false;
+    /** When true, the remote may switch the terminal between 80 and 132 columns with DECCOLM
+     *  (ESC[?3l / ESC[?3h), which resizes the application window. xterm's {@code allowC132}
+     *  equivalent — off there by default, on here, since a full-screen app asking for 132
+     *  columns and silently getting 80 renders corrupted output instead of failing visibly. */
+    public boolean  allowColumnMode = true;
     /** Manual display order in the flat sessions list (List view) — lower sorts first.
      *  Sessions sharing the default 0 fall back to their on-disk load order until the user
      *  drags one, at which point the whole visible list is resequenced to 0..N-1. */
@@ -69,6 +74,7 @@ public class SessionInfo {
         c.terminalType = terminalType;
         c.backspaceCode = backspaceCode;
         c.sshVerbose = sshVerbose;
+        c.allowColumnMode = allowColumnMode;
         c.sortOrder = sortOrder;
         c.tags = new java.util.ArrayList<>(tags);
         return c;

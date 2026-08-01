@@ -22,6 +22,9 @@ public class ConfigurationSettings {
     /** When true, the SSH handshake/negotiation is shown live in the terminal (like {@code ssh -vvv}). */
     public boolean sshVerbose = false;
 
+    /** When true, the remote may switch between 80 and 132 columns with DECCOLM, resizing the window. */
+    public boolean allowColumnMode = true;
+
     public static ConfigurationSettings fromSession(SessionInfo s) {
         ConfigurationSettings c = new ConfigurationSettings();
         c.appearFontSize = s.appearFontSize;
@@ -34,6 +37,7 @@ public class ConfigurationSettings {
         c.terminalType  = s.terminalType;
         c.backspaceCode = s.backspaceCode;
         c.sshVerbose    = s.sshVerbose;
+        c.allowColumnMode = s.allowColumnMode;
         return c;
     }
 
@@ -48,6 +52,7 @@ public class ConfigurationSettings {
         s.terminalType  = terminalType;
         s.backspaceCode = backspaceCode;
         s.sshVerbose    = sshVerbose;
+        s.allowColumnMode = allowColumnMode;
     }
 
     public ConfigurationSettings copy() {
@@ -58,6 +63,7 @@ public class ConfigurationSettings {
         c.logEnabled = logEnabled; c.logDir = logDir; c.logFileName = logFileName;
         c.terminalType = terminalType; c.backspaceCode = backspaceCode;
         c.sshVerbose = sshVerbose;
+        c.allowColumnMode = allowColumnMode;
         return c;
     }
 }

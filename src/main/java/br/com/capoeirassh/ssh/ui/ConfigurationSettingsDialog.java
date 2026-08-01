@@ -187,6 +187,15 @@ public class ConfigurationSettingsDialog {
             + "messages directly in the terminal as the connection is established.");
         chkVerbose.setSelection(settings.sshVerbose);
 
+        // ── DECCOLM (80/132 column switching) ─────────────────────────────────
+        label(dlg, "Column switching:");
+        Button chkColumnMode = new Button(dlg, SWT.CHECK);
+        chkColumnMode.setText("Let the remote switch between 80 and 132 columns (DECCOLM)");
+        chkColumnMode.setToolTipText("Full-screen applications can request 80- or 132-column mode. "
+            + "Honouring it resizes this window; with it off the request is ignored, and an "
+            + "application expecting 132 columns will draw wrapped, corrupted output.");
+        chkColumnMode.setSelection(settings.allowColumnMode);
+
         // ── Buttons ───────────────────────────────────────────────────────────
         new Label(dlg, SWT.NONE);
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
@@ -212,6 +221,7 @@ public class ConfigurationSettingsDialog {
             settings.terminalType  = termType.isEmpty() ? "xterm-256color" : termType;
             settings.backspaceCode = cmbBackspace.getSelectionIndex() == 1 ? 0x08 : 0x7F;
             settings.sshVerbose    = chkVerbose.getSelection();
+            settings.allowColumnMode = chkColumnMode.getSelection();
 
             confirmed = true;
             dlg.dispose();
