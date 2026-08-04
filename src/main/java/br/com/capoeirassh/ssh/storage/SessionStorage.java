@@ -23,6 +23,15 @@ public final class SessionStorage {
     private static final Path BASE = Path.of(System.getProperty("user.home"), ".capoeira", "sessions");
     private static final String EXT = ".session";
 
+    /** Schema version of the *.session Properties format written by save() below. Absent on
+     *  every file written before this field existed — load() treats a missing value as
+     *  compatible (implicitly this version or earlier), but explicitly rejects a value greater
+     *  than SCHEMA_VERSION, i.e. a file written by a future version of this program whose format
+     *  this build doesn't understand. Without this, a schema change in a newer version (a
+     *  renamed key, a changed value encoding) would otherwise be silently misread as all-defaults
+     *  by an older build instead of being detected and refused. */
+    private static final int SCHEMA_VERSION = 1;
+
     private SessionStorage() {}
 
     // -----------------------------------------------------------------------
@@ -34,6 +43,7 @@ public final class SessionStorage {
         SecureFiles.createDirectories(dir);
 
         Properties p = new Properties();
+        p.setProperty("schemaVersion", String.valueOf(SCHEMA_VERSION));
         p.setProperty("id",       s.id);
         p.setProperty("name",     s.name);
         p.setProperty("host",     s.host);
@@ -171,6 +181,19 @@ public final class SessionStorage {
         } catch (IOException e) {
             return Optional.empty();
         }
+
+        // A file with no schemaVersion property is one written before this field existed —
+        // treated as compatible. A present value greater than SCHEMA_VERSION means a future
+        // version of this program wrote it in a format this build doesn't understand; refuse it
+        // rather than silently loading whatever partial/blank fields getProperty()'s defaults
+        // produce for keys this build doesn't recognize.
+        String verStr = p.getProperty("schemaVersion");
+        if (verStr != null) {
+            int ver;
+            try { ver = Integer.parseInt(verStr.trim()); } catch (NumberFormatException e) { return Optional.empty(); }
+            if (ver > SCHEMA_VERSION) return Optional.empty();
+        }
+
         SessionInfo s   = new SessionInfo();
         String fname    = file.getFileName().toString();
         s.id        = fname.endsWith(EXT) ? fname.substring(0, fname.length() - EXT.length()) : fname;
