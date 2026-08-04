@@ -49,7 +49,6 @@ public class TerminalTab {
     /** Supplies a substitute font for code points termFont has no glyph for. */
     private GlyphFallback glyphFallback;
     private Font  overlayFont;    // cached 16pt bold for the disconnected overlay
-    private Color colSelection;   // selection highlight  (lazy; disposed in dispose)
     private Color colOverlayScrim;// disconnected dim scrim
     private Color colOverlayText; // disconnected "Connection closed" text
     private Color colReconnect;   // disconnected reconnect hint
@@ -127,6 +126,9 @@ public class TerminalTab {
      *  fires on every pixel — and hidden (not disposed) once the resize settles. */
     private Shell resizeIndicator;
     private Label resizeIndicatorLabel;
+
+    /** Overlay for the brief "Copied" confirmation — see {@link #showCopiedIndicator}. */
+    private Shell copiedIndicator;
     /** False until the tab's initial layout has settled. A brand-new tab's canvas gets its real
      *  size synchronously — via {@code tabFolder.setSelection(...)}, called by MainWindow right
      *  after construction, in the same call stack — which fires SWT.Resize exactly like a user
@@ -312,7 +314,24 @@ public class TerminalTab {
         canvas.addListener(SWT.MouseDown, e -> {
             if (disconnected) { triggerReconnect(); return; }
             canvas.setFocus();
-            if (e.button == 1) {
+            if (e.button == 1 && e.count >= 3) {
+                // Triple click: select the whole line, trimmed to its last non-blank
+                // character — selecting all the way to the terminal's right edge would copy
+                // every row padded with trailing spaces out to the full column count.
+                int row = Math.max(0, Math.min(e.y / charHeight, visibleRows() - 1));
+                int cols = emulator.getCols();
+                int endCol = cols - 1;
+                while (endCol > 0) {
+                    TerminalCell c = emulator.getCell(row, endCol, scrollOffset);
+                    if (c != null && c.character != ' ' && c.character != '\0') break;
+                    endCol--;
+                }
+                int absRow = toAbsRow(row);
+                selAnchorCol = 0;      selAnchorRow = absRow;
+                selEndCol    = endCol; selEndRow    = absRow;
+                suppressNextMouseUp = true;
+                canvas.redraw();
+            } else if (e.button == 1) {
                 // Start selection
                 selAnchorCol = e.x / charWidth;
                 selAnchorRow = toAbsRow(e.y / charHeight);
@@ -320,7 +339,17 @@ public class TerminalTab {
                 selEndRow    = selAnchorRow;
                 canvas.redraw();
             } else if (e.button == 3) {
-                pasteFromClipboard();
+                // cmd.exe convention: right-click copies the current selection and clears it if
+                // there is one; with nothing selected, it pastes instead. One button does both
+                // jobs depending on state, rather than needing a separate paste gesture.
+                if (hasSelection()) {
+                    String text = getSelectedText();
+                    if (text != null && !text.isEmpty()) { copyToClipboard(text); showCopiedIndicator(); }
+                    clearSelection();
+                    canvas.redraw();
+                } else {
+                    pasteFromClipboard();
+                }
             }
         });
 
@@ -348,9 +377,11 @@ public class TerminalTab {
             if (suppressNextMouseUp) { suppressNextMouseUp = false; return; }
             selEndCol = Math.max(0, Math.min(e.x / charWidth,  emulator.getCols() - 1));
             selEndRow = toAbsRow(Math.max(0, Math.min(e.y / charHeight, visibleRows() - 1)));
+            // cmd.exe style: finishing a drag only marks the selection (shown in reverse video);
+            // right-click is what copies it (see MouseDown). A zero-width selection (a plain
+            // click) still clears, so a stray click doesn't leave a phantom highlight.
             String text = getSelectedText();
-            if (text != null && !text.isEmpty()) copyToClipboard(text);
-            else clearSelection();
+            if (text == null || text.isEmpty()) clearSelection();
             canvas.redraw();
         });
 
@@ -372,8 +403,6 @@ public class TerminalTab {
             selEndCol    = endCol;   selEndRow    = absRow;
             suppressNextMouseUp = true;
             canvas.redraw();
-            String text = getSelectedText();
-            if (text != null && !text.isEmpty()) copyToClipboard(text);
         });
         canvas.setBackground(defaultBg);
 
@@ -547,6 +576,46 @@ public class TerminalTab {
         if (resizeIndicator != null && !resizeIndicator.isDisposed()) resizeIndicator.setVisible(false);
     }
 
+    /** Brief "Copied" confirmation shown right after a right-click copies a selection to the
+     *  clipboard — reuses the same borderless-overlay look as the resize indicator, but
+     *  auto-dismisses on a timer instead of staying up for as long as a drag continues. */
+    private void showCopiedIndicator() {
+        if (canvas.isDisposed()) return;
+        Shell shell = canvas.getShell();
+        if (shell == null || shell.isDisposed()) return;
+
+        if (copiedIndicator == null || copiedIndicator.isDisposed()) {
+            copiedIndicator = new Shell(shell, SWT.NO_TRIM | SWT.ON_TOP);
+            Color bg = new Color(display, 30, 30, 30);
+            Color fg = new Color(display, 230, 230, 230);
+            copiedIndicator.setBackground(bg);
+            Font indicatorFont = new Font(display, termFont.getFontData()[0].getName(), 12, SWT.BOLD);
+            copiedIndicator.addDisposeListener(e -> { bg.dispose(); fg.dispose(); indicatorFont.dispose(); });
+
+            GridLayout gl = new GridLayout(1, false);
+            gl.marginWidth = 14; gl.marginHeight = 8;
+            copiedIndicator.setLayout(gl);
+
+            Label lbl = new Label(copiedIndicator, SWT.NONE);
+            lbl.setText("Copied");
+            lbl.setBackground(bg);
+            lbl.setForeground(fg);
+            lbl.setFont(indicatorFont);
+        }
+
+        copiedIndicator.pack();
+        Rectangle sb = shell.getBounds();
+        Point sz = copiedIndicator.getSize();
+        // Near the bottom rather than dead centre, so it doesn't sit on top of whatever text
+        // was just selected and copied.
+        copiedIndicator.setLocation(sb.x + (sb.width - sz.x) / 2, sb.y + sb.height - sz.y - 60);
+        copiedIndicator.setVisible(true);
+
+        display.timerExec(900, () -> {
+            if (copiedIndicator != null && !copiedIndicator.isDisposed()) copiedIndicator.setVisible(false);
+        });
+    }
+
     // -----------------------------------------------------------------------
     // Rendering  (double-buffered via off-screen Image)
     // -----------------------------------------------------------------------
@@ -577,6 +646,17 @@ public class TerminalTab {
             int rightMargin = cols * charWidth;
             int bottomMargin = rows * charHeight;
 
+            // Selection bounds, reprojected onto the current viewport (selection is stored as
+            // absolute buffer rows, which move as scrollOffset changes) — computed once here
+            // rather than per cell. selRow0/1 stay -1 when there is no selection or it's
+            // scrolled entirely out of view, so the per-cell check below is a single comparison.
+            int selRow0 = -1, selCol0 = 0, selRow1 = -1, selCol1 = 0;
+            if (selAnchorCol >= 0 && hasSelection()) {
+                int[] norm = normalizedSelection();
+                selRow0 = fromAbsRow(norm[0]); selCol0 = norm[1];
+                selRow1 = fromAbsRow(norm[2]); selCol1 = norm[3];
+            }
+
             for (int r = 0; r < rows; r++) {
                 int lastColBg = -1; // rightmost column's own bg, for right-margin fill
                 for (int c = 0; c < cols; c++) {
@@ -593,6 +673,20 @@ public class TerminalTab {
                     // "negative"). Resolve the sentinel to the real colour before swapping.
                     boolean rev = cell.reverse;
                     if (rev) {
+                        int realFg = (fg < 0) ? defaultFgRgb : fg;
+                        int realBg = (bg < 0) ? defaultBgRgb : bg;
+                        fg = realBg;
+                        bg = realFg;
+                    }
+
+                    // cmd.exe-style selection: swap fg/bg, same as reverse video, rather than a
+                    // translucent tint over already-rendered text — so a selected cell reads
+                    // exactly the way selected text does in a real console. Applying it after
+                    // SGR reverse (rather than instead of it) means a selected cell that was
+                    // already reverse-video correctly reverses back to normal-looking colours,
+                    // matching how a real terminal composes the two.
+                    if (selRow0 >= 0 && r >= selRow0 && r <= selRow1
+                            && (r > selRow0 || c >= selCol0) && (r < selRow1 || c <= selCol1)) {
                         int realFg = (fg < 0) ? defaultFgRgb : fg;
                         int realBg = (bg < 0) ? defaultBgRgb : bg;
                         fg = realBg;
@@ -683,31 +777,6 @@ public class TerminalTab {
                 gc.setBackground(defaultBg);
                 gc.fillRectangle(0, bottomMargin, area.width, area.height - bottomMargin);
             }
-            // ── Selection highlight overlay ──────────────────────────────
-            if (selAnchorCol >= 0 && hasSelection()) {
-                int[] norm = normalizedSelection();
-                // Selection rows are absolute buffer rows; reproject onto the current
-                // viewport (which moves as scrollOffset changes) and clip to what's on
-                // screen right now — the rest of the selection still exists for copying,
-                // it's just scrolled out of view.
-                int r0 = fromAbsRow(norm[0]), c0 = norm[1];
-                int r1 = fromAbsRow(norm[2]), c1 = norm[3];
-                int cr0 = Math.max(r0, 0), cr1 = Math.min(r1, rows - 1);
-                if (cr0 <= cr1) {
-                    gc.setAlpha(80);
-                    if (colSelection == null || colSelection.isDisposed())
-                        colSelection = new Color(display, 100, 160, 255);
-                    gc.setBackground(colSelection);
-                    for (int sr = cr0; sr <= cr1; sr++) {
-                        int sc = (sr == r0) ? c0 : 0;
-                        int ec = (sr == r1) ? c1 : cols - 1;
-                        gc.fillRectangle(sc * charWidth, sr * charHeight,
-                                         (ec - sc + 1) * charWidth, charHeight);
-                    }
-                    gc.setAlpha(255);
-                }
-            }
-
             if (disconnected) {
                 // Semi-transparent gray overlay
                 gc.setAlpha(180);
@@ -1610,7 +1679,7 @@ public class TerminalTab {
             if (overlayFont  != null && !overlayFont.isDisposed())  overlayFont.dispose();
             if (glyphFallback != null) glyphFallback.dispose();
             if (resizeIndicator != null && !resizeIndicator.isDisposed()) resizeIndicator.dispose();
-            if (colSelection    != null && !colSelection.isDisposed())    colSelection.dispose();
+            if (copiedIndicator != null && !copiedIndicator.isDisposed()) copiedIndicator.dispose();
             if (colOverlayScrim != null && !colOverlayScrim.isDisposed()) colOverlayScrim.dispose();
             if (colOverlayText  != null && !colOverlayText.isDisposed())  colOverlayText.dispose();
             if (colReconnect    != null && !colReconnect.isDisposed())    colReconnect.dispose();
