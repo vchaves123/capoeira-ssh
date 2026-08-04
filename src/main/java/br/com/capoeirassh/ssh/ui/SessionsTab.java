@@ -1582,14 +1582,32 @@ public class SessionsTab {
         mb.setText("Delete Sessions");
         mb.setMessage("Delete " + count + " selected session" + (count == 1 ? "" : "s") + "?");
         if (mb.open() != SWT.YES) return;
-        for (String id : new java.util.ArrayList<>(selectedIds)) {
-            sessionOrder.stream().filter(s -> s.id.equals(id)).findFirst().ifPresent(s -> {
-                try { SessionStorage.delete(s); } catch (Exception ignored) {}
-            });
-        }
+        deleteSessionsByIds(selectedIds);
         selectedIds.clear();
         lastClickedId = null;
         reload();
+    }
+
+    /**
+     * Deletes every session whose id is in {@code ids} from disk. Builds an id→SessionInfo map
+     * over {@link #sessionOrder} once up front instead of a linear {@code stream().filter()} scan
+     * per id — the previous version cost O(N·K) (N = total sessions, K = ids to delete), which
+     * meant selecting all N sessions and deleting them cost O(N²). This is O(N+K).
+     *
+     * Package-private (not private) specifically so a test can drive the actual deletion logic
+     * without needing to click through the confirmation {@link MessageBox} above — on Windows
+     * that's a native system dialog, not an SWT widget tree, so it can't be automated the way a
+     * custom SWT {@code Shell} dialog can.
+     */
+    void deleteSessionsByIds(java.util.Collection<String> ids) {
+        java.util.Map<String, SessionInfo> byId = new java.util.HashMap<>();
+        for (SessionInfo s : sessionOrder) byId.put(s.id, s);
+        for (String id : ids) {
+            SessionInfo s = byId.get(id);
+            if (s != null) {
+                try { SessionStorage.delete(s); } catch (Exception ignored) {}
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
