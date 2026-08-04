@@ -77,7 +77,7 @@ class CredentialStoreTest {
     }
 
     private static char[] serializeToChars(List<CredentialEntry> list) throws Exception {
-        Method m = CredentialStore.class.getDeclaredMethod("serialize", List.class);
+        Method m = CredentialStore.class.getDeclaredMethod("serialize", java.util.Collection.class);
         m.setAccessible(true);
         StringBuilder sb = (StringBuilder) m.invoke(null, list);
         char[] out = new char[sb.length()];

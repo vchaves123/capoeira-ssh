@@ -40,7 +40,10 @@ public final class CredentialStore {
 
     private static final long INACTIVITY_MS = 5 * 60 * 1000L; // 5 minutes
 
-    private List<CredentialEntry> entries        = new ArrayList<>();
+    /** Keyed by id so addOrUpdate()/delete()/findById() are O(1) instead of a linear scan over
+     *  every entry — a LinkedHashMap so getAll()/persist() still see entries in a stable,
+     *  insertion-order iteration (matching what a List would have given). */
+    private Map<String, CredentialEntry> entries  = new LinkedHashMap<>();
     /** Raw AES key bytes, held directly instead of wrapped in a SecretKeySpec — SecretKeySpec
      *  advertises Destroyable but destroy() throws DestroyFailedException on this JDK rather
      *  than actually zeroing anything (JDK-8160206, still unresolved), so owning the byte[]
@@ -101,7 +104,7 @@ public final class CredentialStore {
         this.iterations     = CURRENT_ITER;
         this.masterKeyBytes = deriveKeyBytes(masterPassword, salt, CURRENT_ITER);
         Arrays.fill(masterPassword, '\0');
-        this.entries    = new ArrayList<>();
+        this.entries    = new LinkedHashMap<>();
         touch();
         persist();
     }
@@ -169,7 +172,9 @@ public final class CredentialStore {
             char[] plainChars = bytesToChars(plain);
             Arrays.fill(plain, (byte) 0);
             try {
-                this.entries = deserialize(plainChars);
+                Map<String, CredentialEntry> loaded = new LinkedHashMap<>();
+                for (CredentialEntry ce : deserialize(plainChars)) loaded.put(ce.id, ce);
+                this.entries = loaded;
             } finally {
                 Arrays.fill(plainChars, '\0');
             }
@@ -207,12 +212,12 @@ public final class CredentialStore {
     public synchronized void lock() {
         // Zero cached secrets before dropping them so no plaintext password lingers
         // on the heap after the vault is locked (defends against a later heap dump).
-        for (CredentialEntry e : entries) {
+        for (CredentialEntry e : entries.values()) {
             if (e.password != null) Arrays.fill(e.password, '\0');
         }
         if (masterKeyBytes != null) Arrays.fill(masterKeyBytes, (byte) 0);
         masterKeyBytes = null;
-        entries        = new ArrayList<>();
+        entries        = new LinkedHashMap<>();
         salt           = null;
     }
 
@@ -226,20 +231,20 @@ public final class CredentialStore {
      *  lock()/auto-lock while the dialog is still open. */
     public synchronized List<CredentialEntry> getAll() {
         touch();
-        return entries.stream().map(CredentialEntry::copy).toList();
+        return entries.values().stream().map(CredentialEntry::copy).toList();
     }
 
     public synchronized CredentialEntry findById(String id) {
         if (id == null || id.isBlank()) return null;
         touch();
-        return entries.stream().filter(e -> e.id.equals(id)).findFirst().map(CredentialEntry::copy).orElse(null);
+        CredentialEntry e = entries.get(id);
+        return e != null ? e.copy() : null;
     }
 
     public synchronized void addOrUpdate(CredentialEntry e) throws Exception {
         touch();
-        List<CredentialEntry> snapshot = new ArrayList<>(entries);
-        entries.removeIf(x -> x.id.equals(e.id));
-        entries.add(e);
+        Map<String, CredentialEntry> snapshot = new LinkedHashMap<>(entries);
+        entries.put(e.id, e);
         try {
             persist();
         } catch (Exception ex) {
@@ -254,7 +259,7 @@ public final class CredentialStore {
 
     public synchronized void delete(String id) throws Exception {
         touch();
-        entries.removeIf(e -> e.id.equals(id));
+        entries.remove(id);
         persist();
     }
 
@@ -288,7 +293,7 @@ public final class CredentialStore {
         // Serialize without ever forming one immutable String holding the whole
         // plaintext vault (every saved password) — extract into a char[]/byte[]
         // we can explicitly zero once the ciphertext has been produced.
-        StringBuilder sb = serialize(entries);
+        StringBuilder sb = serialize(entries.values());
         char[] plainChars = new char[sb.length()];
         sb.getChars(0, sb.length(), plainChars, 0);
         wipe(sb);
@@ -326,11 +331,11 @@ public final class CredentialStore {
     public synchronized Map<String, String> mergeCredentials(List<br.com.capoeirassh.ssh.model.CredentialEntry> incoming)
             throws Exception {
         if (masterKeyBytes == null) throw new IllegalStateException("Vault is locked.");
-        Set<String> usedLabels = entries.stream()
+        Set<String> usedLabels = entries.values().stream()
                 .map(e -> e.label.toLowerCase())
                 .collect(Collectors.toCollection(java.util.HashSet::new));
 
-        List<CredentialEntry> snapshot = new ArrayList<>(entries);
+        Map<String, CredentialEntry> snapshot = new LinkedHashMap<>(entries);
         Map<String, String> remap = new java.util.LinkedHashMap<>();
         for (br.com.capoeirassh.ssh.model.CredentialEntry imp : incoming) {
             String origId = imp.id;
@@ -340,7 +345,7 @@ public final class CredentialStore {
                 imp.label = imp.label + " (imported)";
             }
             usedLabels.add(imp.label.toLowerCase());
-            entries.add(imp);
+            entries.put(imp.id, imp);
         }
         try {
             persist();
@@ -373,7 +378,7 @@ public final class CredentialStore {
     // Serialization (plaintext inside the vault)
     // -----------------------------------------------------------------------
 
-    private static StringBuilder serialize(List<CredentialEntry> list) {
+    private static StringBuilder serialize(Collection<CredentialEntry> list) {
         // Pre-size to (worst-case) fit every entry without growing — StringBuilder's default
         // growth reallocates into a new backing char[] and abandons the old one (which, mid-way
         // through this loop, already contains prior entries' plaintext passwords) as ordinary
