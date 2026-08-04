@@ -20,6 +20,14 @@ public final class SessionDefaults {
     private static final Path FILE = Path.of(
             System.getProperty("user.home"), ".capoeira", "session-defaults.properties");
 
+    /** Schema version of session-defaults.properties, written by save() below. Absent on every
+     *  file written before this field existed — load() treats a missing value as compatible, but
+     *  refuses (keeps the built-in ConfigurationSettings defaults) a value greater than
+     *  SCHEMA_VERSION, i.e. a file written by a future version of this program in a format this
+     *  build doesn't understand — see the identical fix in SessionStorage/AppearanceSettings for
+     *  the full rationale. */
+    private static final int SCHEMA_VERSION = 1;
+
     private static ConfigurationSettings current = new ConfigurationSettings();
 
     static { load(); }
@@ -47,6 +55,15 @@ public final class SessionDefaults {
         Properties p = new Properties();
         try (InputStream in = Files.newInputStream(FILE)) {
             p.load(in);
+
+            // A file with no schemaVersion is one written before this field existed — treated
+            // as compatible. A present value greater than SCHEMA_VERSION means a future version
+            // wrote it in a format this build doesn't understand; refuse it (keep the current
+            // in-memory defaults) rather than silently applying whatever partial/wrong values
+            // result from keys this build doesn't recognize.
+            String verStr = p.getProperty("schemaVersion");
+            if (verStr != null && Integer.parseInt(verStr.trim()) > SCHEMA_VERSION) return;
+
             ConfigurationSettings c = new ConfigurationSettings();
             c.appearFontSize = Integer.parseInt(p.getProperty("appearFontSize", "0"));
             c.appearFontName = p.getProperty("appearFontName", "");
@@ -72,6 +89,7 @@ public final class SessionDefaults {
 
     private static void save() {
         Properties p = new Properties();
+        p.setProperty("schemaVersion", String.valueOf(SCHEMA_VERSION));
         p.setProperty("appearFontSize", String.valueOf(current.appearFontSize));
         p.setProperty("appearFontName", current.appearFontName);
         p.setProperty("appearFgR", String.valueOf(current.appearFgR));
