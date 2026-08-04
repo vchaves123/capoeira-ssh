@@ -55,14 +55,17 @@ public final class TagRegistry {
      *  safe to call on every session save so any tag typed directly into a session's Tags
      *  field is registered without the user having to pre-create it in the Tag Manager. */
     public static synchronized void register(String tag) {
-        if (tag == null || tag.isBlank() || tags.containsKey(tag)) return;
+        if (tag == null || tag.isBlank() || tag.contains(",") || tags.containsKey(tag)) return;
         tags.put(tag, PALETTE[tags.size() % PALETTE.length]);
         save();
     }
 
-    /** Explicitly creates a tag with a chosen color. @return false if it already exists. */
+    /** Explicitly creates a tag with a chosen color. @return false if it already exists, or if
+     *  the name contains a comma — save() joins every tag name into the single comma-separated
+     *  "_order" property and splits on "," to parse it back, so a comma in a name would silently
+     *  fragment into extra bogus tags on the next load. */
     public static synchronized boolean create(String tag, RGB color) {
-        if (tag == null || tag.isBlank() || tags.containsKey(tag)) return false;
+        if (tag == null || tag.isBlank() || tag.contains(",") || tags.containsKey(tag)) return false;
         tags.put(tag, color);
         save();
         return true;
@@ -77,6 +80,8 @@ public final class TagRegistry {
     /** Renaming onto an existing tag merges them — the existing tag's color wins. */
     public static synchronized void rename(String oldName, String newName) {
         if (!tags.containsKey(oldName)) return;
+        // See create()'s comment for why a comma in a tag name must never be accepted.
+        if (newName != null && newName.contains(",")) return;
         RGB color = tags.remove(oldName);
         tags.putIfAbsent(newName, color);
         save();
@@ -97,7 +102,15 @@ public final class TagRegistry {
         Properties p = new Properties();
         try (InputStream in = Files.newInputStream(FILE)) {
             p.load(in);
-        } catch (IOException e) { return; }
+        } catch (Exception e) {
+            // Properties.load() throws IllegalArgumentException (not IOException) for a
+            // malformed unicode escape in a hand-edited or corrupted tags.properties — this ran
+            // uncaught from the static initializer, so a single bad escape could have crashed
+            // TagRegistry entirely (ExceptionInInitializerError) the first time anything touched
+            // it. Catch broadly, same as the sibling file-backed classes (AppearanceSettings,
+            // SessionDefaults, SessionStorage).
+            return;
+        }
         for (String tag : p.getProperty("_order", "").split(",")) {
             if (tag.isBlank() || tag.length() > MAX_TAG_NAME_LENGTH) continue;
             if (tags.size() >= MAX_TAGS) break;
