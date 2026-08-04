@@ -146,13 +146,18 @@ public final class CredentialStore {
             }
 
             byte[] fileSalt = Arrays.copyOfRange(raw, off, off + SALT_LEN); off += SALT_LEN;
+            int headerEnd   = off;   // end of the self-describing header (v2) — start of IV
             byte[] iv       = Arrays.copyOfRange(raw, off, off + IV_LEN);   off += IV_LEN;
             byte[] cipher   = Arrays.copyOfRange(raw, off, raw.length);
 
             byte[] keyBytes = deriveKeyBytes(masterPassword, fileSalt, iter);
             Cipher aes      = Cipher.getInstance("AES/GCM/NoPadding");
             aes.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(128, iv));
-            byte[] plain    = aes.doFinal(cipher);   // throws AEADBadTagException on wrong key
+            // v2 files bind their whole self-describing header (magic, version, KDF id,
+            // iterations, salt) as AAD — see persist(). v1 files predate AAD entirely and were
+            // encrypted with none, so supplying it here would break every legitimate old v1 file.
+            if (ver == 2) aes.updateAAD(Arrays.copyOfRange(raw, 0, headerEnd));
+            byte[] plain    = aes.doFinal(cipher);   // throws AEADBadTagException on wrong key or tampered header
 
             this.salt           = fileSalt;
             this.iterations     = iter;
@@ -263,6 +268,23 @@ public final class CredentialStore {
         Cipher aes   = Cipher.getInstance("AES/GCM/NoPadding");
         aes.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(masterKeyBytes, "AES"), new GCMParameterSpec(128, iv));
 
+        // Bind the whole self-describing header (magic, version, KDF id, iteration count, salt)
+        // to the ciphertext as GCM additional authenticated data. Salt and iterations already
+        // feed into key derivation, so tampering with them is caught indirectly today — but
+        // binding the entire header by construction means that stays true even if a future
+        // format change adds a header field that doesn't happen to feed into derivation, rather
+        // than depending on every such field being independently re-derived from correctly.
+        byte[] header = new byte[4 + 1 + 1 + 4 + SALT_LEN];
+        int hOff = 0;
+        System.arraycopy(MAGIC, 0, header, hOff, 4); hOff += 4;
+        header[hOff++] = (byte) VERSION;
+        header[hOff++] = (byte) KDF_PBKDF2;
+        int it = this.iterations;
+        header[hOff++] = (byte) (it >>> 24); header[hOff++] = (byte) (it >>> 16);
+        header[hOff++] = (byte) (it >>> 8);  header[hOff++] = (byte) it;
+        System.arraycopy(salt, 0, header, hOff, SALT_LEN);
+        aes.updateAAD(header);
+
         // Serialize without ever forming one immutable String holding the whole
         // plaintext vault (every saved password) — extract into a char[]/byte[]
         // we can explicitly zero once the ciphertext has been produced.
@@ -279,17 +301,10 @@ public final class CredentialStore {
             Arrays.fill(plainBytes, (byte) 0);
         }
 
-        byte[] out = new byte[4 + 1 + 1 + 4 + SALT_LEN + IV_LEN + ciph.length];
-        int off = 0;
-        System.arraycopy(MAGIC,  0, out, off, 4);       off += 4;
-        out[off++] = (byte) VERSION;                     // 2
-        out[off++] = (byte) KDF_PBKDF2;                  // KDF-algo id
-        int it = this.iterations;
-        out[off++] = (byte) (it >>> 24); out[off++] = (byte) (it >>> 16);
-        out[off++] = (byte) (it >>> 8);  out[off++] = (byte) it;
-        System.arraycopy(salt,   0, out, off, SALT_LEN); off += SALT_LEN;
-        System.arraycopy(iv,     0, out, off, IV_LEN);   off += IV_LEN;
-        System.arraycopy(ciph,   0, out, off, ciph.length);
+        byte[] out = new byte[header.length + IV_LEN + ciph.length];
+        System.arraycopy(header, 0, out, 0, header.length);
+        System.arraycopy(iv,     0, out, header.length, IV_LEN);
+        System.arraycopy(ciph,   0, out, header.length + IV_LEN, ciph.length);
 
         SecureFiles.write(VAULT, out);
     }

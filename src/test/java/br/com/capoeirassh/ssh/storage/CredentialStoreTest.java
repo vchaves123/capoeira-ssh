@@ -373,6 +373,32 @@ class CredentialStoreTest {
         assertTrue(ex2.getMessage().contains("Invalid vault KDF iteration count"), "got: " + ex2.getMessage());
     }
 
+    @Test
+    @DisplayName("unlock() rejects a v2 vault whose ciphertext was not bound to its header via AAD")
+    void unlock_rejectsV2CiphertextNotBoundToHeaderViaAad() throws Exception {
+        // Same correct password/salt/iterations/key that persist() would use — the only thing
+        // missing is the AAD binding persist() now applies (magic+version+kdfId+iterations+salt).
+        // A ciphertext encrypted this way (no updateAAD call) is exactly what every vault file
+        // written before this fix looks like, and what an attacker who could rewrite only the
+        // unauthenticated header bytes alongside a captured ciphertext would also produce.
+        int saltLen = staticField_int("SALT_LEN");
+        int ivLen   = staticField_int("IV_LEN");
+        int kdfPbkdf2 = staticField_int("KDF_PBKDF2");
+        byte[] salt = new byte[saltLen], iv = new byte[ivLen];
+        new SecureRandom().nextBytes(salt);
+        new SecureRandom().nextBytes(iv);
+        char[] password = "correct horse".toCharArray();
+
+        byte[] ciphertext = encryptEntries(List.of(), password.clone(), salt, 600_000, iv);
+        byte[] noAadVault = buildV2Vault(kdfPbkdf2, 600_000, salt, iv, ciphertext);
+        Files.write(vaultPath, noAadVault);
+
+        assertThrows(AEADBadTagException.class,
+                () -> CredentialStore.getInstance().unlock(password.clone()),
+                "a v2 ciphertext encrypted without binding the header as AAD must be rejected, "
+              + "even with the objectively correct password/salt/iterations/key");
+    }
+
     private static int staticField_int(String name) throws Exception { return staticField(name); }
 
     // -----------------------------------------------------------------------
