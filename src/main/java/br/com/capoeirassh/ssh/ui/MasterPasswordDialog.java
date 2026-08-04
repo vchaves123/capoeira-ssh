@@ -94,27 +94,53 @@ public class MasterPasswordDialog {
                     lblError.setText("Passwords do not match.");
                     return;
                 }
+            }
+
+            // create()/unlock() run PBKDF2 at 600,000 iterations — long enough on the UI thread
+            // to freeze the window noticeably on every unlock. Run it on a background thread,
+            // same pattern as UpdateChecker.checkNow(): only the result is dispatched back via
+            // asyncExec, so the SWT event loop (this dialog runs its own nested one below) keeps
+            // pumping the whole time.
+            lblError.setText("");
+            String originalOkText = btnOk.getText();
+            btnOk.setEnabled(false);
+            btnCancel.setEnabled(false);
+            btnOk.setText(createMode ? "Creating…" : "Unlocking…");
+
+            Display display = dlg.getDisplay();
+            Thread t = new Thread(() -> {
+                String errorMessage = null;
+                boolean wrongPassword = false;
                 try {
-                    CredentialStore.getInstance().create(pw); // zeroes pw internally
-                    result[0] = true;
-                    dlg.dispose();
-                } catch (Exception ex) {
-                    java.util.Arrays.fill(pw, '\0');
-                    lblError.setText("Error: " + ex.getMessage());
-                }
-            } else {
-                try {
-                    CredentialStore.getInstance().unlock(pw); // zeroes pw internally
-                    result[0] = true;
-                    dlg.dispose();
+                    if (createMode) {
+                        CredentialStore.getInstance().create(pw); // zeroes pw internally
+                    } else {
+                        CredentialStore.getInstance().unlock(pw); // zeroes pw internally
+                    }
                 } catch (javax.crypto.AEADBadTagException ex) {
                     java.util.Arrays.fill(pw, '\0');
-                    lblError.setText("Wrong password.");
+                    wrongPassword = true;
                 } catch (Exception ex) {
                     java.util.Arrays.fill(pw, '\0');
-                    lblError.setText("Error: " + ex.getMessage());
+                    errorMessage = "Error: " + ex.getMessage();
                 }
-            }
+                String finalErrorMessage = errorMessage;
+                boolean finalWrongPassword = wrongPassword;
+                display.asyncExec(() -> {
+                    if (dlg.isDisposed()) return;
+                    if (finalErrorMessage == null && !finalWrongPassword) {
+                        result[0] = true;
+                        dlg.dispose();
+                    } else {
+                        btnOk.setEnabled(true);
+                        btnCancel.setEnabled(true);
+                        btnOk.setText(originalOkText);
+                        lblError.setText(finalWrongPassword ? "Wrong password." : finalErrorMessage);
+                    }
+                });
+            }, createMode ? "vault-create" : "vault-unlock");
+            t.setDaemon(true);
+            t.start();
         });
 
         // Pack to each widget's own natural size on the current platform/DPI instead of
