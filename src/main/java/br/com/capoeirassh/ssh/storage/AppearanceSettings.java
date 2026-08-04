@@ -44,20 +44,32 @@ public class AppearanceSettings {
         Properties p = new Properties();
         try (InputStream in = Files.newInputStream(FILE)) {
             p.load(in);
+        } catch (Exception ignored) {
+            return;
+        }
 
-            // A file with no schemaVersion is one written before this field existed — treated
-            // as compatible. A present value greater than SCHEMA_VERSION means a future version
-            // wrote it in a format this build doesn't understand; refuse it (keep the built-in
-            // defaults) rather than silently applying whatever partial/wrong values result from
-            // keys this build doesn't recognize.
-            String verStr = p.getProperty("schemaVersion");
-            if (verStr != null && Integer.parseInt(verStr.trim()) > SCHEMA_VERSION) return;
+        // A file with no schemaVersion is one written before this field existed — treated
+        // as compatible. A present value greater than SCHEMA_VERSION means a future version
+        // wrote it in a format this build doesn't understand; refuse it (keep the built-in
+        // defaults) rather than silently applying whatever partial/wrong values result from
+        // keys this build doesn't recognize. An unparseable version string is treated as
+        // compatible too — it's far more likely to be accidental file corruption than a real
+        // future-version marker, and the per-field fallbacks below already handle that safely.
+        String verStr = p.getProperty("schemaVersion");
+        if (verStr != null && parseIntOr(verStr, SCHEMA_VERSION) > SCHEMA_VERSION) return;
 
-            fontSize = Integer.parseInt(p.getProperty("fontSize", "12"));
-            fontName = p.getProperty("fontName", "Consolas");
-            fgColor  = parseRgb(p.getProperty("fgColor", "255,176,0"));
-            bgColor  = parseRgb(p.getProperty("bgColor", "0,0,0"));
-        } catch (Exception ignored) {}
+        // Each field falls back to its own default independently — parseIntOr()/parseRgb()
+        // never throw — so one corrupted value (e.g. a hand-edited or truncated fontSize) no
+        // longer discards every other still-valid field in the file, unlike the single
+        // all-or-nothing try/catch this replaced.
+        fontSize = parseIntOr(p.getProperty("fontSize", "12"), 12);
+        fontName = p.getProperty("fontName", "Consolas");
+        fgColor  = parseRgb(p.getProperty("fgColor", "255,176,0"));
+        bgColor  = parseRgb(p.getProperty("bgColor", "0,0,0"));
+    }
+
+    private static int parseIntOr(String s, int def) {
+        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
     }
 
     private static void save() {

@@ -55,36 +55,46 @@ public final class SessionDefaults {
         Properties p = new Properties();
         try (InputStream in = Files.newInputStream(FILE)) {
             p.load(in);
+        } catch (Exception ignored) {
+            return;
+        }
 
-            // A file with no schemaVersion is one written before this field existed — treated
-            // as compatible. A present value greater than SCHEMA_VERSION means a future version
-            // wrote it in a format this build doesn't understand; refuse it (keep the current
-            // in-memory defaults) rather than silently applying whatever partial/wrong values
-            // result from keys this build doesn't recognize.
-            String verStr = p.getProperty("schemaVersion");
-            if (verStr != null && Integer.parseInt(verStr.trim()) > SCHEMA_VERSION) return;
+        // A file with no schemaVersion is one written before this field existed — treated
+        // as compatible. A present value greater than SCHEMA_VERSION means a future version
+        // wrote it in a format this build doesn't understand; refuse it (keep the current
+        // in-memory defaults) rather than silently applying whatever partial/wrong values
+        // result from keys this build doesn't recognize. An unparseable version string is
+        // treated as compatible too, same rationale as AppearanceSettings.
+        String verStr = p.getProperty("schemaVersion");
+        if (verStr != null && parseIntOr(verStr, SCHEMA_VERSION) > SCHEMA_VERSION) return;
 
-            ConfigurationSettings c = new ConfigurationSettings();
-            c.appearFontSize = Integer.parseInt(p.getProperty("appearFontSize", "0"));
-            c.appearFontName = p.getProperty("appearFontName", "");
-            c.appearFgR = Integer.parseInt(p.getProperty("appearFgR", "204"));
-            c.appearFgG = Integer.parseInt(p.getProperty("appearFgG", "204"));
-            c.appearFgB = Integer.parseInt(p.getProperty("appearFgB", "204"));
-            c.appearBgR = Integer.parseInt(p.getProperty("appearBgR", "0"));
-            c.appearBgG = Integer.parseInt(p.getProperty("appearBgG", "0"));
-            c.appearBgB = Integer.parseInt(p.getProperty("appearBgB", "0"));
-            c.logEnabled  = Boolean.parseBoolean(p.getProperty("logEnabled", "false"));
-            c.logDir      = p.getProperty("logDir", "");
-            c.logFileName = p.getProperty("logFileName", "");
-            c.terminalType  = p.getProperty("terminalType", "xterm-256color");
-            c.backspaceCode = Integer.parseInt(p.getProperty("backspaceCode", "127"));
-            // Match SessionStorage's clamp: only DEL (0x7F) or BS (0x08) are valid; anything
-            // else would be narrowed to an arbitrary byte and sent to the SSH server.
-            if (c.backspaceCode != 0x08 && c.backspaceCode != 0x7F) c.backspaceCode = 0x7F;
-            c.sshVerbose = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
-            c.allowColumnMode = Boolean.parseBoolean(p.getProperty("allowColumnMode", "true"));
-            current = c;
-        } catch (Exception ignored) {}
+        // Each field falls back to its own default independently, so one corrupted value no
+        // longer discards every other still-valid field in the file, unlike the single
+        // all-or-nothing try/catch this replaced.
+        ConfigurationSettings c = new ConfigurationSettings();
+        c.appearFontSize = parseIntOr(p.getProperty("appearFontSize", "0"), 0);
+        c.appearFontName = p.getProperty("appearFontName", "");
+        c.appearFgR = parseIntOr(p.getProperty("appearFgR", "204"), 204);
+        c.appearFgG = parseIntOr(p.getProperty("appearFgG", "204"), 204);
+        c.appearFgB = parseIntOr(p.getProperty("appearFgB", "204"), 204);
+        c.appearBgR = parseIntOr(p.getProperty("appearBgR", "0"), 0);
+        c.appearBgG = parseIntOr(p.getProperty("appearBgG", "0"), 0);
+        c.appearBgB = parseIntOr(p.getProperty("appearBgB", "0"), 0);
+        c.logEnabled  = Boolean.parseBoolean(p.getProperty("logEnabled", "false"));
+        c.logDir      = p.getProperty("logDir", "");
+        c.logFileName = p.getProperty("logFileName", "");
+        c.terminalType  = p.getProperty("terminalType", "xterm-256color");
+        c.backspaceCode = parseIntOr(p.getProperty("backspaceCode", "127"), 127);
+        // Match SessionStorage's clamp: only DEL (0x7F) or BS (0x08) are valid; anything
+        // else would be narrowed to an arbitrary byte and sent to the SSH server.
+        if (c.backspaceCode != 0x08 && c.backspaceCode != 0x7F) c.backspaceCode = 0x7F;
+        c.sshVerbose = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
+        c.allowColumnMode = Boolean.parseBoolean(p.getProperty("allowColumnMode", "true"));
+        current = c;
+    }
+
+    private static int parseIntOr(String s, int def) {
+        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
     }
 
     private static void save() {
