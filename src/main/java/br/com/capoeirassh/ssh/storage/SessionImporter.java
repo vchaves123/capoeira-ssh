@@ -195,7 +195,7 @@ public final class SessionImporter {
 
             // SSH bookmarks start with "#109#" (MobaXterm's internal session-type code).
             if (!value.startsWith("#109#")) continue;
-            String[] fields = value.split("%");
+            String[] fields = splitBookmarkFields(value);
             // fields[0] = "#109#0"; host/port/username follow at fixed positions.
             if (fields.length < 4) continue;
 
@@ -210,6 +210,17 @@ public final class SessionImporter {
             out.add(s);
         }
         return out;
+    }
+
+    /** Only fields[1..3] (host/port/username) of an SSH bookmark line are ever read — capping
+     *  the split here means a corrupted or hostile .ini line packed with '%' characters (still
+     *  well within the file's own MAX_IMPORT_FILE_BYTES cap) can't force an uncapped
+     *  {@code String.split} to allocate one array element per '%' occurrence, most of which
+     *  would be discarded immediately by the {@code fields.length < 4} check anyway. */
+    private static final int MAX_BOOKMARK_FIELDS = 6;
+
+    private static String[] splitBookmarkFields(String value) {
+        return value.split("%", MAX_BOOKMARK_FIELDS);
     }
 
     /**
