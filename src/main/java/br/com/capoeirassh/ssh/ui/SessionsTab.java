@@ -1390,7 +1390,43 @@ public class SessionsTab {
                 try { SessionStorage.save(s); } catch (Exception ignored) {}
             }
         }
-        reload();
+
+        sessionOrder.clear();
+        sessionOrder.addAll(order);
+        reorderRowWidgets(order);
+    }
+
+    /**
+     * Repositions the existing row widgets to match {@code order} in place, instead of paying
+     * reload()'s O(N) cost of re-reading every session file from disk and disposing/rebuilding
+     * every row from scratch — reordering the whole list one drag at a time (a natural way to
+     * organize a large list) previously cost O(N) per drag on top of the already-necessary
+     * per-shifted-session disk writes, i.e. O(N²) cumulative for N drags just from the rebuild
+     * alone. {@code Control.moveAbove}/{@code moveBelow} reorders a composite's children without
+     * disposing them, and {@code GridLayout} (this method's caller only ever runs in List view,
+     * the only view {@link #commitRowReorder} is reachable from) lays children out in that same
+     * order.
+     *
+     * Package-private (not private) so a test can drive it directly and measure it against
+     * reload(), without needing to simulate a pixel-accurate mouse drag through
+     * {@link #commitRowReorder}.
+     */
+    void reorderRowWidgets(java.util.List<SessionInfo> order) {
+        if (listContainer == null || listContainer.isDisposed()) return;
+        Control prev = null;
+        for (SessionInfo s : order) {
+            Composite row = rowById.get(s.id);
+            if (row == null || row.isDisposed()) continue;
+            if (prev == null) row.moveAbove(null);
+            else row.moveBelow(prev);
+            prev = row;
+        }
+        listContainer.layout(true, true);
+        if (scrolled != null && !scrolled.isDisposed() && innerComposite != null && !innerComposite.isDisposed()) {
+            innerComposite.layout(true, true);
+            int cw = scrolled.getClientArea().width;
+            scrolled.setMinSize(innerComposite.computeSize(cw > 0 ? cw : SWT.DEFAULT, SWT.DEFAULT));
+        }
     }
 
     /** Selection click/keyboard wiring + right-click context menu — shared by the flat
