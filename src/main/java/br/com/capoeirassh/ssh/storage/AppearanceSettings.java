@@ -17,6 +17,13 @@ public class AppearanceSettings {
     private static RGB fgColor  = new RGB(232, 184, 75);  // Ouro #E8B84B
     private static RGB bgColor  = new RGB(0,   0,   0  );
 
+    /** Schema version of appearance.properties, written by save() below. Absent on every file
+     *  written before this field existed — load() treats a missing value as compatible, but
+     *  refuses (keeps the built-in defaults above) a value greater than SCHEMA_VERSION, i.e. a
+     *  file written by a future version of this program in a format this build doesn't
+     *  understand — see the identical fix in SessionStorage for the full rationale. */
+    private static final int SCHEMA_VERSION = 1;
+
     static { load(); }
 
     public static int    getFontSize() { return fontSize; }
@@ -37,6 +44,15 @@ public class AppearanceSettings {
         Properties p = new Properties();
         try (InputStream in = Files.newInputStream(FILE)) {
             p.load(in);
+
+            // A file with no schemaVersion is one written before this field existed — treated
+            // as compatible. A present value greater than SCHEMA_VERSION means a future version
+            // wrote it in a format this build doesn't understand; refuse it (keep the built-in
+            // defaults) rather than silently applying whatever partial/wrong values result from
+            // keys this build doesn't recognize.
+            String verStr = p.getProperty("schemaVersion");
+            if (verStr != null && Integer.parseInt(verStr.trim()) > SCHEMA_VERSION) return;
+
             fontSize = Integer.parseInt(p.getProperty("fontSize", "12"));
             fontName = p.getProperty("fontName", "Consolas");
             fgColor  = parseRgb(p.getProperty("fgColor", "255,176,0"));
@@ -46,6 +62,7 @@ public class AppearanceSettings {
 
     private static void save() {
         Properties p = new Properties();
+        p.setProperty("schemaVersion", String.valueOf(SCHEMA_VERSION));
         p.setProperty("fontSize", String.valueOf(fontSize));
         p.setProperty("fontName", fontName);
         p.setProperty("fgColor",  fgColor.red + "," + fgColor.green + "," + fgColor.blue);
