@@ -257,15 +257,30 @@ public class SessionDialog {
             ce.password = txtPwd.getTextChars();
             ce.keyPath  = useKey ? txtKey.getText().trim() : "";
 
-            try { store.addOrUpdate(ce); }
-            catch (Exception ex) { alert(dlg, "Could not save credential:\n" + ex.getMessage()); return; }
-
-            reloadCredItems.run();
-            List<CredentialEntry> creds = credsRef.get();
-            for (int i = 0; i < creds.size(); i++) {
-                if (creds.get(i).id.equals(ce.id)) { lockedIdx[0] = i; break; }
-            }
-            applyLockedCredential[0].run();
+            // addOrUpdate() calls CredentialStore.persist(), which AES-GCM encrypts and writes
+            // the whole vault file to disk — background it, same pattern used elsewhere.
+            btnSaveCred.setEnabled(false);
+            Display display = dlg.getDisplay();
+            new Thread(() -> {
+                String errorMessage = null;
+                try { store.addOrUpdate(ce); }
+                catch (Exception ex) { errorMessage = ex.getMessage(); }
+                String finalError = errorMessage;
+                display.asyncExec(() -> {
+                    if (dlg.isDisposed()) return;
+                    btnSaveCred.setEnabled(true);
+                    if (finalError != null) {
+                        alert(dlg, "Could not save credential:\n" + finalError);
+                        return;
+                    }
+                    reloadCredItems.run();
+                    List<CredentialEntry> creds = credsRef.get();
+                    for (int i = 0; i < creds.size(); i++) {
+                        if (creds.get(i).id.equals(ce.id)) { lockedIdx[0] = i; break; }
+                    }
+                    applyLockedCredential[0].run();
+                });
+            }, "credential-save").start();
         });
 
         // ── Configuration (logging / appearance / terminal type / backspace) ───
@@ -468,25 +483,47 @@ public class SessionDialog {
                 s.name = (u.isEmpty() ? "" : u + "@") + displayHost;
             }
 
-            try {
-                SessionStorage.save(s);
-                // Delete old file if group changed during edit
-                if (oldGroup != null && !oldGroup.equals(s.group)) {
-                    SessionInfo ghost = new SessionInfo();
-                    ghost.id    = s.id;
-                    ghost.group = oldGroup;
-                    try { SessionStorage.delete(ghost); } catch (IOException ignored) {}
+            // SessionStorage.save()/delete() write to disk — background it so a slow/contended
+            // ~/.capoeira doesn't freeze the window, same pattern used elsewhere in this dialog.
+            btnSave.setEnabled(false);
+            btnCancel.setEnabled(false);
+            String originalSaveText = btnSave.getText();
+            btnSave.setText("Saving…");
+            Display display = dlg.getDisplay();
+            new Thread(() -> {
+                String errorMessage = null;
+                try {
+                    SessionStorage.save(s);
+                    // Delete old file if group changed during edit
+                    if (oldGroup != null && !oldGroup.equals(s.group)) {
+                        SessionInfo ghost = new SessionInfo();
+                        ghost.id    = s.id;
+                        ghost.group = oldGroup;
+                        try { SessionStorage.delete(ghost); } catch (IOException ignored) {}
+                    }
+                } catch (IOException ex) {
+                    errorMessage = ex.getMessage();
                 }
-                result = s;
-                // Capture the just-typed password ONLY on the new-session manual path, and only
-                // after a successful save — so a failed/retried save never orphans an un-zeroed
-                // copy, and the edit path (which never consumes it) cannot leak it. The caller
-                // (openTerminal) zeroes this array after pre-filling the first Connect dialog.
-                if (editing == null && lockedIdx[0] < 0) enteredPassword = txtPwd.getTextChars();
-                dlg.dispose();
-            } catch (IOException ex) {
-                alert(dlg, "Failed to save session:\n" + ex.getMessage());
-            }
+                String finalError = errorMessage;
+                display.asyncExec(() -> {
+                    if (dlg.isDisposed()) return;
+                    if (finalError == null) {
+                        result = s;
+                        // Capture the just-typed password ONLY on the new-session manual path, and
+                        // only after a successful save — so a failed/retried save never orphans an
+                        // un-zeroed copy, and the edit path (which never consumes it) cannot leak it.
+                        // The caller (openTerminal) zeroes this array after pre-filling the first
+                        // Connect dialog.
+                        if (editing == null && lockedIdx[0] < 0) enteredPassword = txtPwd.getTextChars();
+                        dlg.dispose();
+                    } else {
+                        btnSave.setEnabled(true);
+                        btnCancel.setEnabled(true);
+                        btnSave.setText(originalSaveText);
+                        alert(dlg, "Failed to save session:\n" + finalError);
+                    }
+                });
+            }, "session-save").start();
         });
 
         dlg.open();

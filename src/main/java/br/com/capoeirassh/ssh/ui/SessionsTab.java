@@ -1639,10 +1639,20 @@ public class SessionsTab {
         mb.setText("Delete Sessions");
         mb.setMessage("Delete " + count + " selected session" + (count == 1 ? "" : "s") + "?");
         if (mb.open() != SWT.YES) return;
-        deleteSessionsByIds(selectedIds);
-        selectedIds.clear();
-        lastClickedId = null;
-        reload();
+
+        // deleteSessionsByIds() does one SessionStorage.delete() (disk I/O) per selected id —
+        // background it so deleting a large selection doesn't freeze the window.
+        Set<String> ids = new java.util.HashSet<>(selectedIds);
+        Display display = shell.getDisplay();
+        new Thread(() -> {
+            deleteSessionsByIds(ids);
+            display.asyncExec(() -> {
+                if (shell.isDisposed()) return;
+                selectedIds.clear();
+                lastClickedId = null;
+                reload();
+            });
+        }, "session-bulk-delete").start();
     }
 
     /**
@@ -1760,17 +1770,31 @@ public class SessionsTab {
         mb.setText("Delete Session");
         mb.setMessage("Delete session \"" + session.name + "\"?");
         if (mb.open() != SWT.YES) return;
-        try {
-            SessionStorage.delete(session);
-        } catch (Exception ex) {
-            MessageBox err = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
-            err.setText("Error");
-            err.setMessage("Could not delete session: " + ex.getMessage());
-            err.open();
-            reload();
-            return;
-        }
-        removeSessionFromUi(session);
+
+        // SessionStorage.delete() is a disk write — background it, same pattern as
+        // deleteSelectedSessions(), so it doesn't freeze the window.
+        Display display = shell.getDisplay();
+        new Thread(() -> {
+            String errorMessage = null;
+            try {
+                SessionStorage.delete(session);
+            } catch (Exception ex) {
+                errorMessage = ex.getMessage();
+            }
+            String finalError = errorMessage;
+            display.asyncExec(() -> {
+                if (shell.isDisposed()) return;
+                if (finalError != null) {
+                    MessageBox err = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+                    err.setText("Error");
+                    err.setMessage("Could not delete session: " + finalError);
+                    err.open();
+                    reload();
+                    return;
+                }
+                removeSessionFromUi(session);
+            });
+        }, "session-delete").start();
     }
 
     /**
@@ -1917,18 +1941,45 @@ public class SessionsTab {
             String path = fd.open();
             if (path == null) { Arrays.fill(pw, '\0'); return; }
 
-            try {
-                BackupBundle.export(Path.of(path), pw, chkVault.getSelection());
-                dlg.dispose();
-                MessageBox ok = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
-                ok.setText("Export successful");
-                ok.setMessage("Backup saved to:\n" + path);
-                ok.open();
-            } catch (Exception ex) {
-                bAlert(dlg, "Export failed:\n" + ex.getMessage());
-            } finally {
-                Arrays.fill(pw, '\0');
-            }
+            // BackupBundle.export() derives a PBKDF2 key at 600,000 iterations, walks/zips the
+            // whole sessions tree, and writes the result to disk — long enough to freeze the
+            // window. Run it on a background thread, same pattern as MasterPasswordDialog: only
+            // the result is dispatched back via asyncExec, so this dialog's own nested event
+            // loop below keeps pumping the whole time.
+            boolean includeVault = chkVault.getSelection();
+            btnExport.setEnabled(false);
+            btnCancel.setEnabled(false);
+            String originalText = btnExport.getText();
+            btnExport.setText("  Exporting…  ");
+            Display display = dlg.getDisplay();
+            Thread t = new Thread(() -> {
+                String errorMessage = null;
+                try {
+                    BackupBundle.export(Path.of(path), pw, includeVault);
+                } catch (Exception ex) {
+                    errorMessage = ex.getMessage();
+                } finally {
+                    Arrays.fill(pw, '\0');
+                }
+                String finalError = errorMessage;
+                display.asyncExec(() -> {
+                    if (dlg.isDisposed()) return;
+                    if (finalError == null) {
+                        dlg.dispose();
+                        MessageBox ok = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
+                        ok.setText("Export successful");
+                        ok.setMessage("Backup saved to:\n" + path);
+                        ok.open();
+                    } else {
+                        btnExport.setEnabled(true);
+                        btnCancel.setEnabled(true);
+                        btnExport.setText(originalText);
+                        bAlert(dlg, "Export failed:\n" + finalError);
+                    }
+                });
+            }, "backup-export");
+            t.setDaemon(true);
+            t.start();
         });
 
         dlg.pack();
@@ -1975,57 +2026,84 @@ public class SessionsTab {
         btnCancel.addListener(SWT.Selection, e -> pwDlg.dispose());
         btnOk.addListener(SWT.Selection, e -> {
             char[] pw = txtPwd.getTextChars();
-            BackupBundle.ImportResult result;
-            try {
-                result = BackupBundle.importBundle(Path.of(path), pw);
-            } catch (Exception ex) {
-                Arrays.fill(pw, '\0');
-                bAlert(pwDlg, "Import failed:\n" + ex.getMessage());
-                return;
-            } finally {
-                Arrays.fill(pw, '\0');
-            }
-            pwDlg.dispose();
 
-            // Merge credentials (if any) and build credentialId remap
-            java.util.Map<String, String> credRemap = java.util.Collections.emptyMap();
-            int credImported = 0;
-            if (!result.credentials().isEmpty()) {
-                br.com.capoeirassh.ssh.storage.CredentialStore cs =
-                        br.com.capoeirassh.ssh.storage.CredentialStore.getInstance();
-                if (cs.isUnlocked()) {
-                    try {
-                        credRemap = cs.mergeCredentials(result.credentials());
-                        credImported = credRemap.size();
-                    } catch (Exception ex) {
-                        bAlert(shell, "Could not merge credentials:\n" + ex.getMessage());
-                    }
-                } else {
-                    bAlert(shell, result.credentials().size()
-                        + " credential(s) in this backup were skipped because the vault is locked.\n"
-                        + "Unlock your vault and import again to include them.");
+            // Decrypting the backup (PBKDF2, up to 2,000,000 iterations for legacy headers),
+            // merging credentials into the vault, and saving every imported session are all
+            // disk/crypto work — long enough to freeze the window on a large backup. Run the
+            // whole sequence on a background thread, same pattern as MasterPasswordDialog /
+            // openExport: only the final result is dispatched back via asyncExec.
+            btnOk.setEnabled(false);
+            btnCancel.setEnabled(false);
+            String originalText = btnOk.getText();
+            btnOk.setText("  Importing…  ");
+            Display display = pwDlg.getDisplay();
+            Thread t = new Thread(() -> {
+                BackupBundle.ImportResult result;
+                try {
+                    result = BackupBundle.importBundle(Path.of(path), pw);
+                } catch (Exception ex) {
+                    String errMsg = ex.getMessage();
+                    display.asyncExec(() -> {
+                        if (pwDlg.isDisposed()) return;
+                        btnOk.setEnabled(true);
+                        btnCancel.setEnabled(true);
+                        btnOk.setText(originalText);
+                        bAlert(pwDlg, "Import failed:\n" + errMsg);
+                    });
+                    return;
+                } finally {
+                    Arrays.fill(pw, '\0');
                 }
-            }
 
-            // Remap sessions' credentialId, then save
-            final java.util.Map<String, String> remap = credRemap;
-            int saved = 0, failed = 0;
-            for (SessionInfo s : result.sessions()) {
-                if (!s.credentialId.isEmpty() && remap.containsKey(s.credentialId))
-                    s.credentialId = remap.get(s.credentialId);
-                try { SessionStorage.save(s); saved++; }
-                catch (Exception ex) { failed++; }
-            }
-            final int credCount = credImported;
+                // Merge credentials (if any) and build credentialId remap
+                java.util.Map<String, String> credRemap = java.util.Collections.emptyMap();
+                int credImported = 0;
+                String credWarning = null;
+                if (!result.credentials().isEmpty()) {
+                    br.com.capoeirassh.ssh.storage.CredentialStore cs =
+                            br.com.capoeirassh.ssh.storage.CredentialStore.getInstance();
+                    if (cs.isUnlocked()) {
+                        try {
+                            credRemap = cs.mergeCredentials(result.credentials());
+                            credImported = credRemap.size();
+                        } catch (Exception ex) {
+                            credWarning = "Could not merge credentials:\n" + ex.getMessage();
+                        }
+                    } else {
+                        credWarning = result.credentials().size()
+                            + " credential(s) in this backup were skipped because the vault is locked.\n"
+                            + "Unlock your vault and import again to include them.";
+                    }
+                }
 
-            reload();
+                // Remap sessions' credentialId, then save
+                final java.util.Map<String, String> remap = credRemap;
+                int saved = 0, failed = 0;
+                for (SessionInfo s : result.sessions()) {
+                    if (!s.credentialId.isEmpty() && remap.containsKey(s.credentialId))
+                        s.credentialId = remap.get(s.credentialId);
+                    try { SessionStorage.save(s); saved++; }
+                    catch (Exception ex) { failed++; }
+                }
+                final int credCount = credImported;
+                final int finalSaved = saved, finalFailed = failed;
+                final String finalCredWarning = credWarning;
 
-            StringBuilder msg = new StringBuilder();
-            msg.append(saved).append(" session").append(saved == 1 ? "" : "s").append(" imported.");
-            if (failed > 0) msg.append("\n").append(failed).append(" could not be saved.");
-            if (credCount > 0) msg.append("\n").append(credCount).append(" credential").append(credCount == 1 ? "" : "s").append(" merged into vault.");
-            MessageBox ok = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
-            ok.setText("Import complete"); ok.setMessage(msg.toString()); ok.open();
+                display.asyncExec(() -> {
+                    if (!pwDlg.isDisposed()) pwDlg.dispose();
+                    reload();
+                    if (finalCredWarning != null) bAlert(shell, finalCredWarning);
+
+                    StringBuilder msg = new StringBuilder();
+                    msg.append(finalSaved).append(" session").append(finalSaved == 1 ? "" : "s").append(" imported.");
+                    if (finalFailed > 0) msg.append("\n").append(finalFailed).append(" could not be saved.");
+                    if (credCount > 0) msg.append("\n").append(credCount).append(" credential").append(credCount == 1 ? "" : "s").append(" merged into vault.");
+                    MessageBox ok = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
+                    ok.setText("Import complete"); ok.setMessage(msg.toString()); ok.open();
+                });
+            }, "backup-import");
+            t.setDaemon(true);
+            t.start();
         });
 
         pwDlg.pack();

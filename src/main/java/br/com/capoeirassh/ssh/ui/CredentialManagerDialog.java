@@ -80,12 +80,12 @@ public class CredentialManagerDialog {
         };
         refresh.run();
 
+        // addOrUpdate()/delete() both call CredentialStore.persist(), which AES-GCM encrypts
+        // and writes the whole vault file to disk — background it so a slow/contended disk
+        // doesn't freeze the window, matching MasterPasswordDialog's pattern.
         btnNew.addListener(SWT.Selection, e -> {
             CredentialEntry entry = editEntry(dlg, null);
-            if (entry != null) {
-                try { store.addOrUpdate(entry); } catch (Exception ex) { error(dlg, ex.getMessage()); }
-                refresh.run();
-            }
+            if (entry != null) runPersist(dlg, () -> store.addOrUpdate(entry), refresh);
         });
 
         btnEdit.addListener(SWT.Selection, e -> {
@@ -93,10 +93,7 @@ public class CredentialManagerDialog {
             if (idx < 0) return;
             CredentialEntry existing = (CredentialEntry) table.getItem(idx).getData();
             CredentialEntry updated  = editEntry(dlg, existing);
-            if (updated != null) {
-                try { store.addOrUpdate(updated); } catch (Exception ex) { error(dlg, ex.getMessage()); }
-                refresh.run();
-            }
+            if (updated != null) runPersist(dlg, () -> store.addOrUpdate(updated), refresh);
         });
 
         btnDelete.addListener(SWT.Selection, e -> {
@@ -107,8 +104,7 @@ public class CredentialManagerDialog {
             mb.setText("Delete credential");
             mb.setMessage("Delete credential \"" + ce + "\"?");
             if (mb.open() != SWT.YES) return;
-            try { store.delete(ce.id); } catch (Exception ex) { error(dlg, ex.getMessage()); }
-            refresh.run();
+            runPersist(dlg, () -> store.delete(ce.id), refresh);
         });
 
         btnLock.addListener(SWT.Selection, e -> { store.lock(); dlg.dispose(); });
@@ -221,6 +217,27 @@ public class CredentialManagerDialog {
         Display d = owner.getDisplay();
         while (!dlg.isDisposed()) { if (!d.readAndDispatch()) d.sleep(); }
         return result[0];
+    }
+
+    /** Runs a {@code CredentialStore} mutation (addOrUpdate/delete, which both call the vault's
+     *  encrypt+write persist()) on a background thread, disabling the dialog meanwhile so no
+     *  second mutation can race it, then refreshes the table back on the UI thread. */
+    private interface ThrowingRunnable { void run() throws Exception; }
+
+    private static void runPersist(Shell dlg, ThrowingRunnable task, Runnable refresh) {
+        dlg.setEnabled(false);
+        Display display = dlg.getDisplay();
+        new Thread(() -> {
+            String errorMessage = null;
+            try { task.run(); } catch (Exception ex) { errorMessage = ex.getMessage(); }
+            String finalError = errorMessage;
+            display.asyncExec(() -> {
+                if (dlg.isDisposed()) return;
+                dlg.setEnabled(true);
+                if (finalError != null) error(dlg, finalError);
+                refresh.run();
+            });
+        }, "credential-persist").start();
     }
 
     // -----------------------------------------------------------------------

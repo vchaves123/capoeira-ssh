@@ -86,23 +86,54 @@ class TagManagerDialog {
         return changed;
     }
 
-    /** Reloads the tag list — a color swatch plus name and current usage count, e.g. "prod (4)". */
+    /** Reloads the tag list — a color swatch plus name and current usage count, e.g. "prod (4)".
+     *  {@code SessionStorage.loadAll()} walks and parses every {@code .session} file on disk, so
+     *  the load happens on a background thread — this method is called after every create/
+     *  rename/recolor/delete, so blocking here would freeze the window on every such action too. */
     private void refreshList() {
-        disposeSwatches();
-        java.util.List<SessionInfo> sessions = SessionStorage.loadAll();
-        Map<String, Integer> counts = new TreeMap<>(String::compareToIgnoreCase);
-        for (String t : TagRegistry.getAll()) counts.put(t, 0);
-        for (SessionInfo s : sessions)
-            for (String t : s.tags) counts.merge(t, 1, Integer::sum);
+        Display display = dlg.getDisplay();
+        new Thread(() -> {
+            java.util.List<SessionInfo> sessions = SessionStorage.loadAll();
+            Map<String, Integer> counts = new TreeMap<>(String::compareToIgnoreCase);
+            for (String t : TagRegistry.getAll()) counts.put(t, 0);
+            for (SessionInfo s : sessions)
+                for (String t : s.tags) counts.merge(t, 1, Integer::sum);
+            java.util.List<String> newRowTags = new java.util.ArrayList<>(counts.keySet());
 
-        rowTags = new java.util.ArrayList<>(counts.keySet());
-        table.removeAll();
-        Display d = table.getDisplay();
-        for (String tag : rowTags) {
-            TableItem item = new TableItem(table, SWT.NONE);
-            item.setText(tag + " (" + counts.get(tag) + ")");
-            item.setImage(swatch(d, TagRegistry.getColor(tag)));
-        }
+            display.asyncExec(() -> {
+                if (dlg.isDisposed()) return;
+                disposeSwatches();
+                rowTags = newRowTags;
+                table.removeAll();
+                Display d = table.getDisplay();
+                for (String tag : rowTags) {
+                    TableItem item = new TableItem(table, SWT.NONE);
+                    item.setText(tag + " (" + counts.get(tag) + ")");
+                    item.setImage(swatch(d, TagRegistry.getColor(tag)));
+                }
+            });
+        }, "tag-list-refresh").start();
+    }
+
+    private interface ThrowingRunnable { void run() throws Exception; }
+
+    /** Runs a disk-mutating call on a background thread, disabling the dialog meanwhile so no
+     *  second action can race it, then runs {@code onSuccess} back on the UI thread (typically
+     *  {@code changed = true; refreshList();}). */
+    private void runBg(ThrowingRunnable task, Runnable onSuccess) {
+        dlg.setEnabled(false);
+        Display display = dlg.getDisplay();
+        new Thread(() -> {
+            String errorMessage = null;
+            try { task.run(); } catch (Exception ex) { errorMessage = ex.getMessage(); }
+            String finalError = errorMessage;
+            display.asyncExec(() -> {
+                if (dlg.isDisposed()) return;
+                dlg.setEnabled(true);
+                if (finalError != null) { error(finalError); return; }
+                onSuccess.run();
+            });
+        }, "tag-manager-bg").start();
     }
 
     private final java.util.List<Image> swatches = new java.util.ArrayList<>();
@@ -148,9 +179,8 @@ class TagManagerDialog {
         cd.setRGB(TagRegistry.getColor(name)); // preview of the auto-assigned color
         RGB chosen = cd.open();
         if (chosen == null) return; // cancelled — don't create a tag with no chosen color
-        TagRegistry.create(name, chosen);
-        changed = true;
-        refreshList();
+        String finalName = name;
+        runBg(() -> TagRegistry.create(finalName, chosen), () -> { changed = true; refreshList(); });
     }
 
     private void renameSelectedTag() {
@@ -168,20 +198,34 @@ class TagManagerDialog {
         if (newName.isBlank() || newName.equals(tag)) return;
         if (newName.contains(",")) { error("Tag names can't contain a comma."); return; }
 
-        TagRegistry.rename(tag, newName);
-        for (SessionInfo s : SessionStorage.loadAll()) {
-            int idx = s.tags.indexOf(tag);
-            if (idx < 0) continue;
-            // Renaming onto an existing tag merges them — drop the duplicate instead of
-            // ending up with the same tag listed twice on one session.
-            if (s.tags.contains(newName)) s.tags.remove(idx);
-            else s.tags.set(idx, newName);
-            try { SessionStorage.save(s); } catch (Exception ex) {
-                error("Failed to rename tag on \"" + s.label() + "\":\n" + ex.getMessage());
+        // Loads and re-saves every session carrying this tag — O(total sessions) disk I/O —
+        // background it so renaming a tag doesn't freeze the window on a large session list.
+        String finalNewName = newName;
+        dlg.setEnabled(false);
+        Display display = dlg.getDisplay();
+        new Thread(() -> {
+            TagRegistry.rename(tag, finalNewName);
+            java.util.List<String> failures = new java.util.ArrayList<>();
+            for (SessionInfo s : SessionStorage.loadAll()) {
+                int idx = s.tags.indexOf(tag);
+                if (idx < 0) continue;
+                // Renaming onto an existing tag merges them — drop the duplicate instead of
+                // ending up with the same tag listed twice on one session.
+                if (s.tags.contains(finalNewName)) s.tags.remove(idx);
+                else s.tags.set(idx, finalNewName);
+                try { SessionStorage.save(s); } catch (Exception ex) {
+                    failures.add(s.label() + ": " + ex.getMessage());
+                }
             }
-        }
-        changed = true;
-        refreshList();
+            display.asyncExec(() -> {
+                if (dlg.isDisposed()) return;
+                dlg.setEnabled(true);
+                changed = true;
+                refreshList();
+                if (!failures.isEmpty())
+                    error("Failed to rename tag on:\n" + String.join("\n", failures));
+            });
+        }, "tag-rename").start();
     }
 
     private void recolorSelectedTag() {
@@ -195,35 +239,56 @@ class TagManagerDialog {
         cd.setRGB(TagRegistry.getColor(tag));
         RGB chosen = cd.open();
         if (chosen == null) return;
-        TagRegistry.setColor(tag, chosen);
-        changed = true;
-        refreshList();
+        runBg(() -> TagRegistry.setColor(tag, chosen), () -> { changed = true; refreshList(); });
     }
 
     private void deleteSelectedTags() {
         java.util.List<String> tags = selectedTags();
         if (tags.isEmpty()) return;
 
-        int affected = 0;
-        for (SessionInfo s : SessionStorage.loadAll())
-            if (s.tags.stream().anyMatch(tags::contains)) affected++;
+        // Both loadAll() (to word the confirmation dialog) and the per-session save pass below
+        // are O(total sessions) disk I/O — background both stages so the window doesn't freeze
+        // while composing the confirmation either, same pattern as GroupManagerDialog.
+        dlg.setEnabled(false);
+        Display display = dlg.getDisplay();
+        new Thread(() -> {
+            int affected = 0;
+            for (SessionInfo s : SessionStorage.loadAll())
+                if (s.tags.stream().anyMatch(tags::contains)) affected++;
+            int finalAffected = affected;
 
-        MessageBox mb = new MessageBox(dlg, SWT.ICON_WARNING | SWT.YES | SWT.NO);
-        mb.setText("Delete Tag" + (tags.size() == 1 ? "" : "s"));
-        String tagList = String.join(", ", tags.stream().map(t -> "\"" + t + "\"").toList());
-        mb.setMessage((tags.size() == 1 ? "Delete tag " + tagList + "?" : "Delete " + tags.size() + " tags (" + tagList + ")?")
-            + (affected == 0 ? "" : "\n\nRemoved from " + affected + " session(s). Sessions themselves are not affected."));
-        if (mb.open() != SWT.YES) return;
+            display.asyncExec(() -> {
+                if (dlg.isDisposed()) return;
+                dlg.setEnabled(true);
 
-        for (SessionInfo s : SessionStorage.loadAll()) {
-            if (!s.tags.removeAll(tags)) continue;
-            try { SessionStorage.save(s); } catch (Exception ex) {
-                error("Failed to remove tag on \"" + s.label() + "\":\n" + ex.getMessage());
-            }
-        }
-        for (String tag : tags) TagRegistry.remove(tag);
-        changed = true;
-        refreshList();
+                MessageBox mb = new MessageBox(dlg, SWT.ICON_WARNING | SWT.YES | SWT.NO);
+                mb.setText("Delete Tag" + (tags.size() == 1 ? "" : "s"));
+                String tagList = String.join(", ", tags.stream().map(t -> "\"" + t + "\"").toList());
+                mb.setMessage((tags.size() == 1 ? "Delete tag " + tagList + "?" : "Delete " + tags.size() + " tags (" + tagList + ")?")
+                    + (finalAffected == 0 ? "" : "\n\nRemoved from " + finalAffected + " session(s). Sessions themselves are not affected."));
+                if (mb.open() != SWT.YES) return;
+
+                dlg.setEnabled(false);
+                new Thread(() -> {
+                    java.util.List<String> failures = new java.util.ArrayList<>();
+                    for (SessionInfo s : SessionStorage.loadAll()) {
+                        if (!s.tags.removeAll(tags)) continue;
+                        try { SessionStorage.save(s); } catch (Exception ex) {
+                            failures.add(s.label() + ": " + ex.getMessage());
+                        }
+                    }
+                    for (String tag : tags) TagRegistry.remove(tag);
+                    display.asyncExec(() -> {
+                        if (dlg.isDisposed()) return;
+                        dlg.setEnabled(true);
+                        changed = true;
+                        refreshList();
+                        if (!failures.isEmpty())
+                            error("Failed to remove tag on:\n" + String.join("\n", failures));
+                    });
+                }, "tag-delete").start();
+            });
+        }, "tag-delete-scan").start();
     }
 
     private void error(String message) {

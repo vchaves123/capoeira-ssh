@@ -74,22 +74,53 @@ class GroupManagerDialog {
         return changed;
     }
 
-    /** Reloads the group list with each name's current session count, e.g. "production (4)". */
+    /** Reloads the group list with each name's current session count, e.g. "production (4)".
+     *  {@code SessionStorage.loadAll()} walks and parses every {@code .session} file on disk, so
+     *  the load happens on a background thread — this method is called after every create/
+     *  rename/delete, so blocking here would freeze the window on every such action too. */
     private void refreshList() {
-        java.util.List<SessionInfo> sessions = SessionStorage.loadAll();
-        Map<String, Integer> counts = new TreeMap<>(String::compareToIgnoreCase);
-        java.util.List<String> groups;
-        try { groups = SessionStorage.loadGroups(); } catch (Exception ex) { groups = java.util.List.of(); }
-        for (String g : groups) counts.put(g, 0);
-        for (SessionInfo s : sessions) {
-            if (s.group != null && !s.group.isBlank())
-                counts.merge(s.group, 1, Integer::sum);
-        }
+        Display display = dlg.getDisplay();
+        new Thread(() -> {
+            java.util.List<SessionInfo> sessions = SessionStorage.loadAll();
+            Map<String, Integer> counts = new TreeMap<>(String::compareToIgnoreCase);
+            java.util.List<String> groups;
+            try { groups = SessionStorage.loadGroups(); } catch (Exception ex) { groups = java.util.List.of(); }
+            for (String g : groups) counts.put(g, 0);
+            for (SessionInfo s : sessions) {
+                if (s.group != null && !s.group.isBlank())
+                    counts.merge(s.group, 1, Integer::sum);
+            }
+            java.util.List<String> newRowGroups = new java.util.ArrayList<>(counts.keySet());
+            Map<String, Integer> finalCounts = counts;
+            display.asyncExec(() -> {
+                if (dlg.isDisposed()) return;
+                rowGroups = newRowGroups;
+                list.removeAll();
+                for (String g : rowGroups) list.add(g + " (" + finalCounts.get(g) + ")");
+                if (rowGroups.isEmpty()) list.add("(no groups yet)");
+            });
+        }, "group-list-refresh").start();
+    }
 
-        rowGroups = new java.util.ArrayList<>(counts.keySet());
-        list.removeAll();
-        for (String g : rowGroups) list.add(g + " (" + counts.get(g) + ")");
-        if (rowGroups.isEmpty()) list.add("(no groups yet)");
+    private interface ThrowingRunnable { void run() throws Exception; }
+
+    /** Runs a disk-mutating {@code SessionStorage} call on a background thread, disabling the
+     *  dialog meanwhile so no second action can race it, then runs {@code onSuccess} back on
+     *  the UI thread (typically {@code changed = true; refreshList();}). */
+    private void runBg(String errorPrefix, ThrowingRunnable task, Runnable onSuccess) {
+        dlg.setEnabled(false);
+        Display display = dlg.getDisplay();
+        new Thread(() -> {
+            String errorMessage = null;
+            try { task.run(); } catch (Exception ex) { errorMessage = ex.getMessage(); }
+            String finalError = errorMessage;
+            display.asyncExec(() -> {
+                if (dlg.isDisposed()) return;
+                dlg.setEnabled(true);
+                if (finalError != null) { error(errorPrefix + finalError); return; }
+                onSuccess.run();
+            });
+        }, "group-manager-bg").start();
     }
 
     /** All currently selected group names (List's own multi-selection). */
@@ -106,13 +137,8 @@ class GroupManagerDialog {
         String name = input.open();
         if (name == null || name.isBlank()) return;
         if (!confirmCollision(name, null)) return;
-        try {
-            SessionStorage.createGroup(name);
-            changed = true;
-            refreshList();
-        } catch (Exception ex) {
-            error("Failed to create group:\n" + ex.getMessage());
-        }
+        runBg("Failed to create group:\n", () -> SessionStorage.createGroup(name),
+            () -> { changed = true; refreshList(); });
     }
 
     private void renameSelectedGroup() {
@@ -127,13 +153,8 @@ class GroupManagerDialog {
         String newName = input.open();
         if (newName == null || newName.isBlank() || newName.equals(group)) return;
         if (!confirmCollision(newName, group)) return;
-        try {
-            SessionStorage.renameGroup(group, newName);
-            changed = true;
-            refreshList();
-        } catch (Exception ex) {
-            error("Failed to rename group:\n" + ex.getMessage());
-        }
+        runBg("Failed to rename group:\n", () -> SessionStorage.renameGroup(group, newName),
+            () -> { changed = true; refreshList(); });
     }
 
     /** If candidateName would land on the same on-disk folder as a differently-named existing
@@ -154,35 +175,56 @@ class GroupManagerDialog {
         java.util.List<String> groups = selectedGroups();
         if (groups.isEmpty()) { error("Select a group first."); return; }
 
-        java.util.List<SessionInfo> allSessions = SessionStorage.loadAll();
-        java.util.List<SessionInfo> members = allSessions.stream()
-            .filter(s -> groups.contains(s.group)).toList();
+        // Both loadAll() (to find affected members, needed just to word the confirmation
+        // dialog) and the move+delete pass below are O(total sessions) disk I/O — background
+        // both stages so the window doesn't freeze while composing the confirmation either.
+        dlg.setEnabled(false);
+        Display display = dlg.getDisplay();
+        new Thread(() -> {
+            java.util.List<SessionInfo> allSessions = SessionStorage.loadAll();
+            java.util.List<SessionInfo> members = allSessions.stream()
+                .filter(s -> groups.contains(s.group)).toList();
+            display.asyncExec(() -> {
+                if (dlg.isDisposed()) return;
+                dlg.setEnabled(true);
 
-        MessageBox mb = new MessageBox(dlg, SWT.ICON_WARNING | SWT.YES | SWT.NO);
-        mb.setText("Delete Group" + (groups.size() == 1 ? "" : "s"));
-        String groupList = String.join(", ", groups.stream().map(g -> "\"" + g + "\"").toList());
-        mb.setMessage((groups.size() == 1
-                ? "Delete group " + groupList + "?"
-                : "Delete " + groups.size() + " groups (" + groupList + ")?")
-            + (members.isEmpty() ? ""
-                : "\n\n" + members.size() + " session(s) inside will be moved to Ungrouped, not deleted."));
-        if (mb.open() != SWT.YES) return;
+                MessageBox mb = new MessageBox(dlg, SWT.ICON_WARNING | SWT.YES | SWT.NO);
+                mb.setText("Delete Group" + (groups.size() == 1 ? "" : "s"));
+                String groupList = String.join(", ", groups.stream().map(g -> "\"" + g + "\"").toList());
+                mb.setMessage((groups.size() == 1
+                        ? "Delete group " + groupList + "?"
+                        : "Delete " + groups.size() + " groups (" + groupList + ")?")
+                    + (members.isEmpty() ? ""
+                        : "\n\n" + members.size() + " session(s) inside will be moved to Ungrouped, not deleted."));
+                if (mb.open() != SWT.YES) return;
 
-        // Move every member out first (same delete-old-file-then-resave pattern as
-        // SessionsTab.moveSessionToGroup) so deleteGroup() then finds an empty directory.
-        for (SessionInfo s : members) {
-            SessionInfo ghost = new SessionInfo();
-            ghost.id = s.id; ghost.group = s.group;
-            try { SessionStorage.delete(ghost); } catch (Exception ignored) {}
-            s.group = "";
-            try { SessionStorage.save(s); } catch (Exception ignored) {}
-        }
-        for (String group : groups) {
-            try { SessionStorage.deleteGroup(group); }
-            catch (Exception ex) { error("Failed to delete group \"" + group + "\":\n" + ex.getMessage()); }
-        }
-        changed = true;
-        refreshList();
+                dlg.setEnabled(false);
+                new Thread(() -> {
+                    // Move every member out first (same delete-old-file-then-resave pattern as
+                    // SessionsTab.moveSessionToGroup) so deleteGroup() then finds an empty directory.
+                    for (SessionInfo s : members) {
+                        SessionInfo ghost = new SessionInfo();
+                        ghost.id = s.id; ghost.group = s.group;
+                        try { SessionStorage.delete(ghost); } catch (Exception ignored) {}
+                        s.group = "";
+                        try { SessionStorage.save(s); } catch (Exception ignored) {}
+                    }
+                    java.util.List<String> failures = new java.util.ArrayList<>();
+                    for (String group : groups) {
+                        try { SessionStorage.deleteGroup(group); }
+                        catch (Exception ex) { failures.add("\"" + group + "\": " + ex.getMessage()); }
+                    }
+                    display.asyncExec(() -> {
+                        if (dlg.isDisposed()) return;
+                        dlg.setEnabled(true);
+                        changed = true;
+                        refreshList();
+                        if (!failures.isEmpty())
+                            error("Failed to delete group(s):\n" + String.join("\n", failures));
+                    });
+                }, "group-delete").start();
+            });
+        }, "group-delete-scan").start();
     }
 
     private void error(String message) {

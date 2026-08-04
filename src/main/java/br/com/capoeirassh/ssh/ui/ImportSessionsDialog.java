@@ -63,12 +63,26 @@ public class ImportSessionsDialog {
         }
 
         btnPutty.addListener(SWT.Selection, e -> {
-            List<SessionInfo> sessions = SessionImporter.fromPutty();
-            if (sessions.isEmpty()) {
-                alert(dlg, "No PuTTY sessions found.");
-            } else {
-                addRows(sessions);
-            }
+            // fromPutty() spawns one "reg query" subprocess per saved PuTTY session on
+            // Windows — O(N) process creations, serially. Run it off the UI thread so a
+            // large PuTTY session list (or a slow/AV-hooked reg.exe) doesn't freeze the window.
+            String originalText = btnPutty.getText();
+            btnPutty.setEnabled(false);
+            btnPutty.setText("Scanning…");
+            Display display = dlg.getDisplay();
+            new Thread(() -> {
+                List<SessionInfo> sessions = SessionImporter.fromPutty();
+                display.asyncExec(() -> {
+                    if (dlg.isDisposed()) return;
+                    btnPutty.setEnabled(true);
+                    btnPutty.setText(originalText);
+                    if (sessions.isEmpty()) {
+                        alert(dlg, "No PuTTY sessions found.");
+                    } else {
+                        addRows(sessions);
+                    }
+                });
+            }, "putty-scan").start();
         });
 
         btnMoba.addListener(SWT.Selection, e -> {
@@ -77,12 +91,26 @@ public class ImportSessionsDialog {
             fd.setFilterExtensions(new String[]{ "*.ini", "*.*" });
             String path = fd.open();
             if (path == null) return;
-            List<SessionInfo> sessions = SessionImporter.fromMobaXtermIni(Path.of(path));
-            if (sessions.isEmpty()) {
-                alert(dlg, "No importable SSH sessions found in that file.");
-            } else {
-                addRows(sessions);
-            }
+
+            // fromMobaXtermIni() reads up to 20 MB and parses it line by line — background it
+            // so a large .ini (especially on a slow/network path) doesn't freeze the window.
+            String originalText = btnMoba.getText();
+            btnMoba.setEnabled(false);
+            btnMoba.setText("Scanning…");
+            Display display = dlg.getDisplay();
+            new Thread(() -> {
+                List<SessionInfo> sessions = SessionImporter.fromMobaXtermIni(Path.of(path));
+                display.asyncExec(() -> {
+                    if (dlg.isDisposed()) return;
+                    btnMoba.setEnabled(true);
+                    btnMoba.setText(originalText);
+                    if (sessions.isEmpty()) {
+                        alert(dlg, "No importable SSH sessions found in that file.");
+                    } else {
+                        addRows(sessions);
+                    }
+                });
+            }, "moba-import").start();
         });
 
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
