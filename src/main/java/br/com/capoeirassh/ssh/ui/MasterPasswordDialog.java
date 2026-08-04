@@ -120,9 +120,22 @@ public class MasterPasswordDialog {
                 } catch (javax.crypto.AEADBadTagException ex) {
                     java.util.Arrays.fill(pw, '\0');
                     wrongPassword = true;
+                    // AEADBadTagException means either a genuinely wrong password OR a
+                    // vault-format incompatibility (this exact line would have caught the
+                    // AAD-binding regression immediately: a v2-no-AAD vault unconditionally
+                    // rejected by a build that required AAD for every v2 file). Logged to the
+                    // app's existing console log (Main redirects System.err there) so a report of
+                    // "wrong password" the user insists is correct can be told apart from an
+                    // actually wrong one after the fact. No password/key material reaches this
+                    // exception or its message.
+                    System.err.println("[vault] unlock() rejected as wrong password at "
+                        + java.time.LocalDateTime.now() + " - " + ex);
                 } catch (Exception ex) {
                     java.util.Arrays.fill(pw, '\0');
                     errorMessage = "Error: " + ex.getMessage();
+                    System.err.println("[vault] " + (createMode ? "create()" : "unlock()")
+                        + " failed at " + java.time.LocalDateTime.now() + ":");
+                    ex.printStackTrace();
                 }
                 String finalErrorMessage = errorMessage;
                 boolean finalWrongPassword = wrongPassword;
