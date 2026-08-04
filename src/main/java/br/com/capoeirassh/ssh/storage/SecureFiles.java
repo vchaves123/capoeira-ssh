@@ -67,7 +67,7 @@ public final class SecureFiles {
      * If the file does not yet exist, it is created with restricted permissions before opening.
      */
     public static OutputStream openAppend(Path path) throws IOException {
-        Files.createDirectories(path.getParent());
+        createDirectories(path.getParent());
         if (POSIX) {
             if (!Files.exists(path)) {
                 Files.createFile(path,
