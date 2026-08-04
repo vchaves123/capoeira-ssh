@@ -121,6 +121,27 @@ public class TerminalTab {
     /** Pending debounced resize runnable; cancelled and rescheduled on every SWT.Resize event. */
     private Runnable pendingResize;
 
+    /** Overlay shown over the main window while its border is being dragged, so the user can see
+     *  the terminal size (in cols x lines, the same numbers sent to the remote PTY) they're
+     *  resizing to. Created lazily, reused across drags rather than recreated per tick — SWT.Resize
+     *  fires on every pixel — and hidden (not disposed) once the resize settles. */
+    private Shell resizeIndicator;
+    private Label resizeIndicatorLabel;
+    /** False until the tab's initial layout has settled. A brand-new tab's canvas gets its real
+     *  size synchronously — via {@code tabFolder.setSelection(...)}, called by MainWindow right
+     *  after construction, in the same call stack — which fires SWT.Resize exactly like a user
+     *  drag would. Arming this only from an asyncExec queued at the end of the constructor means
+     *  it flips true on a later dispatch tick, after that synchronous initial layout is already
+     *  done — so the indicator never flashes on tab creation, but still shows normally for any
+     *  resize that happens once the tab is actually up and running (drag, maximize, restore). */
+    private boolean resizeIndicatorArmed = false;
+    /** Shell maximized/minimized state as of the last resize tick, so a maximize/restore/minimize
+     *  click — which fires a resize exactly like a border drag does — can be told apart from one.
+     *  Lazily initialised (null) so the very first tick, whatever it is, is never mistaken for a
+     *  transition. */
+    private Boolean lastShellMaximized;
+    private Boolean lastShellMinimized;
+
     // -----------------------------------------------------------------------
     // Logging
     // -----------------------------------------------------------------------
@@ -226,6 +247,10 @@ public class TerminalTab {
         startCursorBlink();
 
         startSshThread(info, password);
+
+        // See resizeIndicatorArmed's javadoc: queued here so it flips true only after the
+        // synchronous initial-layout resize the caller (MainWindow) is about to trigger.
+        display.asyncExec(() -> resizeIndicatorArmed = true);
     }
 
     // -----------------------------------------------------------------------
@@ -264,10 +289,12 @@ public class TerminalTab {
         // with the SSH reader thread and UI stutter.
         canvas.addListener(SWT.Resize, e -> {
             disposeOffscreen();   // free old buffer immediately to release memory
+            updateResizeIndicator();
             if (pendingResize != null) display.timerExec(-1, pendingResize);
             pendingResize = () -> {
                 pendingResize = null;
                 if (!canvas.isDisposed()) updateTerminalSize();
+                hideResizeIndicator();
             };
             display.timerExec(80, pendingResize);
         });
@@ -462,6 +489,62 @@ public class TerminalTab {
         emulator.resize(newCols, newRows);
         if (connection.isConnected())
             connection.updatePtySize(newCols, newRows, r.width, r.height);
+    }
+
+    /** Shows (or updates) the "cols x lines" overlay while the window border is being dragged —
+     *  only for the tab actually on screen, since every open tab shares one window and a
+     *  background tab's canvas shouldn't pop an indicator over whatever the user is looking at.
+     *  Deliberately excludes maximize/restore/minimize: those fire a resize exactly like a border
+     *  drag would, but showing the overlay for a single instant jump (rather than a live drag)
+     *  looked wrong in practice, so any tick where the maximized/minimized state just changed is
+     *  treated as one of those, not a drag, and skipped. */
+    private void updateResizeIndicator() {
+        if (!resizeIndicatorArmed) return;
+        if (canvas.isDisposed() || charWidth <= 0 || charHeight <= 0) return;
+        if (tabItem.isDisposed() || tabItem.getParent().getSelection() != tabItem) return;
+        Shell shell = canvas.getShell();
+        if (shell == null || shell.isDisposed()) return;
+
+        boolean maximized = shell.getMaximized();
+        boolean minimized  = shell.getMinimized();
+        boolean transition = (lastShellMaximized != null && lastShellMaximized != maximized)
+                           || (lastShellMinimized != null && lastShellMinimized != minimized);
+        lastShellMaximized = maximized;
+        lastShellMinimized = minimized;
+        if (transition || maximized || minimized) { hideResizeIndicator(); return; }
+
+        Rectangle r = canvas.getClientArea();
+        int liveCols = Math.max(1, r.width  / charWidth);
+        int liveRows = Math.max(1, r.height / charHeight);
+
+        if (resizeIndicator == null || resizeIndicator.isDisposed()) {
+            resizeIndicator = new Shell(shell, SWT.NO_TRIM | SWT.ON_TOP);
+            Color bg = new Color(display, 30, 30, 30);
+            Color fg = new Color(display, 230, 230, 230);
+            resizeIndicator.setBackground(bg);
+            Font indicatorFont = new Font(display, termFont.getFontData()[0].getName(), 16, SWT.BOLD);
+            resizeIndicator.addDisposeListener(e -> { bg.dispose(); fg.dispose(); indicatorFont.dispose(); });
+
+            GridLayout gl = new GridLayout(1, false);
+            gl.marginWidth = 16; gl.marginHeight = 10;
+            resizeIndicator.setLayout(gl);
+
+            resizeIndicatorLabel = new Label(resizeIndicator, SWT.NONE);
+            resizeIndicatorLabel.setBackground(bg);
+            resizeIndicatorLabel.setForeground(fg);
+            resizeIndicatorLabel.setFont(indicatorFont);
+        }
+
+        resizeIndicatorLabel.setText(liveCols + " × " + liveRows);
+        resizeIndicator.pack();
+        Rectangle sb = shell.getBounds();
+        Point sz = resizeIndicator.getSize();
+        resizeIndicator.setLocation(sb.x + (sb.width - sz.x) / 2, sb.y + (sb.height - sz.y) / 2);
+        if (!resizeIndicator.isVisible()) resizeIndicator.setVisible(true);
+    }
+
+    private void hideResizeIndicator() {
+        if (resizeIndicator != null && !resizeIndicator.isDisposed()) resizeIndicator.setVisible(false);
     }
 
     // -----------------------------------------------------------------------
@@ -1526,6 +1609,7 @@ public class TerminalTab {
             if (termFontBold != null && !termFontBold.isDisposed()) termFontBold.dispose();
             if (overlayFont  != null && !overlayFont.isDisposed())  overlayFont.dispose();
             if (glyphFallback != null) glyphFallback.dispose();
+            if (resizeIndicator != null && !resizeIndicator.isDisposed()) resizeIndicator.dispose();
             if (colSelection    != null && !colSelection.isDisposed())    colSelection.dispose();
             if (colOverlayScrim != null && !colOverlayScrim.isDisposed()) colOverlayScrim.dispose();
             if (colOverlayText  != null && !colOverlayText.isDisposed())  colOverlayText.dispose();
