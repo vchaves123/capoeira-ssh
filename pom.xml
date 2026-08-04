@@ -16,6 +16,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <swt.version>3.127.0</swt.version>
         <maven.build.timestamp.format>yyyy-MM-dd HH:mm</maven.build.timestamp.format>
+        <junit.version>5.10.2</junit.version>
     </properties>
 
     <dependencies>
@@ -23,6 +24,13 @@
             <groupId>com.github.mwiede</groupId>
             <artifactId>jsch</artifactId>
             <version>0.2.21</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -127,6 +135,24 @@
                 <version>3.13.0</version>
                 <configuration>
                     <release>21</release>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!-- Tests that touch CredentialStore (a singleton hardcoded to
+                         ~/.capoeira/credentials.vault) must never read or write the real
+                         developer's vault. Surefire forks a separate JVM to run tests, and
+                         CredentialStore's vault path is a static final field resolved once at
+                         class-load time from user.home — so overriding it only for that forked
+                         JVM, before any test class loads, safely redirects it to a directory
+                         under target/ (cleaned by `mvn clean`, never the real home). -->
+                    <systemPropertyVariables>
+                        <user.home>${project.build.directory}/test-home</user.home>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
 
