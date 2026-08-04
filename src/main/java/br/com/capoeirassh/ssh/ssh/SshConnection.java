@@ -230,18 +230,38 @@ public class SshConnection {
             this.port    = port;
         }
 
+        /**
+         * JSch's {@code UserInfo} interface passes no structured reason — only this message
+         * string — so telling a changed host key (possible MITM/DNS-spoofing) apart from an
+         * ordinary first-time connection means sniffing JSch's own wording for the changed-key
+         * case ("WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!",
+         * {@code com.jcraft.jsch.Session#checkHost}). A benign unknown-key prompt instead reads
+         * "The authenticity of host ... can't be established."
+         */
+        static boolean isHostKeyChangedMessage(String message) {
+            return message != null
+                && message.toUpperCase(java.util.Locale.ROOT).contains("IDENTIFICATION HAS CHANGED");
+        }
+
         @Override
         public boolean promptYesNo(String message) {
+            boolean keyChanged = isHostKeyChangedMessage(message);
+
             boolean[] result = {false};
             display.syncExec(() -> {
                 Shell active = display.getActiveShell();
                 MessageBox mb = new MessageBox(
                     active != null ? active : new Shell(display),
-                    SWT.ICON_WARNING | SWT.YES | SWT.NO);
-                mb.setText("Unknown Host Key — " + host + ":" + port);
-                mb.setMessage(message
-                    + "\n\nAccept this host key and continue connecting?\n"
-                    + "The key will be saved to ~/.capoeira/known_hosts.");
+                    (keyChanged ? SWT.ICON_ERROR : SWT.ICON_WARNING) | SWT.YES | SWT.NO);
+                mb.setText(keyChanged
+                    ? "⚠ HOST KEY CHANGED — Possible Attack — " + host + ":" + port
+                    : "Unknown Host Key — " + host + ":" + port);
+                mb.setMessage(message + (keyChanged
+                    ? "\n\nThis will delete the old key and save the new one to "
+                      + "~/.capoeira/known_hosts. Only continue if you are certain this change "
+                      + "is expected (e.g. the server was reinstalled)."
+                    : "\n\nAccept this host key and continue connecting?\n"
+                      + "The key will be saved to ~/.capoeira/known_hosts."));
                 result[0] = mb.open() == SWT.YES;
             });
             return result[0];
