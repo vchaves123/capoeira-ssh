@@ -59,6 +59,10 @@ public class SessionsTab {
     private Composite recentCardsRow;
     private Composite listContainer;
     private Text searchText;
+    /** Pending debounced filter pass — see the search field's SWT.Modify listener. Same
+     *  cancel-and-reschedule pattern as TerminalTab's resize debounce. */
+    private Runnable pendingFilter;
+    private static final int FILTER_DEBOUNCE_MS = 150;
     private Composite aboutIconBox;
     private Composite ioIconBox;
     /** ALL SESSIONS list rendering mode — false = flat list (default), true = cards grouped by group. */
@@ -470,7 +474,24 @@ public class SessionsTab {
         searchText.setForeground(cGrey);
         RowData rdSearch = new RowData(200, SWT.DEFAULT);
         searchText.setLayoutData(rdSearch);
-        searchText.addListener(SWT.Modify, e -> filterList(searchText.getText()));
+        // Debounced: filterList() is O(N) (scans every row and triggers a full layout pass),
+        // and SWT.Modify fires once per keystroke — applying it immediately on every character
+        // means a large list re-scans and re-lays-out itself on every keystroke while typing a
+        // multi-character query, perceptible as typing lag well before N is huge. Coalescing
+        // into one pass shortly after the user stops typing (same cancel-and-reschedule pattern
+        // as TerminalTab's resize debounce) keeps the field itself responsive regardless of N.
+        // Debounced: filterList() is O(N) (scans every row and triggers a full layout pass),
+        // and SWT.Modify fires once per keystroke — applying it immediately on every character
+        // means a large list re-scans and re-lays-out itself on every keystroke while typing a
+        // multi-character query, perceptible as typing lag well before N is huge. Coalescing
+        // into one pass shortly after the user stops typing (same cancel-and-reschedule pattern
+        // as TerminalTab's resize debounce) keeps the field itself responsive regardless of N.
+        searchText.addListener(SWT.Modify, e -> {
+            if (pendingFilter != null) display.timerExec(-1, pendingFilter);
+            String query = searchText.getText();
+            pendingFilter = () -> { pendingFilter = null; filterList(query); };
+            display.timerExec(FILTER_DEBOUNCE_MS, pendingFilter);
+        });
 
         Button btnNew = new Button(rightBar, SWT.PUSH);
         btnNew.setText("+ New Session");
