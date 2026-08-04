@@ -32,13 +32,18 @@ public final class SecureFiles {
     public static void write(Path path, byte[] data) throws IOException {
         Files.createDirectories(path.getParent());
         if (POSIX) {
-            // Write to a temp file then atomically move to avoid a window where
-            // the file exists but has wrong permissions.
+            // Write to a temp file then atomically move to avoid a window where the file exists
+            // but has wrong permissions. The temp file's permissions are set atomically at
+            // creation (via the FileAttribute overload, applied by the same open(2)/creat syscall
+            // that creates the file) rather than by a separate setPosixFilePermissions() call
+            // afterward — the latter would leave the file briefly readable at the process umask's
+            // default permissions before being restricted.
             Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
-            Files.write(tmp, data,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.WRITE);
-            Files.setPosixFilePermissions(tmp, FILE_PERMS);
+            Files.deleteIfExists(tmp); // clear a stale temp file from a prior crash before recreating
+            Files.createFile(tmp, PosixFilePermissions.asFileAttribute(FILE_PERMS));
+            try (OutputStream out = Files.newOutputStream(tmp, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                out.write(data);
+            }
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } else {
             // Same temp-file + atomic-move approach as POSIX, so a crash/power-loss mid-write
