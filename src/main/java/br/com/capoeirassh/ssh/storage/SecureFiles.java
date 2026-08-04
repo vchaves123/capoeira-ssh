@@ -30,7 +30,7 @@ public final class SecureFiles {
      * Write bytes to a file, creating or replacing it, with owner-only permissions.
      */
     public static void write(Path path, byte[] data) throws IOException {
-        Files.createDirectories(path.getParent());
+        createDirectories(path.getParent());
         if (POSIX) {
             // Write to a temp file then atomically move to avoid a window where the file exists
             // but has wrong permissions. The temp file's permissions are set atomically at
