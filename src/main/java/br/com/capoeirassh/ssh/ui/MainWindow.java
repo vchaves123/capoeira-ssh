@@ -395,17 +395,7 @@ public class MainWindow {
         GridData gdNotes = new GridData(SWT.FILL, SWT.FILL, true, true);
         gdNotes.widthHint = 460; gdNotes.heightHint = 260;
         String notesText = info.releaseNotes().isBlank() ? "(no release notes provided)" : info.releaseNotes();
-        try {
-            org.eclipse.swt.browser.Browser browser = new org.eclipse.swt.browser.Browser(dlg, SWT.BORDER);
-            browser.setLayoutData(gdNotes);
-            browser.setText(ReleaseNotesHtml.render(notesText));
-        } catch (SWTError swtError) {
-            // No browser engine available on this system (e.g. WebKitGTK missing on Linux) —
-            // fall back to plain text rather than losing the dialog entirely.
-            Text notes = new Text(dlg, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL | SWT.WRAP | SWT.READ_ONLY);
-            notes.setText(notesText);
-            notes.setLayoutData(gdNotes);
-        }
+        buildNotesArea(dlg, gdNotes, notesText, () -> ReleaseNotesHtml.render(notesText));
 
         Composite btns = new Composite(dlg, SWT.NONE);
         btns.setLayoutData(new GridData(SWT.RIGHT, SWT.CENTER, true, false));
@@ -428,6 +418,34 @@ public class MainWindow {
         dlg.open();
         while (!dlg.isDisposed()) {
             if (!display.readAndDispatch()) display.sleep();
+        }
+    }
+
+    /**
+     * Renders release notes into {@code parent} using an embedded {@link org.eclipse.swt.browser.Browser}
+     * when possible, falling back to a plain-text {@link Text} control if either the platform has
+     * no browser engine ({@link SWTError}, e.g. WebKitGTK missing on Linux) or {@code htmlSupplier}
+     * itself throws. The latter matters because the HTML comes from {@code ReleaseNotesHtml.render()}
+     * over a GitHub release's notes text — content from outside this program, not fully trusted —
+     * so a parsing edge case there must degrade to plain text rather than propagate as an unhandled
+     * exception. If the Browser was already constructed before the failure, it's disposed first so
+     * an empty, half-built Browser doesn't linger alongside the fallback Text.
+     *
+     * Package-private (not private) so a test can inject a throwing {@code htmlSupplier} directly,
+     * without needing to find a real input that makes {@code ReleaseNotesHtml.render()} fail.
+     */
+    void buildNotesArea(Composite parent, GridData layoutData, String notesText,
+                         java.util.function.Supplier<String> htmlSupplier) {
+        org.eclipse.swt.browser.Browser browser = null;
+        try {
+            browser = new org.eclipse.swt.browser.Browser(parent, SWT.BORDER);
+            browser.setLayoutData(layoutData);
+            browser.setText(htmlSupplier.get());
+        } catch (SWTError | RuntimeException error) {
+            if (browser != null && !browser.isDisposed()) browser.dispose();
+            Text notes = new Text(parent, SWT.MULTI | SWT.BORDER | SWT.V_SCROLL | SWT.WRAP | SWT.READ_ONLY);
+            notes.setText(notesText);
+            notes.setLayoutData(layoutData);
         }
     }
 
