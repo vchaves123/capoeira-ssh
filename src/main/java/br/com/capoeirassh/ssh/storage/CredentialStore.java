@@ -102,6 +102,7 @@ public final class CredentialStore {
         this.masterKeyBytes = deriveKeyBytes(masterPassword, salt, CURRENT_ITER);
         Arrays.fill(masterPassword, '\0');
         this.entries    = new ArrayList<>();
+        touch();
         persist();
     }
 

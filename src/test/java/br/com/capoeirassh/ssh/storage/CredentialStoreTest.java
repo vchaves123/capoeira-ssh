@@ -432,4 +432,29 @@ class CredentialStoreTest {
     private static int staticField_int_magicLen() throws Exception {
         return ((byte[]) staticField("MAGIC")).length;
     }
+
+    // -----------------------------------------------------------------------
+    // Auto-lock: create() must touch() so a freshly created, never-accessed vault is still
+    // eligible for the inactivity timer instead of sitting unlocked forever.
+    // -----------------------------------------------------------------------
+
+    private static long instanceLastAccessMs(CredentialStore store) throws Exception {
+        Field f = CredentialStore.class.getDeclaredField("lastAccessMs");
+        f.setAccessible(true);
+        return f.getLong(store);
+    }
+
+    @Test
+    @DisplayName("create() touches lastAccessMs so the auto-lock timer's lastAccessMs>0 guard doesn't skip a freshly-created vault forever")
+    void create_touchesLastAccessMs() throws Exception {
+        CredentialStore store = CredentialStore.getInstance();
+        store.create("master-password".toCharArray());
+
+        long lastAccessMs = instanceLastAccessMs(store);
+        assertTrue(lastAccessMs > 0,
+                "lastAccessMs was " + lastAccessMs + " after create() — the auto-lock timer only "
+              + "fires when lastAccessMs > 0, so a vault that is created and never subsequently "
+              + "read/written (no getAll/addOrUpdate/etc. call) would stay unlocked forever, no "
+              + "matter how long it sits idle");
+    }
 }
