@@ -1702,16 +1702,60 @@ public class SessionsTab {
         MessageBox mb = new MessageBox(shell, SWT.ICON_QUESTION | SWT.YES | SWT.NO);
         mb.setText("Delete Session");
         mb.setMessage("Delete session \"" + session.name + "\"?");
-        if (mb.open() == SWT.YES) {
-            try {
-                SessionStorage.delete(session);
-            } catch (Exception ex) {
-                MessageBox err = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
-                err.setText("Error");
-                err.setMessage("Could not delete session: " + ex.getMessage());
-                err.open();
-            }
+        if (mb.open() != SWT.YES) return;
+        try {
+            SessionStorage.delete(session);
+        } catch (Exception ex) {
+            MessageBox err = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+            err.setText("Error");
+            err.setMessage("Could not delete session: " + ex.getMessage());
+            err.open();
             reload();
+            return;
+        }
+        removeSessionFromUi(session);
+    }
+
+    /**
+     * Removes a single deleted session from the ALL SESSIONS list and RECENT row directly,
+     * instead of paying reload()'s O(N) cost (re-reading every *.session file from disk and
+     * disposing/rebuilding every row/tile) — deleting sessions one at a time (the common way to
+     * declutter a large list) previously cost O(N) per delete, i.e. O(N²) cumulative for N
+     * deletes. Falls back to a full reload() in Card view, whose grouped N×N grid layout needs
+     * recomputing either way when group membership changes.
+     *
+     * Package-private (not private) specifically so a test can drive this directly — same
+     * reason as {@link #deleteSessionsByIds}: the confirmation {@code MessageBox} in
+     * {@link #deleteSession} is a native OS dialog on Windows, not automatable like a custom
+     * SWT {@code Shell} dialog.
+     */
+    void removeSessionFromUi(SessionInfo session) {
+        if (cardView) { reload(); return; }
+
+        sessionOrder.removeIf(s -> s.id.equals(session.id));
+        selectedIds.remove(session.id);
+        if (session.id.equals(lastClickedId)) lastClickedId = null;
+        Composite row = rowById.remove(session.id);
+        if (row != null && !row.isDisposed()) row.dispose();
+        restBgById.remove(session.id);
+
+        if (statSessions != null && !statSessions.isDisposed())
+            statSessions.setText(String.valueOf(sessionOrder.size()));
+
+        Display display = shell.getDisplay();
+        if (recentCardsRow != null && !recentCardsRow.isDisposed()) {
+            for (Control c : recentCardsRow.getChildren()) c.dispose();
+            int cardCount = Math.min(sessionOrder.size(), 3);
+            for (int i = 0; i < cardCount; i++) buildRecentCard(recentCardsRow, display, sessionOrder.get(i));
+            if (sessionOrder.size() < 3) buildAddCard(recentCardsRow, display);
+            recentCardsRow.layout(true, true);
+        }
+
+        if (listContainer != null && !listContainer.isDisposed()) listContainer.layout(true, true);
+        if (scrolled != null && !scrolled.isDisposed() && innerComposite != null && !innerComposite.isDisposed()) {
+            innerComposite.layout(true, true);
+            int cw = scrolled.getClientArea().width;
+            scrolled.setMinSize(innerComposite.computeSize(cw > 0 ? cw : SWT.DEFAULT, SWT.DEFAULT));
         }
     }
 
