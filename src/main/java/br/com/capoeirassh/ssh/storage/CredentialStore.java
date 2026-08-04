@@ -31,7 +31,14 @@ public final class CredentialStore {
 
     private static final Path   VAULT   = Path.of(System.getProperty("user.home"), ".capoeira", "credentials.vault");
     private static final byte[] MAGIC   = {0x44, 0x4D, 0x53, 0x4C};
-    private static final int    VERSION = 2;            // v2 header self-describes KDF params
+    // v1: legacy fixed-iteration format, no self-describing header, no AAD.
+    // v2: self-describing header (KDF id + iteration count), but NOT bound as AAD — this was
+    //     CURRENT_VERSION prior to build 249 and is what every vault file written before that
+    //     fix looks like on disk. Still readable (without AAD) for backward compatibility.
+    // v3: same self-describing header, ALSO bound to the ciphertext as GCM AAD (build 249).
+    //     This is the only format persist() writes going forward.
+    private static final int    VERSION_NO_AAD = 2;
+    private static final int    VERSION = 3;
     private static final int    SALT_LEN = 16;
     private static final int    IV_LEN   = 12;
     private static final int    KDF_PBKDF2   = 1;        // KDF-algo id stored in the v2 header
@@ -131,7 +138,7 @@ public final class CredentialStore {
                 if (raw.length < 4 + 1 + SALT_LEN + IV_LEN + 16)
                     throw new Exception("Not a Capoeira vault file.");
                 iter = LEGACY_ITER;
-            } else if (ver == 2) {                // self-describing header
+            } else if (ver == VERSION_NO_AAD || ver == VERSION) {  // self-describing header
                 if (raw.length < 4 + 1 + 1 + 4 + SALT_LEN + IV_LEN + 16)
                     throw new Exception("Not a Capoeira vault file.");
                 int kdfId = raw[off++] & 0xFF;
@@ -149,17 +156,20 @@ public final class CredentialStore {
             }
 
             byte[] fileSalt = Arrays.copyOfRange(raw, off, off + SALT_LEN); off += SALT_LEN;
-            int headerEnd   = off;   // end of the self-describing header (v2) — start of IV
+            int headerEnd   = off;   // end of the self-describing header (v2/v3) — start of IV
             byte[] iv       = Arrays.copyOfRange(raw, off, off + IV_LEN);   off += IV_LEN;
             byte[] cipher   = Arrays.copyOfRange(raw, off, raw.length);
 
             byte[] keyBytes = deriveKeyBytes(masterPassword, fileSalt, iter);
             Cipher aes      = Cipher.getInstance("AES/GCM/NoPadding");
             aes.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(128, iv));
-            // v2 files bind their whole self-describing header (magic, version, KDF id,
-            // iterations, salt) as AAD — see persist(). v1 files predate AAD entirely and were
-            // encrypted with none, so supplying it here would break every legitimate old v1 file.
-            if (ver == 2) aes.updateAAD(Arrays.copyOfRange(raw, 0, headerEnd));
+            // v3 files bind their whole self-describing header (magic, version, KDF id,
+            // iterations, salt) as AAD — see persist(). v1 files predate AAD entirely, and v2
+            // files (every vault written before this AAD binding was added) were encrypted with
+            // none either — supplying it here would make every legitimate old v1/v2 file
+            // unreadable with the objectively correct password (this broke real vaults once
+            // already; see the regression test for the full story).
+            if (ver == VERSION) aes.updateAAD(Arrays.copyOfRange(raw, 0, headerEnd));
             byte[] plain    = aes.doFinal(cipher);   // throws AEADBadTagException on wrong key or tampered header
 
             this.salt           = fileSalt;
@@ -179,10 +189,13 @@ public final class CredentialStore {
                 Arrays.fill(plainChars, '\0');
             }
 
-            // Transparently upgrade legacy / weaker-KDF vaults to CURRENT_ITER (v2) with a
-            // fresh salt — the password is still in hand here. Best-effort: a read-only vault
-            // dir must never block a successful unlock.
-            if (iter < CURRENT_ITER) {
+            // Transparently upgrade legacy / weaker-KDF vaults to CURRENT_ITER, and any
+            // pre-AAD (v1/v2) vault to the current AAD-bound format, with a fresh salt — the
+            // password is still in hand here. Re-persisting always writes VERSION (current),
+            // so this also carries a v2-at-600k-iterations vault (which the iter check alone
+            // wouldn't touch) onto the AAD-bound format. Best-effort: a read-only vault dir
+            // must never block a successful unlock.
+            if (iter < CURRENT_ITER || ver < VERSION) {
                 byte[] newKeyBytes = null;
                 try {
                     byte[] newSalt = randomBytes(SALT_LEN);

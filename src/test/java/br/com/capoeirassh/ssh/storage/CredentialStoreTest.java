@@ -138,14 +138,28 @@ class CredentialStoreTest {
     }
 
     /** Hand-assembles a v2-format vault file: magic + version(2) + kdfId + iterations(4 BE) +
-     *  salt + iv + ciphertext — same layout persist() writes. */
+     *  salt + iv + ciphertext — same layout persist() wrote before the AAD-binding fix, and what
+     *  every vault file written before that fix looks like on disk. */
     private static byte[] buildV2Vault(int kdfId, int iterations, byte[] salt, byte[] iv, byte[] ciphertext)
             throws Exception {
+        return buildSelfDescribingVault(2, kdfId, iterations, salt, iv, ciphertext);
+    }
+
+    /** Hand-assembles a v3-format vault file: same layout as v2, but this is the version
+     *  persist() actually writes since the AAD-binding fix — the header (magic+version+kdfId+
+     *  iterations+salt) is meant to be bound as GCM AAD when the ciphertext was produced. */
+    private static byte[] buildV3Vault(int kdfId, int iterations, byte[] salt, byte[] iv, byte[] ciphertext)
+            throws Exception {
+        return buildSelfDescribingVault(3, kdfId, iterations, salt, iv, ciphertext);
+    }
+
+    private static byte[] buildSelfDescribingVault(int version, int kdfId, int iterations,
+                                                    byte[] salt, byte[] iv, byte[] ciphertext) throws Exception {
         byte[] magic = staticField("MAGIC");
         byte[] out = new byte[magic.length + 1 + 1 + 4 + salt.length + iv.length + ciphertext.length];
         int off = 0;
         System.arraycopy(magic, 0, out, off, magic.length); off += magic.length;
-        out[off++] = 2; // version
+        out[off++] = (byte) version;
         out[off++] = (byte) kdfId;
         out[off++] = (byte) (iterations >>> 24);
         out[off++] = (byte) (iterations >>> 16);
@@ -155,6 +169,36 @@ class CredentialStoreTest {
         System.arraycopy(iv, 0, out, off, iv.length); off += iv.length;
         System.arraycopy(ciphertext, 0, out, off, ciphertext.length);
         return out;
+    }
+
+    /** Same as {@link #encryptEntries}, but also binds {@code header} as GCM AAD before
+     *  encrypting — mirrors exactly what persist() does for a v3 (current) vault file. */
+    private static byte[] encryptEntriesWithAad(List<CredentialEntry> entries, char[] password, byte[] salt,
+                                                 int iterations, byte[] iv, byte[] header) throws Exception {
+        byte[] keyBytes = deriveKeyBytes(password, salt, iterations);
+        Cipher aes = Cipher.getInstance("AES/GCM/NoPadding");
+        aes.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, "AES"), new GCMParameterSpec(128, iv));
+        aes.updateAAD(header);
+        char[] plainChars = serializeToChars(entries);
+        byte[] plainBytes = new String(plainChars).getBytes(StandardCharsets.UTF_8);
+        return aes.doFinal(plainBytes);
+    }
+
+    /** Builds the exact v3 self-describing header (magic+version+kdfId+iterations+salt) that
+     *  persist()/unlock() bind as AAD. */
+    private static byte[] v3Header(int kdfId, int iterations, byte[] salt) throws Exception {
+        byte[] magic = staticField("MAGIC");
+        byte[] header = new byte[magic.length + 1 + 1 + 4 + salt.length];
+        int off = 0;
+        System.arraycopy(magic, 0, header, off, magic.length); off += magic.length;
+        header[off++] = 3; // version
+        header[off++] = (byte) kdfId;
+        header[off++] = (byte) (iterations >>> 24);
+        header[off++] = (byte) (iterations >>> 16);
+        header[off++] = (byte) (iterations >>> 8);
+        header[off++] = (byte) iterations;
+        System.arraycopy(salt, 0, header, off, salt.length);
+        return header;
     }
 
     // -----------------------------------------------------------------------
@@ -374,13 +418,15 @@ class CredentialStoreTest {
     }
 
     @Test
-    @DisplayName("unlock() rejects a v2 vault whose ciphertext was not bound to its header via AAD")
-    void unlock_rejectsV2CiphertextNotBoundToHeaderViaAad() throws Exception {
-        // Same correct password/salt/iterations/key that persist() would use — the only thing
-        // missing is the AAD binding persist() now applies (magic+version+kdfId+iterations+salt).
-        // A ciphertext encrypted this way (no updateAAD call) is exactly what every vault file
-        // written before this fix looks like, and what an attacker who could rewrite only the
-        // unauthenticated header bytes alongside a captured ciphertext would also produce.
+    @DisplayName("unlock() accepts a pre-existing v2 vault (no AAD) with the correct password")
+    void unlock_acceptsPreExistingV2VaultWithoutAad_forBackwardCompatibility() throws Exception {
+        // Every vault file written before the AAD-binding fix (build 249) is a v2 file whose
+        // ciphertext was never bound to its header via AAD — exactly what this test hand-crafts.
+        // An earlier version of this test asserted unlock() must REJECT this file; that was
+        // itself the bug (build 263 fix): it made unlock() unconditionally require AAD for any
+        // v2 file, so every vault created before build 249 could no longer be opened with its
+        // own objectively correct password. v2 (no AAD) must stay a permanently readable format;
+        // only a v3 file (see below) is required to have a valid AAD-bound header.
         int saltLen = staticField_int("SALT_LEN");
         int ivLen   = staticField_int("IV_LEN");
         int kdfPbkdf2 = staticField_int("KDF_PBKDF2");
@@ -389,14 +435,46 @@ class CredentialStoreTest {
         new SecureRandom().nextBytes(iv);
         char[] password = "correct horse".toCharArray();
 
-        byte[] ciphertext = encryptEntries(List.of(), password.clone(), salt, 600_000, iv);
+        List<CredentialEntry> original = List.of(entry("Prod DB", "admin", "", "s3cr3t!".toCharArray()));
+        byte[] ciphertext = encryptEntries(original, password.clone(), salt, 600_000, iv);
         byte[] noAadVault = buildV2Vault(kdfPbkdf2, 600_000, salt, iv, ciphertext);
         Files.write(vaultPath, noAadVault);
 
+        CredentialStore store = CredentialStore.getInstance();
+        assertDoesNotThrow(() -> store.unlock(password.clone()),
+                "a pre-existing v2 (no-AAD) vault must still unlock with its correct password");
+        assertEquals(1, store.getAll().size());
+        assertEquals("Prod DB", store.getAll().get(0).label);
+    }
+
+    @Test
+    @DisplayName("unlock() rejects a v3 vault whose AAD-bound header was tampered with")
+    void unlock_rejectsV3VaultWithTamperedHeader() throws Exception {
+        // v3 is the only format where the header is actually authenticated — verify tampering
+        // with it (here: the iteration count, post-encryption) is still caught.
+        int saltLen = staticField_int("SALT_LEN");
+        int ivLen   = staticField_int("IV_LEN");
+        int kdfPbkdf2 = staticField_int("KDF_PBKDF2");
+        byte[] salt = new byte[saltLen], iv = new byte[ivLen];
+        new SecureRandom().nextBytes(salt);
+        new SecureRandom().nextBytes(iv);
+        char[] password = "correct horse".toCharArray();
+
+        byte[] header = v3Header(kdfPbkdf2, 600_000, salt);
+        byte[] ciphertext = encryptEntriesWithAad(List.of(), password.clone(), salt, 600_000, iv, header);
+        byte[] vault = buildV3Vault(kdfPbkdf2, 600_000, salt, iv, ciphertext);
+
+        // Flip a bit in the on-disk salt — kdfId/iterations (independently range-checked) are
+        // untouched, so this reaches the AAD check rather than an earlier validation error; the
+        // header actually bound as AAD at encryption time no longer matches what's on disk.
+        int magicLen = staticField_int_magicLen();
+        vault[magicLen + 1 + 1 + 4] ^= 0x01; // first byte of the salt
+        Files.write(vaultPath, vault);
+
         assertThrows(AEADBadTagException.class,
                 () -> CredentialStore.getInstance().unlock(password.clone()),
-                "a v2 ciphertext encrypted without binding the header as AAD must be rejected, "
-              + "even with the objectively correct password/salt/iterations/key");
+                "a v3 ciphertext whose bound header was tampered with must be rejected, even "
+              + "with the objectively correct password/salt/key");
     }
 
     private static int staticField_int(String name) throws Exception { return staticField(name); }
@@ -406,7 +484,7 @@ class CredentialStoreTest {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("unlock() migrates a v1 vault to v2 in place, preserving every entry")
+    @DisplayName("unlock() migrates a v1 vault to the current version in place, preserving every entry")
     void unlock_migratesV1ToV2PreservingEntries() throws Exception {
         char[] password = "correct horse battery staple".toCharArray();
         int legacyIter = staticField_int("LEGACY_ITER");
@@ -445,14 +523,51 @@ class CredentialStoreTest {
             assertArrayEquals(o.password, match.password);
         }
 
-        // The file on disk must now be v2 — migration happened, not just an in-memory load.
+        // The file on disk must now be the current version — migration happened, not just an
+        // in-memory load.
         byte[] afterRaw = Files.readAllBytes(vaultPath);
-        assertEquals(2, afterRaw[versionOffset] & 0xFF, "vault file should have been migrated to v2 on disk");
+        int currentVersion = staticField_int("VERSION");
+        assertEquals(currentVersion, afterRaw[versionOffset] & 0xFF,
+                "vault file should have been migrated to the current version on disk");
 
         // And the migrated file must itself be independently unlockable with the same password.
         store.lock();
         assertDoesNotThrow(() -> store.unlock(password.clone()));
         assertEquals(original.size(), store.getAll().size());
+    }
+
+    @Test
+    @DisplayName("unlock() migrates an existing v2 vault (already at 600k iterations) to the AAD-bound format")
+    void unlock_migratesV2AtCurrentIterationsToAadBoundFormat() throws Exception {
+        // The actual real-world bug this whole test class section exists to prevent a repeat
+        // of: a v2 vault already at CURRENT_ITER never triggered the old "iter < CURRENT_ITER"
+        // upgrade check, so it could never gain the AAD-bound header — and unlock() unconditionally
+        // required AAD for ver == VERSION at the time, so such vaults broke outright (see
+        // unlock_acceptsPreExistingV2VaultWithoutAad_forBackwardCompatibility above). The fix
+        // widened the upgrade trigger to also fire on ver < VERSION regardless of iteration count.
+        char[] password = "correct horse battery staple".toCharArray();
+        int saltLen = staticField_int("SALT_LEN");
+        int ivLen   = staticField_int("IV_LEN");
+        int kdfPbkdf2 = staticField_int("KDF_PBKDF2");
+        byte[] salt = new byte[saltLen], iv = new byte[ivLen];
+        new SecureRandom().nextBytes(salt);
+        new SecureRandom().nextBytes(iv);
+
+        byte[] ciphertext = encryptEntries(List.of(), password.clone(), salt, 600_000, iv);
+        byte[] v2File = buildV2Vault(kdfPbkdf2, 600_000, salt, iv, ciphertext);
+        Files.write(vaultPath, v2File);
+
+        CredentialStore store = CredentialStore.getInstance();
+        store.unlock(password.clone());
+
+        int versionOffset = staticField_int_magicLen();
+        int currentVersion = staticField_int("VERSION");
+        byte[] afterRaw = Files.readAllBytes(vaultPath);
+        assertEquals(currentVersion, afterRaw[versionOffset] & 0xFF,
+                "an at-current-iterations v2 vault must still be migrated to the AAD-bound format");
+
+        store.lock();
+        assertDoesNotThrow(() -> store.unlock(password.clone()));
     }
 
     private static int staticField_int_magicLen() throws Exception {
