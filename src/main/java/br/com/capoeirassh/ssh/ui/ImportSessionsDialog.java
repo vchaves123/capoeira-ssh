@@ -142,10 +142,7 @@ public class ImportSessionsDialog {
         for (SessionInfo s : sessions) {
             // Re-scanning the same source (or a second source with overlapping entries)
             // must not duplicate rows already listed.
-            boolean dup = found.stream().anyMatch(f ->
-                f.host.equalsIgnoreCase(s.host) && f.port == s.port
-                    && f.username.equalsIgnoreCase(s.username) && f.name.equals(s.name));
-            if (dup) continue;
+            if (isDuplicate(found, s)) continue;
             found.add(s);
             TableItem item = new TableItem(table, SWT.NONE);
             item.setText(new String[]{
@@ -153,6 +150,16 @@ public class ImportSessionsDialog {
             });
             item.setChecked(true);
         }
+    }
+
+    /** True if {@code s} matches an entry already in {@code found} on host/port/username
+     *  (case-insensitive) and name (exact) — the criteria used to avoid listing the same session
+     *  twice when re-scanning the same source or importing from a second overlapping one.
+     *  Package-private and static (no Table/widget dependency) so a test can drive it directly. */
+    static boolean isDuplicate(List<SessionInfo> found, SessionInfo s) {
+        return found.stream().anyMatch(f ->
+            f.host.equalsIgnoreCase(s.host) && f.port == s.port
+                && f.username.equalsIgnoreCase(s.username) && f.name.equals(s.name));
     }
 
     private static void alert(Shell parent, String msg) {

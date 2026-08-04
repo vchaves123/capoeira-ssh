@@ -598,4 +598,130 @@ class CredentialStoreTest {
               + "read/written (no getAll/addOrUpdate/etc. call) would stay unlocked forever, no "
               + "matter how long it sits idle");
     }
+
+    // -----------------------------------------------------------------------
+    // lock() heap-zeroing (July 2026 security audit, finding #19, build 136)
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("lock() zeroes the master key bytes IN PLACE, not just drops the reference")
+    void lock_zeroesMasterKeyBytesInPlace() throws Exception {
+        CredentialStore store = CredentialStore.getInstance();
+        store.create("master-password".toCharArray());
+
+        Field f = CredentialStore.class.getDeclaredField("masterKeyBytes");
+        f.setAccessible(true);
+        byte[] keyBytesRef = (byte[]) f.get(store); // capture the array reference BEFORE lock()
+        assertNotNull(keyBytesRef);
+        boolean hadNonZeroByte = false;
+        for (byte b : keyBytesRef) if (b != 0) { hadNonZeroByte = true; break; }
+        assertTrue(hadNonZeroByte, "test setup: a freshly derived 256-bit key is astronomically unlikely to be all-zero");
+
+        store.lock();
+
+        for (byte b : keyBytesRef) {
+            assertEquals(0, b, "every byte of the master key must be zeroed in place on lock() — a heap "
+                  + "dump taken right after locking must never be able to recover it");
+        }
+    }
+
+    @Test
+    @DisplayName("lock() zeroes every cached credential's password char[] IN PLACE")
+    void lock_zeroesCredentialPasswordsInPlace() throws Exception {
+        CredentialStore store = CredentialStore.getInstance();
+        store.create("master-password".toCharArray());
+        CredentialEntry ce = new CredentialEntry();
+        ce.label = "prod"; ce.username = "admin"; ce.password = "s3cr3t!!".toCharArray();
+        store.addOrUpdate(ce);
+
+        char[] passwordRef = ce.password; // same array instance the store now holds internally
+        store.lock();
+
+        for (char c : passwordRef) {
+            assertEquals('\0', c, "every char of a cached credential's password must be zeroed in "
+                  + "place on lock(), not just discarded by reference — same rationale as the master key");
+        }
+    }
+
+    @Test
+    @DisplayName("lock() leaves the vault fully locked: isUnlocked() false and getAll() empty")
+    void lock_leavesVaultFullyLocked() throws Exception {
+        CredentialStore store = CredentialStore.getInstance();
+        store.create("master-password".toCharArray());
+        store.addOrUpdate(entry("prod", "admin", "", "pw".toCharArray()));
+
+        store.lock();
+
+        assertFalse(store.isUnlocked());
+        assertTrue(store.getAll().isEmpty(), "locking must drop the in-memory entry cache, not just the key");
+    }
+
+    // -----------------------------------------------------------------------
+    // mergeCredentials() — used by SessionsTab's "Import from Capoeira backup" flow
+    // (one of the 9 build-263 UI-thread fixes). Package-visible business logic,
+    // no dialog/widget dependency, but had no test of its own until now.
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("mergeCredentials() adds every incoming entry under a NEW id, remapping the original id to it")
+    void mergeCredentials_assignsNewIds_andReturnsTheRemap() throws Exception {
+        CredentialStore store = CredentialStore.getInstance();
+        store.create("master-password".toCharArray());
+
+        CredentialEntry incoming = entry("Imported DB", "bob", "", "pw".toCharArray());
+        String originalId = incoming.id;
+
+        var remap = store.mergeCredentials(List.of(incoming));
+
+        assertEquals(1, remap.size());
+        assertEquals(incoming.id, remap.get(originalId), "the remap must map the ORIGINAL incoming id to whatever new id was assigned");
+        assertNotEquals(originalId, incoming.id, "the imported entry must never keep its original id — "
+              + "it could collide with an id already used by the local vault or another import source");
+
+        var all = store.getAll();
+        assertEquals(1, all.size());
+        assertEquals("Imported DB", all.get(0).label, "no label conflict here — must be imported as-is, unsuffixed");
+    }
+
+    @Test
+    @DisplayName("mergeCredentials() suffixes a label that already exists in the vault, case-insensitively")
+    void mergeCredentials_suffixesConflictingLabel_caseInsensitively() throws Exception {
+        CredentialStore store = CredentialStore.getInstance();
+        store.create("master-password".toCharArray());
+        store.addOrUpdate(entry("Prod DB", "admin", "", "pw1".toCharArray()));
+
+        CredentialEntry incoming = entry("PROD db", "bob", "", "pw2".toCharArray()); // same label, different case
+        store.mergeCredentials(List.of(incoming));
+
+        var all = store.getAll();
+        assertEquals(2, all.size());
+        CredentialEntry imported = all.stream().filter(e -> e.username.equals("bob")).findFirst().orElseThrow();
+        assertEquals("PROD db (imported)", imported.label,
+                "a label that already exists (case-insensitively) must get an ' (imported)' suffix, "
+              + "not silently overwrite or duplicate unlabeled");
+    }
+
+    @Test
+    @DisplayName("mergeCredentials() throws IllegalStateException when the vault is locked")
+    void mergeCredentials_throwsWhenVaultIsLocked() {
+        CredentialStore store = CredentialStore.getInstance();
+        assertFalse(store.isUnlocked(), "test setup: vault must start locked");
+        assertThrows(IllegalStateException.class,
+                () -> store.mergeCredentials(List.of(entry("X", "y", "", "z".toCharArray()))));
+    }
+
+    @Test
+    @DisplayName("mergeCredentials() with multiple incoming entries assigns each its own distinct new id")
+    void mergeCredentials_multipleEntries_eachGetsADistinctNewId() throws Exception {
+        CredentialStore store = CredentialStore.getInstance();
+        store.create("master-password".toCharArray());
+
+        CredentialEntry a = entry("A", "a", "", "pa".toCharArray());
+        CredentialEntry b = entry("B", "b", "", "pb".toCharArray());
+        var remap = store.mergeCredentials(List.of(a, b));
+
+        assertEquals(2, remap.size());
+        assertNotEquals(a.id, b.id, "distinct incoming entries must never collide onto the same new id");
+        assertEquals(2, store.getAll().size());
+    }
 }

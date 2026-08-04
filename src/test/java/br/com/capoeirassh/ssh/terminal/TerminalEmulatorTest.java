@@ -190,6 +190,48 @@ class TerminalEmulatorTest {
     }
 
     @Test
+    @DisplayName("A well-formed OSC 0 title is reported to the listener with its exact text")
+    void osc0_wellFormedTitle_reportedVerbatim() {
+        TerminalEmulator emu = new TerminalEmulator(80, 24);
+        java.util.concurrent.atomic.AtomicReference<String> reported = new java.util.concurrent.atomic.AtomicReference<>();
+        emu.setTitleListener(reported::set);
+        send(emu, ESC + "]0;my-session" + (char) 0x07); // BEL-terminated
+        assertEquals("my-session", reported.get());
+    }
+
+    @Test
+    @DisplayName("OSC Ps values other than 0/2 (e.g. 1, icon-name-only) do not trigger a title change")
+    void osc_nonTitlePsValue_doesNotFireTitleListener() {
+        TerminalEmulator emu = new TerminalEmulator(80, 24);
+        java.util.concurrent.atomic.AtomicReference<String> reported = new java.util.concurrent.atomic.AtomicReference<>();
+        emu.setTitleListener(reported::set);
+        send(emu, ESC + "]1;icon-name-only" + (char) 0x07);
+        assertNull(reported.get(), "Ps=1 (icon name only) must not be treated as a title-changing sequence");
+    }
+
+    @Test
+    @DisplayName("An OSC 0 title containing non-ASCII bytes is decoded as UTF-8, not left as mojibake (build 220)")
+    void osc0_nonAsciiTitle_decodedAsUtf8() {
+        TerminalEmulator emu = new TerminalEmulator(80, 24);
+        java.util.concurrent.atomic.AtomicReference<String> reported = new java.util.concurrent.atomic.AtomicReference<>();
+        emu.setTitleListener(reported::set);
+
+        String title = "Conexão ✓"; // accented char + a non-ASCII symbol
+        byte[] titleUtf8 = title.getBytes(StandardCharsets.UTF_8);
+        byte[] seq = (ESC + "]0;").getBytes(StandardCharsets.ISO_8859_1);
+        byte[] full = new byte[seq.length + titleUtf8.length + 1];
+        System.arraycopy(seq, 0, full, 0, seq.length);
+        System.arraycopy(titleUtf8, 0, full, seq.length, titleUtf8.length);
+        full[full.length - 1] = 0x07; // BEL
+
+        emu.processBytes(full);
+
+        assertEquals(title, reported.get(),
+                "a title with non-ASCII bytes must be decoded as UTF-8, not surfaced as raw "
+              + "byte-per-char mojibake (the actual build-220 bug)");
+    }
+
+    @Test
     @DisplayName("An unterminated OSC title is capped at MAX_OSC_LEN instead of growing without bound")
     void oscWithoutTerminator_bufferCappedAtMaxLen() {
         TerminalEmulator emu = new TerminalEmulator(80, 24);
@@ -609,6 +651,36 @@ class TerminalEmulatorTest {
               + "reverted — MC does its own differential redraw from that state");
     }
 
+    // -----------------------------------------------------------------------
+    // Response-queue cap (July 2026 security audit, finding #28, build 140) — a hostile server
+    // streaming endless DSR/DA/XTWINOPS requests must not grow pendingResponses unbounded.
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Queued terminal responses (DSR) are capped at MAX_PENDING_RESPONSES, not grown unbounded")
+    void responseQueue_cappedAtMaxPendingResponses() throws Exception {
+        TerminalEmulator emu = new TerminalEmulator(80, 24);
+        int cap = staticIntField("MAX_PENDING_RESPONSES");
+
+        // Request far more DSR (cursor position report) responses than the cap allows, without
+        // ever draining the queue in between — exactly what a hostile/misbehaving server could do.
+        for (int i = 0; i < cap + 500; i++) send(emu, ESC + "[6n");
+
+        java.util.List<byte[]> delivered = new java.util.ArrayList<>();
+        emu.setDataListener(delivered::add);
+        emu.flushResponses();
+
+        assertEquals(cap, delivered.size(),
+                "expected exactly MAX_PENDING_RESPONSES (" + cap + ") queued responses to have "
+              + "survived, not " + (cap + 500) + " — the cap must stop growth, not merely slow it");
+    }
+
+    private static int staticIntField(String name) throws Exception {
+        java.lang.reflect.Field f = TerminalEmulator.class.getDeclaredField(name);
+        f.setAccessible(true);
+        return f.getInt(null);
+    }
+
     @Test
     @DisplayName("A single (non-nested) alt-buffer round trip still returns to the primary buffer with its content intact")
     void altBuffer_nonNested_stillRestoresPrimaryBufferContent() {
@@ -619,5 +691,58 @@ class TerminalEmulatorTest {
         send(emu, ESC + "[?1049l");
         assertFalse(emu.isAltBufferActive());
         assertEquals('p', emu.getCell(0, 0, 0).character, "primary buffer content must survive an alt-buffer round trip");
+    }
+
+    // -----------------------------------------------------------------------
+    // deleteChars() cell-aliasing (build 30) — the actual MC/YaST corruption bug:
+    // System.arraycopy on the TerminalCell[] object array copied references, not
+    // values, so repeated deleteChars() calls left multiple columns aliasing the
+    // SAME TerminalCell object; writing to one silently corrupted the others.
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Repeated deleteChars() calls never leave two columns aliasing the same TerminalCell object")
+    void deleteChars_repeatedCalls_neverAliasCells() {
+        TerminalEmulator emu = new TerminalEmulator(10, 3);
+        // Fill the row with distinct, recognizable content: '0'..'9'
+        for (int c = 0; c < 10; c++) send(emu, String.valueOf((char) ('0' + c)));
+        send(emu, ESC + "[1;1H"); // cursor back to column 0
+
+        // Delete one char at a time, several times in a row — exactly the pattern that
+        // exposed the aliasing bug in real use (MC redrawing after YaST exits).
+        for (int i = 0; i < 5; i++) send(emu, ESC + "[P");
+
+        java.util.Set<TerminalCell> distinctCells =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (int c = 0; c < 10; c++) distinctCells.add(emu.getCell(0, c, 0));
+        assertEquals(10, distinctCells.size(),
+                "every column must be its own TerminalCell object — a shared reference (aliasing) "
+              + "means writing to one cell would silently corrupt its neighbours, exactly like the "
+              + "real build-30 bug (MC's date column and borders getting overwritten after YaST exit)");
+
+        // Content-level check too: after deleting 5 chars from the front, "56789" should have
+        // shifted left, followed by 5 blanks — not corrupted/duplicated values.
+        String remaining = "";
+        for (int c = 0; c < 10; c++) remaining += (char) emu.getCell(0, c, 0).character;
+        assertEquals("56789     ", remaining);
+    }
+
+    @Test
+    @DisplayName("After deleteChars(), writing to one cell does not change any other cell's content")
+    void deleteChars_writingToOneCellAfterward_doesNotCorruptNeighbours() {
+        TerminalEmulator emu = new TerminalEmulator(10, 3);
+        for (int c = 0; c < 10; c++) send(emu, String.valueOf((char) ('0' + c)));
+        send(emu, ESC + "[1;1H");
+        send(emu, ESC + "[3P"); // delete 3 chars
+
+        // Write a single distinct character into what is now column 0 and re-verify every
+        // OTHER cell is untouched — this is exactly the symptom that showed up as corrupted
+        // date columns and borders in MC: one writeCell() call bleeding into cells that were
+        // supposed to be independent.
+        send(emu, "X");
+        assertEquals('X', emu.getCell(0, 0, 0).character);
+        String rest = "";
+        for (int c = 1; c < 10; c++) rest += (char) emu.getCell(0, c, 0).character;
+        assertEquals("456789   ", rest, "writing to column 0 must not have altered any other column");
     }
 }
