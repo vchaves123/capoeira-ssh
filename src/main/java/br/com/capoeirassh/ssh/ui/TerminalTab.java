@@ -673,10 +673,8 @@ public class TerminalTab {
                     // "negative"). Resolve the sentinel to the real colour before swapping.
                     boolean rev = cell.reverse;
                     if (rev) {
-                        int realFg = (fg < 0) ? defaultFgRgb : fg;
-                        int realBg = (bg < 0) ? defaultBgRgb : bg;
-                        fg = realBg;
-                        bg = realFg;
+                        int[] swapped = swapForReverseVideo(fg, bg, defaultFgRgb, defaultBgRgb);
+                        fg = swapped[0]; bg = swapped[1];
                     }
 
                     // cmd.exe-style selection: swap fg/bg, same as reverse video, rather than a
@@ -687,10 +685,8 @@ public class TerminalTab {
                     // matching how a real terminal composes the two.
                     if (selRow0 >= 0 && r >= selRow0 && r <= selRow1
                             && (r > selRow0 || c >= selCol0) && (r < selRow1 || c <= selCol1)) {
-                        int realFg = (fg < 0) ? defaultFgRgb : fg;
-                        int realBg = (bg < 0) ? defaultBgRgb : bg;
-                        fg = realBg;
-                        bg = realFg;
+                        int[] swapped = swapForReverseVideo(fg, bg, defaultFgRgb, defaultBgRgb);
+                        fg = swapped[0]; bg = swapped[1];
                     }
 
                     // Cursor highlight (only when scrolled to bottom)
@@ -832,6 +828,25 @@ public class TerminalTab {
             }
         };
         display.timerExec(TEXT_BLINK_MS, tick);
+    }
+
+    /**
+     * Swaps {@code fg}/{@code bg} for reverse video (SGR 7) or cmd.exe-style selection
+     * highlight, resolving the "terminal default" sentinel ({@link TerminalEmulator#DEFAULT_COLOR}
+     * as returned by {@link TerminalEmulator#resolveColor}, i.e. {@code < 0}) to a real RGB
+     * first — swapping two {@code -1} sentinels is a no-op, which is why reverse video used to
+     * render identically to normal text whenever a cell kept the default colours (the common
+     * case: {@code tput rev}, status bars, vttest's "negative" — fixed in build 230).
+     *
+     * <p>Package-private and static (no {@code Display}/widget needed) so a test can drive the
+     * actual colour math directly, without constructing a real {@code TerminalTab}.
+     *
+     * @return {@code {newFg, newBg}}
+     */
+    static int[] swapForReverseVideo(int fg, int bg, int defaultFgRgb, int defaultBgRgb) {
+        int realFg = (fg < 0) ? defaultFgRgb : fg;
+        int realBg = (bg < 0) ? defaultBgRgb : bg;
+        return new int[]{ realBg, realFg };
     }
 
     /** A cell's code point as a drawable string. BMP code points take the single-char fast path;
