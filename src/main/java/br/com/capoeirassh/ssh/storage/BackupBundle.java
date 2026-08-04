@@ -129,24 +129,32 @@ public final class BackupBundle {
 
                 } else if (name.startsWith("sessions/") && name.endsWith(".session")) {
                     String rel  = name.substring("sessions/".length());
-                    Properties p = new Properties();
-                    p.load(new ByteArrayInputStream(data));
-                    SessionInfo s = fromProps(p, rel);
-                    // Conflict check uses only the already-sanitized id/group (isSafeId inside
-                    // fromProps, SessionStorage.sanitize() for the group), matching where
-                    // SessionStorage.save() will actually write this session — never the raw
-                    // zip entry path. That raw path could contain traversal segments smuggled
-                    // past the ".session" suffix check (e.g. "sessions/../../../x.session"),
-                    // which a prior finding showed being used as a Files.exists() oracle to
-                    // probe for arbitrary file presence outside sessions/.
-                    Path dest = s.group.isBlank()
-                        ? base.resolve(s.id + ".session")
-                        : base.resolve(SessionStorage.sanitize(s.group)).resolve(s.id + ".session");
-                    if (Files.exists(dest)) {
-                        s.id   = UUID.randomUUID().toString();
-                        s.name = s.name.isBlank() ? "(imported)" : s.name + " (imported)";
+                    try {
+                        Properties p = new Properties();
+                        // Properties.load() throws IllegalArgumentException (not IOException)
+                        // for a malformed backslash-escape in the entry's text — a single
+                        // corrupted or hand-crafted .session entry must not abort every other
+                        // valid session in the same backup, so this entry is skipped instead.
+                        p.load(new ByteArrayInputStream(data));
+                        SessionInfo s = fromProps(p, rel);
+                        // Conflict check uses only the already-sanitized id/group (isSafeId inside
+                        // fromProps, SessionStorage.sanitize() for the group), matching where
+                        // SessionStorage.save() will actually write this session — never the raw
+                        // zip entry path. That raw path could contain traversal segments smuggled
+                        // past the ".session" suffix check (e.g. "sessions/../../../x.session"),
+                        // which a prior finding showed being used as a Files.exists() oracle to
+                        // probe for arbitrary file presence outside sessions/.
+                        Path dest = s.group.isBlank()
+                            ? base.resolve(s.id + ".session")
+                            : base.resolve(SessionStorage.sanitize(s.group)).resolve(s.id + ".session");
+                        if (Files.exists(dest)) {
+                            s.id   = UUID.randomUUID().toString();
+                            s.name = s.name.isBlank() ? "(imported)" : s.name + " (imported)";
+                        }
+                        sessions.add(s);
+                    } catch (IllegalArgumentException malformed) {
+                        // Skip just this entry — see the comment above.
                     }
-                    sessions.add(s);
                 }
                 zip.closeEntry();
             }
