@@ -8,6 +8,7 @@ import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.DeviceData;
 import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.graphics.GC;
+import org.eclipse.swt.widgets.Canvas;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.junit.jupiter.api.Test;
@@ -90,22 +91,33 @@ class TerminalTabRenderHandleLeakTest {
             java.lang.reflect.Field emulatorField = TerminalTab.class.getDeclaredField("emulator");
             emulatorField.setAccessible(true);
             TerminalEmulator emu = (TerminalEmulator) emulatorField.get(tab);
+            java.lang.reflect.Field canvasField = TerminalTab.class.getDeclaredField("canvas");
+            canvasField.setAccessible(true);
+            Canvas canvas = (Canvas) canvasField.get(tab);
 
             int cols = emu.getCols(), rows = emu.getRows();
 
-            // One warm-up frame: absorb the one-time cost of creating termFontBold itself
-            // (a legitimate single allocation, not a leak) before baselining.
-            paintWholeGridBold(emu, cols, rows, 1);
-            renderInvoke(renderMethod, tab, display);
+            // 20 warm-up frames: absorb the one-time cost of creating termFontBold itself, and
+            // apparently — observed empirically — some further one-time lazy font-registry
+            // initialization in this environment that doesn't always settle on the very first
+            // frame (it was seen kicking in as late as the 9th frame in one run, jumping the
+            // live Font count by a fixed +2 and never growing again afterward — a delayed
+            // one-time cost, not a per-frame leak. 20 frames gives it generous room to settle
+            // before this test's own baseline is captured, exactly like TerminalTabLeakTest's
+            // own single warm-up tab absorbs SWT's/AWT's one-time framework init cost).
+            for (int frame = 1; frame <= 20; frame++) {
+                paintWholeGridBold(emu, cols, rows, frame);
+                renderInvoke(renderMethod, tab, canvas);
+            }
 
             int[] before = countColorsAndFonts(display);
 
-            // 30 frames, each with a different bold colour across the whole grid — this is
+            // 30 more frames, each with a different bold colour across the whole grid — this is
             // exactly the workload #24/#27 are about: many bold, many distinctly-coloured cells,
             // repeated over many frames.
-            for (int frame = 2; frame <= 31; frame++) {
+            for (int frame = 21; frame <= 50; frame++) {
                 paintWholeGridBold(emu, cols, rows, frame);
-                renderInvoke(renderMethod, tab, display);
+                renderInvoke(renderMethod, tab, canvas);
             }
 
             int[] after = countColorsAndFonts(display);
@@ -131,12 +143,16 @@ class TerminalTabRenderHandleLeakTest {
         }
     }
 
-    private static void renderInvoke(Method renderMethod, TerminalTab tab, Display display) throws Exception {
-        GC dummyScreen = new GC(display);
+    /** Uses a GC on the real canvas — matching how render() is actually invoked in production
+     *  (always from a PaintEvent's own {@code e.gc}, itself backed by the control being
+     *  painted) — rather than a bare {@code new GC(display)}, which isn't a supported drawable
+     *  and was itself the source of spurious Font-handle growth this test originally chased. */
+    private static void renderInvoke(Method renderMethod, TerminalTab tab, Canvas canvas) throws Exception {
+        GC gc = new GC(canvas);
         try {
-            renderMethod.invoke(tab, dummyScreen);
+            renderMethod.invoke(tab, gc);
         } finally {
-            dummyScreen.dispose();
+            gc.dispose();
         }
     }
 
