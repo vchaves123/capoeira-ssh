@@ -17,6 +17,12 @@
         <swt.version>3.127.0</swt.version>
         <maven.build.timestamp.format>yyyy-MM-dd HH:mm</maven.build.timestamp.format>
         <junit.version>5.10.2</junit.version>
+        <!-- Tests tagged "slow" (currently: CredentialStoreConcurrencyTest, ~7-8 min, over 80%
+             of a full run) are excluded from the default `mvn test`. Run them explicitly before
+             a release, or whenever code they cover changes directly, with:
+               mvn test -Dtest.excludedGroups=
+             (the empty value clears the exclusion for that invocation only). -->
+        <test.excludedGroups>slow</test.excludedGroups>
     </properties>
 
     <dependencies>
@@ -153,6 +159,7 @@
                     <systemPropertyVariables>
                         <user.home>${project.build.directory}/test-home</user.home>
                     </systemPropertyVariables>
+                    <excludedGroups>${test.excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
 

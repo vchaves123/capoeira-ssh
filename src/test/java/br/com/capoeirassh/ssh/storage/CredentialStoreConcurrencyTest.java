@@ -23,7 +23,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * Same safety mechanism as {@link CredentialStoreTest}: surefire (pom.xml) redirects user.home to
  * target/test-home for the forked test JVM, so CredentialStore.VAULT never resolves to the real
  * ~/.capoeira/credentials.vault. verifyVaultIsRedirected() aborts the whole class otherwise.
+ *
+ * <p>Tagged {@code "slow"}: 50 {@code @RepeatedTest} reps, ~7-8 minutes total — by far the
+ * longest-running class in the suite (over 80% of a full `mvn test` run). Excluded from the
+ * default `mvn test` run (see pom.xml's surefire {@code excludedGroups}); run it explicitly with
+ * `mvn test -Dtest.excludedGroups=` (empty) before a release, or whenever {@link CredentialStore}
+ * itself changes.
  */
+@Tag("slow")
 class CredentialStoreConcurrencyTest {
 
     private static Path vaultPath;
