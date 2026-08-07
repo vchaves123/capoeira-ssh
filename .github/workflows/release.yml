@@ -48,7 +48,7 @@ jobs:
         # excludedGroups: "slow" is the mvn default; "ui"/"ci-env" additionally skip tests that
         # need a real SWT Display or the dev machine's normal file ACLs, neither of which the
         # hosted runners provide (no display on Linux/macOS, extra ACL entries on Windows).
-        run: mvn package -P ${{ matrix.mvn-profile }} -B -q -Dtest.excludedGroups=slow,ui,ci-env
+        run: mvn package -P ${{ matrix.mvn-profile }} -B -q "-Dtest.excludedGroups=slow,ui,ci-env"
 
       - name: Get version info
         id: ver
