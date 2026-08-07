@@ -5,6 +5,59 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.6.0] — 2026-08-07
+
+### Added
+- **Remaining core VT100/xterm terminal modes**: DECOM (origin mode), DECCOLM (80/132-column
+  switching, with a per-session opt-out), DECALN (screen alignment pattern), DECAWM (autowrap
+  on/off), and real per-column tab stops with a complete DECSC/DECRC (save/restore cursor
+  position, SGR attributes, origin mode, and G0 charset selection) — closes the gaps that made
+  some full-screen terminal apps (vttest, some ncurses UIs) render incorrectly.
+- The active tab's window/icon title (OSC 0/2) is now reflected in the app's title bar while
+  that tab is selected.
+- A live "cols × lines" overlay is shown while dragging the window border to resize.
+
+### Changed
+- Text selection and copy/paste now follow cmd.exe conventions (drag-to-select copies
+  automatically; right-click pastes).
+- Substitute glyphs (for code points the chosen terminal font has no glyph for) are now sized
+  to fit the cell instead of being drawn at the terminal's own point size, so they no longer
+  spill past their column — most visible previously in reverse video, where the overhang
+  vanished outside the painted background.
+- Host-key-changed and unknown-host-key prompts are now visually distinct (a red "possible
+  attack" warning vs. the normal blue confirmation), so a MITM-style key change is harder to miss.
+- Several actions that write to disk or the network — export/import backup, scanning
+  PuTTY/MobaXterm sessions, saving a session or credential, and renaming/deleting tags or
+  groups — no longer freeze the window while they run.
+
+### Fixed
+- Reverse video (SGR 7) rendered identically to normal text whenever a cell kept its default
+  foreground/background colors (the common case: `tput rev`, status bars, vttest's "negative")
+  — the swap now resolves the default-color sentinel first.
+- A CSI sequence with an omitted parameter before a `;` (e.g. `ESC[;7m`) collapsed onto the
+  following parameter instead of being treated as 0, losing an intended attribute reset.
+- An OSC window-title sequence with non-ASCII characters showed as mojibake in the title bar
+  instead of being decoded as UTF-8.
+- An OSC sequence with no terminator could leak its buffered text onto the screen as literal
+  characters.
+
+### Dependency
+- Updated the embedded SSH library ([JSch, mwiede fork](https://github.com/mwiede/jsch)) from
+  0.2.21 to 2.28.6 (the fork switched to semantic versioning at 2.27.0) — brings a limit on
+  decompressed-packet size (hardening against a hostile/compromised server) and support for
+  post-quantum key-exchange algorithms. No app-visible behavior change.
+
+### Internal
+- Added a JUnit 5 regression-test suite (nearly 300 tests) covering the terminal emulator, the
+  credential vault, session/settings storage, and previously-untested code, built up over
+  several rounds of security/quality review. Schema-version markers now let session and
+  settings files reject a file written by a future app version instead of silently
+  misapplying it; a few O(n²) UI operations (bulk session delete, row reorder,
+  search-as-you-type) are now O(n) or debounced; malformed external input (backup entries,
+  MobaXterm import fields, release notes) is handled more defensively.
+
+---
+
 ## [1.5.0] — 2026-07-30
 
 ### Added

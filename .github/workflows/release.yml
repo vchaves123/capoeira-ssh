@@ -277,7 +277,7 @@ jobs:
           cp "target/original-capoeira-ssh-${JARVER}.jar" "$STAGE/lib/capoeira-ssh-${JARVER}.jar"
 
           mvn dependency:copy -q -B \
-            -Dartifact=com.github.mwiede:jsch:0.2.21 \
+            -Dartifact=com.github.mwiede:jsch:2.28.6 \
             -DoutputDirectory="$STAGE/lib"
 
           for GA in \
