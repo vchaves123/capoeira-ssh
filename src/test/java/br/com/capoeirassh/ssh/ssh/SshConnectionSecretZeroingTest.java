@@ -2,6 +2,7 @@ package br.com.capoeirassh.ssh.ssh;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
 import org.eclipse.swt.widgets.Display;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * the plaintext secret sitting in memory for longer than necessary. Never had a dedicated
  * regression test forcing an actual failure path and inspecting the array afterward.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class SshConnectionSecretZeroingTest {
 
     private static int unusedLocalPort() throws Exception {

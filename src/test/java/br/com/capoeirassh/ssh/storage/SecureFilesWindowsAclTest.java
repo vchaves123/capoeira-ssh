@@ -1,6 +1,7 @@
 package br.com.capoeirassh.ssh.storage;
 
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * verified for real on this project's actual Windows dev machine (every other storage test
  * targets the POSIX branch instead, which shows SKIPPED here).
  */
+@Tag("ci-env") // assumes the dev machine's normal ACLs; GitHub-hosted runners add SYSTEM/Administrators
 class SecureFilesWindowsAclTest {
 
     @Test

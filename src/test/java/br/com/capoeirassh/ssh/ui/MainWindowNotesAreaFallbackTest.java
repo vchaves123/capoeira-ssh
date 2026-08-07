@@ -7,6 +7,7 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code ReleaseNotesHtml.render()} failure — verifying the fallback produces exactly one plain
  * {@link Text} control (no leftover, half-built {@code Browser}) showing the original notes text.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class MainWindowNotesAreaFallbackTest {
 
     @Test

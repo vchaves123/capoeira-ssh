@@ -9,6 +9,7 @@ import org.eclipse.swt.widgets.Shell;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * every file) against the NEW path ({@link SessionsTab#reorderRowWidgets}, which only repositions
  * the already-existing row widgets via {@code Control.moveAbove}/{@code moveBelow}).
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class SessionsTabReorderPerformanceTest {
 
     private static Path sessionsDir;

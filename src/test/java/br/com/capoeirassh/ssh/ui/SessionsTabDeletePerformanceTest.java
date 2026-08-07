@@ -5,6 +5,7 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CTabFolder;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * under a threshold that an O(N²) string-comparison scan blows past at this N, but an O(N) map
  * lookup clears easily.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class SessionsTabDeletePerformanceTest {
 
     @Test

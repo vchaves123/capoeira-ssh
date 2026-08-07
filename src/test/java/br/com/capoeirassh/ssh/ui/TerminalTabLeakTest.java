@@ -8,6 +8,7 @@ import org.eclipse.swt.graphics.DeviceData;
 import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -52,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * before taking the baseline warms up both paths, so the real 200-tab measurement below isolates
  * only what {@link TerminalTab} itself allocates per tab.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class TerminalTabLeakTest {
 
     private static int[] countColorsAndFonts(Display display) {

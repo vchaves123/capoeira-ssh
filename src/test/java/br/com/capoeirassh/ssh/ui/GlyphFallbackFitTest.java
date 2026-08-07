@@ -7,6 +7,7 @@ import org.eclipse.swt.widgets.Display;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <p>No production code is modified.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class GlyphFallbackFitTest {
 
     private static Display display;

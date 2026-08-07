@@ -13,6 +13,7 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -39,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>Reuses the same fake-TCP-acceptor + real {@code TerminalTab} harness as
  * {@link TerminalTabStripAnsiTest}. No production code is modified.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class TerminalTabRenderBoundsTest {
 
     private static ServerSocket fakeServer;

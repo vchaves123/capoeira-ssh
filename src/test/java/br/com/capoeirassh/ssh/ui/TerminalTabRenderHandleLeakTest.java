@@ -11,6 +11,7 @@ import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.widgets.Canvas;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -40,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * different colour, and asserts the live Color/Font handle count stays flat rather than growing
  * with the number of frames or cells rendered.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class TerminalTabRenderHandleLeakTest {
 
     private static int[] countColorsAndFonts(Display display) {

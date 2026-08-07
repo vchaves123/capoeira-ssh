@@ -9,6 +9,7 @@ import org.eclipse.swt.widgets.Shell;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * remaining files) against the NEW path ({@link SessionsTab#removeSessionFromUi}, which touches
  * disk only for the single deleted file and never re-reads the rest).
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class SessionsTabSingleDeletePerformanceTest {
 
     private static Path sessionsDir;

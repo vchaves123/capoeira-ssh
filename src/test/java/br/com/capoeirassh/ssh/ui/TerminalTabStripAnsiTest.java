@@ -7,6 +7,7 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -34,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * is required since {@code stripAnsi} is a stateful instance method, not static) — see that
  * class's javadoc for why a fake acceptor is used instead of just an unreachable port.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class TerminalTabStripAnsiTest {
 
     private static ServerSocket fakeServer;

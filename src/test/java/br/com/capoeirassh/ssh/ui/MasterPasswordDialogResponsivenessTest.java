@@ -33,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Same vault-safety mechanism as {@code CredentialStoreTest}: surefire redirects {@code user.home}
  * to {@code target/test-home} for the forked test JVM, verified before this class runs anything.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class MasterPasswordDialogResponsivenessTest {
 
     private static Path vaultPath;

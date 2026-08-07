@@ -12,6 +12,7 @@ import org.eclipse.swt.widgets.Text;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -38,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code SWT.Modify}, a non-matching row must still be visible (the filter hasn't run yet); only
  * after pumping the event loop past the debounce delay does it become hidden.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class SessionsTabSearchDebounceTest {
 
     private static Path sessionsDir;

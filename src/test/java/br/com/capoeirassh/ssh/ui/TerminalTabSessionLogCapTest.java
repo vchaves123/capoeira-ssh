@@ -7,6 +7,7 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Shell;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@link TerminalTabStripAnsiTest} (see its javadoc for why). No production code is modified;
  * only private fields/methods are reached via reflection to drive the scenario.
  */
+@Tag("ui") // needs a real SWT Display — no display on the Linux/macOS CI runners
 class TerminalTabSessionLogCapTest {
 
     private static ServerSocket fakeServer;
