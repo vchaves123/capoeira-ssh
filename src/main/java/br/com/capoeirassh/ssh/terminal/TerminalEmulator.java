@@ -1136,6 +1136,150 @@ public class TerminalEmulator {
     }
 
     // -----------------------------------------------------------------------
+    // State snapshot (debug tracing)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Serializes the complete visible state of this emulator as one line of JSON, for correlating
+     * a byte trace against what the screen actually held at that moment (see {@link TerminalTrace}).
+     *
+     * <p>Both screen buffers are always included, not just the active one — the whole point of a
+     * snapshot is usually to check that an alternate-screen switch preserved the primary buffer
+     * correctly. Each buffer is emitted as {@code text} (one string per row, trailing spaces kept
+     * so a cleared cell stays distinguishable from a written space) plus {@code attrs}, which is
+     * run-length encoded per row as {@code [firstCol, lastCol, {attrs}]} triples; an attribute at
+     * its default value is omitted from the object, so an untouched row collapses to one empty run.
+     *
+     * <p>Scrollback is deliberately excluded — it can hold {@link #MAX_SCROLLBACK} rows and would
+     * dwarf everything else — but its current size is reported so its growth remains visible.
+     *
+     * <p>Synchronized like every other public method, so the snapshot is taken between byte
+     * batches and can never catch the parser mid-sequence.
+     */
+    public synchronized String dumpState() {
+        StringBuilder sb = new StringBuilder(8192);
+        sb.append('{');
+        sb.append("\"rows\":").append(rows);
+        sb.append(",\"cols\":").append(cols);
+        sb.append(",\"cursor\":[").append(cursorRow).append(',').append(cursorCol).append(']');
+        sb.append(",\"cursorVisible\":").append(cursorVisible);
+        sb.append(",\"wrapPending\":").append(wrapPending);
+        sb.append(",\"active\":\"").append(altBufferActive ? "alternate" : "primary").append('"');
+        sb.append(",\"altBufferActive\":").append(altBufferActive);
+        sb.append(",\"altBufferDepth\":").append(altBufferDepth);
+        sb.append(",\"scroll\":[").append(scrollTop).append(',').append(scrollBottom).append(']');
+        sb.append(",\"originMode\":").append(originMode);
+        sb.append(",\"autoWrap\":").append(autoWrap);
+        sb.append(",\"appCursorKeys\":").append(appCursorKeys);
+        sb.append(",\"bracketedPaste\":").append(bracketedPaste);
+        sb.append(",\"g0LineDrawing\":").append(g0LineDrawing);
+        sb.append(",\"g1LineDrawing\":").append(g1LineDrawing);
+        sb.append(",\"useG1\":").append(useG1);
+        sb.append(",\"parserState\":\"").append(state).append('"');
+        sb.append(",\"utf8Remaining\":").append(utf8Remaining);
+        sb.append(",\"scrollbackLines\":").append(scrollback.size());
+        sb.append(",\"savedCursor\":[").append(savedRow).append(',').append(savedCol).append(']');
+        sb.append(",\"altSavedCursor\":[").append(altSavedRow).append(',').append(altSavedCol).append(']');
+        sb.append(",\"altSavedScroll\":[").append(altSavedScrollTop).append(',').append(altSavedScrollBottom).append(']');
+
+        sb.append(",\"currentAttrs\":");
+        appendAttrs(sb, currentAttrs);
+
+        sb.append(",\"tabStops\":[");
+        boolean firstStop = true;
+        for (int c = 0; c < tabStops.length; c++) {
+            if (!tabStops[c]) continue;
+            if (!firstStop) sb.append(',');
+            sb.append(c);
+            firstStop = false;
+        }
+        sb.append(']');
+
+        sb.append(",\"primary\":");
+        appendBuffer(sb, primaryBuffer);
+        sb.append(",\"alternate\":");
+        appendBuffer(sb, alternateBuffer);
+
+        sb.append('}');
+        return sb.toString();
+    }
+
+    private static void appendBuffer(StringBuilder sb, TerminalCell[][] buffer) {
+        sb.append("{\"text\":[");
+        for (int r = 0; r < buffer.length; r++) {
+            if (r > 0) sb.append(',');
+            sb.append('"');
+            for (TerminalCell cell : buffer[r]) appendJsonChar(sb, cell.character);
+            sb.append('"');
+        }
+        sb.append("],\"attrs\":[");
+        for (int r = 0; r < buffer.length; r++) {
+            if (r > 0) sb.append(',');
+            appendAttrRuns(sb, buffer[r]);
+        }
+        sb.append("]}");
+    }
+
+    /** Run-length encodes one row's attributes into {@code [[first,last,{...}],...]}. */
+    private static void appendAttrRuns(StringBuilder sb, TerminalCell[] row) {
+        sb.append('[');
+        int runStart = 0;
+        boolean firstRun = true;
+        for (int c = 1; c <= row.length; c++) {
+            if (c < row.length && sameAttrs(row[c], row[runStart])) continue;
+            if (!firstRun) sb.append(',');
+            sb.append('[').append(runStart).append(',').append(c - 1).append(',');
+            appendAttrs(sb, row[runStart]);
+            sb.append(']');
+            firstRun = false;
+            runStart = c;
+        }
+        sb.append(']');
+    }
+
+    private static boolean sameAttrs(TerminalCell a, TerminalCell b) {
+        return a.fgColor == b.fgColor && a.bgColor == b.bgColor
+            && a.bold == b.bold && a.underline == b.underline
+            && a.reverse == b.reverse && a.blink == b.blink
+            && a.wideTrailer == b.wideTrailer;
+    }
+
+    /** Emits only the attributes that differ from a freshly cleared cell, so the common case of
+     *  untouched default text costs two characters instead of seventy. */
+    private static void appendAttrs(StringBuilder sb, TerminalCell cell) {
+        sb.append('{');
+        boolean first = true;
+        if (cell.fgColor != DEFAULT_COLOR) { sb.append("\"fg\":").append(cell.fgColor); first = false; }
+        if (cell.bgColor != DEFAULT_COLOR) { if (!first) sb.append(','); sb.append("\"bg\":").append(cell.bgColor); first = false; }
+        if (cell.bold)        { if (!first) sb.append(','); sb.append("\"bold\":true");      first = false; }
+        if (cell.underline)   { if (!first) sb.append(','); sb.append("\"underline\":true"); first = false; }
+        if (cell.reverse)     { if (!first) sb.append(','); sb.append("\"reverse\":true");   first = false; }
+        if (cell.blink)       { if (!first) sb.append(','); sb.append("\"blink\":true");     first = false; }
+        if (cell.wideTrailer) { if (!first) sb.append(','); sb.append("\"wide\":true");      }
+        sb.append('}');
+    }
+
+    /** Appends one code point as JSON string content, escaping what JSON forbids and encoding
+     *  astral characters (emoji, Nerd Font private-use icons) as a surrogate pair. */
+    private static void appendJsonChar(StringBuilder sb, int codePoint) {
+        switch (codePoint) {
+            case '"'  -> { sb.append("\\\""); return; }
+            case '\\' -> { sb.append("\\\\"); return; }
+            case '\n' -> { sb.append("\\n");  return; }
+            case '\r' -> { sb.append("\\r");  return; }
+            case '\t' -> { sb.append("\\t");  return; }
+            default -> { }
+        }
+        if (codePoint < 0x20 || codePoint == 0x7F) {
+            sb.append(String.format("\\u%04x", codePoint));
+        } else if (codePoint <= 0xFFFF) {
+            sb.append((char) codePoint);
+        } else {
+            sb.append(Character.toChars(codePoint));
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Read access for the renderer  (call inside synchronized block)
     // -----------------------------------------------------------------------
     public synchronized int  getRows()            { return rows; }

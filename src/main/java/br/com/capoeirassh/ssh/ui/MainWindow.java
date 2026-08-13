@@ -514,6 +514,13 @@ public class MainWindow {
 
             new MenuItem(menu, SWT.SEPARATOR);
 
+            MenuItem miTrace = new MenuItem(menu, SWT.CHECK);
+            miTrace.setText("Trace Bytes to File");
+            miTrace.setSelection(terminal.isTracing());
+            miTrace.addListener(SWT.Selection, ev -> toggleTrace(terminal));
+
+            new MenuItem(menu, SWT.SEPARATOR);
+
             MenuItem miClose = new MenuItem(menu, SWT.PUSH);
             miClose.setText("Close Session");
             miClose.addListener(SWT.Selection, ev -> {
@@ -536,6 +543,34 @@ public class MainWindow {
         if (name != null && !name.trim().isEmpty()) {
             terminal.rename(name.trim());
         }
+    }
+
+    /**
+     * Turns byte-level tracing on or off for one tab, and tells the user where the file went.
+     *
+     * <p>The path matters enough to interrupt for: a trace is only useful if it can be found
+     * afterwards, and there is no other place in the UI that reveals the file name. Turning it off
+     * confirms the same path so the user leaves knowing what to go read.
+     */
+    private void toggleTrace(TerminalTab terminal) {
+        boolean turningOn = !terminal.isTracing();
+        java.nio.file.Path file = terminal.setTracing(turningOn);
+
+        if (turningOn && file == null) {
+            MessageBox mb = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+            mb.setText("Trace");
+            mb.setMessage("Could not create the trace file. Tracing was not started.");
+            mb.open();
+            return;
+        }
+
+        MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
+        mb.setText("Trace");
+        mb.setMessage(turningOn
+            ? "Tracing every byte sent and received to:\n\n" + file
+              + "\n\nPress Ctrl+Shift+D in the terminal to record a snapshot of the screen state."
+            : "Tracing stopped.\n\n" + (file != null ? file : ""));
+        mb.open();
     }
 
     /** Opens the shared Configuration Setting dialog seeded from this tab's live state.

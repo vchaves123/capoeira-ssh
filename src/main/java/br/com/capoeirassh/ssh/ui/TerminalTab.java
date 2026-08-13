@@ -4,6 +4,7 @@ import br.com.capoeirassh.ssh.model.SessionInfo;
 import br.com.capoeirassh.ssh.ssh.SshConnection;
 import br.com.capoeirassh.ssh.terminal.TerminalCell;
 import br.com.capoeirassh.ssh.terminal.TerminalEmulator;
+import br.com.capoeirassh.ssh.terminal.TerminalTrace;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CTabFolder;
 import org.eclipse.swt.custom.CTabItem;
@@ -52,8 +53,10 @@ public class TerminalTab {
     private Color colOverlayScrim;// disconnected dim scrim
     private Color colOverlayText; // disconnected "Connection closed" text
     private Color colReconnect;   // disconnected reconnect hint
+    private Color colTraceBorder; // red frame drawn while byte tracing is on
     private long  logBytesWritten = 0;
     private static final long MAX_LOG_BYTES = 100L * 1024 * 1024; // cap session log at 100 MB
+    private static final int  TRACE_BORDER_WIDTH = 2;             // px, red frame while tracing
     private int   charWidth;
     private int   charHeight;
 
@@ -151,6 +154,15 @@ public class TerminalTab {
     private static final DateTimeFormatter LOG_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
     private static final java.util.concurrent.atomic.AtomicInteger LOG_SEQ = new java.util.concurrent.atomic.AtomicInteger();
 
+    // -----------------------------------------------------------------------
+    // Byte-level trace (debugging aid, off by default and never persisted)
+    // -----------------------------------------------------------------------
+    /** Non-null exactly while tracing is on. Written from both the SSH reader thread (RX) and the
+     *  UI thread (TX/STATE); {@link TerminalTrace} serializes its own writes. Volatile so the
+     *  reader thread sees the UI thread turning tracing off without going through a lock on the
+     *  hot receive path. */
+    private volatile TerminalTrace trace;
+
     // State machine for stripping ANSI escape sequences from the log stream.
     private enum AnsiState { NORMAL, ESC, ESC_INTERMEDIATE, CSI, OSC, OSC_ESC }
     private AnsiState ansiState = AnsiState.NORMAL;
@@ -213,11 +225,7 @@ public class TerminalTab {
         // Deliver queued terminal responses (DSR, DA, XTWINOPS) to SSH.
         // flushResponses() is called from readSsh() after each processBytes(),
         // outside the synchronized lock, so this callback never blocks SSH reads.
-        emulator.setDataListener(data -> {
-            if (connection.isConnected()) {
-                try { connection.send(data); } catch (IOException ignored) {}
-            }
-        });
+        emulator.setDataListener(this::sendToServer);
 
         // Reset scroll offset when entering/leaving alternate screen (e.g. vim, yast)
         emulator.setAltBufferListener(active ->
@@ -415,9 +423,7 @@ public class TerminalTab {
             byte[] seq = mapAltKey(e);
             if (seq != null) {
                 e.doit = false;   // prevent SWT menu activation
-                if (connection.isConnected()) {
-                    try { connection.send(seq); } catch (IOException ignored) {}
-                }
+                sendToServer(seq);
             }
         };
         display.addFilter(SWT.KeyDown, altFilter);
@@ -429,9 +435,7 @@ public class TerminalTab {
             byte[] seq = mapFKey(e.keyCode);
             if (seq != null) {
                 e.doit = false;
-                if (!disconnected && connection.isConnected()) {
-                    try { connection.send(seq); } catch (IOException ignored) {}
-                }
+                if (!disconnected) sendToServer(seq);
             }
         };
         display.addFilter(SWT.KeyDown, fKeyFilter);
@@ -801,6 +805,22 @@ public class TerminalTab {
                 Point e2 = gc.stringExtent(line2);
                 gc.drawString(line2, (area.width - e2.x) / 2, area.height / 2 + 6, true);
             }
+
+            // Red frame while tracing, so a session quietly writing every byte to disk is never
+            // mistaken for a normal one. Drawn last, over everything including the disconnected
+            // scrim. Inset by half the line width because SWT centers the stroke on the path, so
+            // drawing exactly on the bounds would clip the outer half of it.
+            if (trace != null) {
+                if (colTraceBorder == null || colTraceBorder.isDisposed())
+                    colTraceBorder = new Color(display, 220, 40, 40);
+                gc.setForeground(colTraceBorder);
+                gc.setLineWidth(TRACE_BORDER_WIDTH);
+                int inset = TRACE_BORDER_WIDTH / 2;
+                gc.drawRectangle(inset, inset,
+                                 area.width  - TRACE_BORDER_WIDTH,
+                                 area.height - TRACE_BORDER_WIDTH);
+                gc.setLineWidth(1);
+            }
         } finally {
             gc.dispose();
         }
@@ -881,17 +901,41 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     // Keyboard
     // -----------------------------------------------------------------------
+    /**
+     * The single funnel every byte this tab sends to the server goes through.
+     *
+     * <p>Centralizing it means the byte trace records outbound traffic in exactly one place, so a
+     * send path added later cannot silently escape it, and the connected-check plus the
+     * "a failed write just means the session is gone" IOException handling aren't repeated at each
+     * of the half-dozen call sites. Safe to call from any thread: {@code connection.send()} is
+     * itself synchronized, and {@link TerminalTrace} serializes its own writes.
+     */
+    private void sendToServer(byte[] data) {
+        if (data == null || data.length == 0) return;
+        if (!connection.isConnected()) return;
+        TerminalTrace t = trace;
+        if (t != null) t.tx(data);
+        try { connection.send(data); } catch (IOException ignored) {}
+    }
+
     private void handleKey(org.eclipse.swt.events.KeyEvent e) {
         // Alt+key is handled entirely by altFilter — skip here to avoid double-send
         if ((e.stateMask & SWT.ALT) != 0) return;
 
+        // Ctrl+Shift+D dumps the emulator's state into the trace, interleaved with the byte
+        // records around it. Only swallowed while tracing is on: with tracing off there is no file
+        // to write to, so the key belongs to the remote program like any other.
+        if (trace != null
+            && (e.stateMask & SWT.CTRL) != 0 && (e.stateMask & SWT.SHIFT) != 0
+            && (e.keyCode == 'd' || e.keyCode == 'D')) {
+            dumpTraceState();
+            return;
+        }
+
         if (scrollOffset != 0) { scrollOffset = 0; updateScrollBar(); }
         if (hasSelection()) { clearSelection(); canvas.redraw(); }
 
-        byte[] seq = mapKey(e);
-        if (seq != null && connection.isConnected()) {
-            try { connection.send(seq); } catch (IOException ignored) {}
-        }
+        sendToServer(mapKey(e));
     }
 
     private byte[] mapKey(org.eclipse.swt.events.KeyEvent e) {
@@ -1217,6 +1261,8 @@ public class TerminalTab {
             int         n;
             while (!closed && (n = in.read(buf)) != -1) {
                 writeLog(buf, n);
+                TerminalTrace t = trace;
+                if (t != null) t.rx(buf, 0, n);
                 emulator.processBytes(buf, 0, n);
                 emulator.flushResponses();
                 if (n > 3) notifyActivity();
@@ -1345,13 +1391,11 @@ public class TerminalTab {
             // The program asked for bracketed paste, so it will treat everything between the
             // markers as pasted data rather than typing — no line splitting or pacing needed,
             // and the shell won't run anything until the user actually presses Enter.
-            try {
-                connection.send(("\033[200~" + sanitized + "\033[201~").getBytes(StandardCharsets.UTF_8));
-            } catch (IOException ignored) {}
+            sendToServer(("\033[200~" + sanitized + "\033[201~").getBytes(StandardCharsets.UTF_8));
         } else if (multiline) {
             sendPastedLines(sanitized);
         } else {
-            try { connection.send(sanitized.getBytes(StandardCharsets.UTF_8)); } catch (IOException ignored) {}
+            sendToServer(sanitized.getBytes(StandardCharsets.UTF_8));
         }
     }
 
@@ -1371,10 +1415,10 @@ public class TerminalTab {
                     if (!connection.isConnected()) return;
                     boolean lastLine = i == lines.length - 1;
                     String chunk = lines[i] + (!lastLine || trailingCr ? "\r" : "");
-                    connection.send(chunk.getBytes(StandardCharsets.UTF_8));
+                    sendToServer(chunk.getBytes(StandardCharsets.UTF_8));
                     if (!lastLine) Thread.sleep(30);
                 }
-            } catch (IOException | InterruptedException ignored) {}
+            } catch (InterruptedException ignored) {}
         }, "paste-lines");
         t.setDaemon(true);
         t.start();
@@ -1684,6 +1728,7 @@ public class TerminalTab {
         if (altFilter  != null) display.removeFilter(SWT.KeyDown, altFilter);
         if (fKeyFilter != null) display.removeFilter(SWT.KeyDown, fKeyFilter);
         closeLog();
+        setTracing(false);
         connection.close();
         display.asyncExec(() -> {
             disposeOffscreen();
@@ -1698,6 +1743,7 @@ public class TerminalTab {
             if (colOverlayScrim != null && !colOverlayScrim.isDisposed()) colOverlayScrim.dispose();
             if (colOverlayText  != null && !colOverlayText.isDisposed())  colOverlayText.dispose();
             if (colReconnect    != null && !colReconnect.isDisposed())    colReconnect.dispose();
+            if (colTraceBorder  != null && !colTraceBorder.isDisposed())  colTraceBorder.dispose();
             if (!termFont.isDisposed())  termFont.dispose();
             if (!defaultBg.isDisposed()) defaultBg.dispose();
             if (!defaultFg.isDisposed()) defaultFg.dispose();
@@ -1740,4 +1786,51 @@ public class TerminalTab {
 
     /** Stop logging immediately. */
     public void stopLogging() { closeLog(); }
+
+    // -----------------------------------------------------------------------
+    // Byte-level trace
+    // -----------------------------------------------------------------------
+
+    public boolean isTracing() { return trace != null; }
+
+    /**
+     * Turns byte-level tracing on or off for this tab, effective immediately on the live session.
+     *
+     * <p>Deliberately not persisted anywhere: a trace is a debugging aid for one incident, and a
+     * tab that silently kept tracing across restarts would quietly fill the disk. Turning it on
+     * always starts a fresh file.
+     *
+     * @return the path of the trace file when turning on (null if it could not be created), or
+     *         the path just closed when turning off
+     */
+    public java.nio.file.Path setTracing(boolean on) {
+        TerminalTrace current = trace;
+        java.nio.file.Path result = null;
+        if (on) {
+            if (current != null) return current.getFile(); // already tracing
+            TerminalTrace t = TerminalTrace.open(sessionInfo.label());
+            if (t != null) {
+                // Seed the file with the state as it stands before any traced byte arrives, so the
+                // first RX record has a known starting point to be interpreted against.
+                t.state(emulator.dumpState());
+                result = t.getFile();
+            }
+            trace = t;
+        } else {
+            if (current != null) {
+                result = current.getFile();
+                current.close();
+            }
+            trace = null;
+        }
+        if (!canvas.isDisposed()) canvas.redraw();  // paint or clear the red trace border
+        return result;
+    }
+
+    /** Writes a snapshot of the emulator's full state into the trace, in line with the surrounding
+     *  byte records. No-op when not tracing — there is no file to write to. */
+    public void dumpTraceState() {
+        TerminalTrace t = trace;
+        if (t != null) t.state(emulator.dumpState());
+    }
 }
