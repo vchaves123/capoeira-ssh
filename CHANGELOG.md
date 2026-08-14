@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **A full-screen program's display could stay frozen on screen after it exited**, instead of the
+  shell coming back — most visible when quitting Claude Code's CLI, which left its whole interface
+  in place over the shell prompt. The emulator counted how many times a program had asked for the
+  alternate screen and only returned to the normal one after a matching number of exits, but
+  programs re-assert alternate mode on ordinary repaints; one captured session asked 14 times and
+  released 6, stranding the terminal for good. Entering the alternate screen is now idempotent and
+  leaving it is unconditional, as every other terminal does it.
+
+### Added
+- **Byte-level session trace** (right-click a tab → *Trace Bytes to File*): records every byte sent
+  and received, verbatim, into one time-stamped file under `~/.capoeira/traces`, with a red frame
+  around the terminal while it runs so a traced session is never mistaken for a normal one.
+  `Ctrl+Shift+D` writes a snapshot of the terminal's full internal state into the same file, in
+  line with the surrounding bytes, so a later analysis can match "these bytes arrived" against
+  "the screen then held this". Off by default and never persisted — it always starts fresh.
+
+---
+
 ## [1.6.0] — 2026-08-07
 
 ### Added
