@@ -22,7 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   around the terminal while it runs so a traced session is never mistaken for a normal one.
   `Ctrl+Shift+D` writes a snapshot of the terminal's full internal state into the same file, in
   line with the surrounding bytes, so a later analysis can match "these bytes arrived" against
-  "the screen then held this". Off by default and never persisted — it always starts fresh.
+  "the screen then held this" — a brief "State dumped to trace" toast confirms each capture. Off
+  by default and never persisted — it always starts fresh.
 
 ---
 

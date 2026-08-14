@@ -132,6 +132,8 @@ public class TerminalTab {
 
     /** Overlay for the brief "Copied" confirmation — see {@link #showCopiedIndicator}. */
     private Shell copiedIndicator;
+    /** Overlay for the brief "State dumped" confirmation — see {@link #showTraceDumpIndicator}. */
+    private Shell traceDumpIndicator;
     /** False until the tab's initial layout has settled. A brand-new tab's canvas gets its real
      *  size synchronously — via {@code tabFolder.setSelection(...)}, called by MainWindow right
      *  after construction, in the same call stack — which fires SWT.Resize exactly like a user
@@ -584,40 +586,58 @@ public class TerminalTab {
      *  clipboard — reuses the same borderless-overlay look as the resize indicator, but
      *  auto-dismisses on a timer instead of staying up for as long as a drag continues. */
     private void showCopiedIndicator() {
-        if (canvas.isDisposed()) return;
-        Shell shell = canvas.getShell();
-        if (shell == null || shell.isDisposed()) return;
+        copiedIndicator = showBriefIndicator(copiedIndicator, "Copied");
+    }
 
-        if (copiedIndicator == null || copiedIndicator.isDisposed()) {
-            copiedIndicator = new Shell(shell, SWT.NO_TRIM | SWT.ON_TOP);
+    /** Brief confirmation shown when Ctrl+Shift+D records a state snapshot into the trace —
+     *  otherwise there is no feedback at all that the key press actually did anything. */
+    private void showTraceDumpIndicator() {
+        traceDumpIndicator = showBriefIndicator(traceDumpIndicator, "State dumped to trace");
+    }
+
+    /** Shows a small borderless "toast" with {@code text} near the bottom of the window for
+     *  ~900ms, then auto-hides. {@code indicator} is created once and reused on later calls
+     *  (each caller keeps its own field so two different confirmations never fight over one
+     *  widget); returns the (possibly newly created) shell for the caller to store back. */
+    private Shell showBriefIndicator(Shell indicator, String text) {
+        if (canvas.isDisposed()) return indicator;
+        Shell shell = canvas.getShell();
+        if (shell == null || shell.isDisposed()) return indicator;
+
+        if (indicator == null || indicator.isDisposed()) {
+            indicator = new Shell(shell, SWT.NO_TRIM | SWT.ON_TOP);
             Color bg = new Color(display, 30, 30, 30);
             Color fg = new Color(display, 230, 230, 230);
-            copiedIndicator.setBackground(bg);
+            indicator.setBackground(bg);
             Font indicatorFont = new Font(display, termFont.getFontData()[0].getName(), 12, SWT.BOLD);
-            copiedIndicator.addDisposeListener(e -> { bg.dispose(); fg.dispose(); indicatorFont.dispose(); });
+            indicator.addDisposeListener(e -> { bg.dispose(); fg.dispose(); indicatorFont.dispose(); });
 
             GridLayout gl = new GridLayout(1, false);
             gl.marginWidth = 14; gl.marginHeight = 8;
-            copiedIndicator.setLayout(gl);
+            indicator.setLayout(gl);
 
-            Label lbl = new Label(copiedIndicator, SWT.NONE);
-            lbl.setText("Copied");
+            Label lbl = new Label(indicator, SWT.NONE);
+            lbl.setText(text);
             lbl.setBackground(bg);
             lbl.setForeground(fg);
             lbl.setFont(indicatorFont);
+        } else {
+            ((Label) indicator.getChildren()[0]).setText(text);
         }
 
-        copiedIndicator.pack();
+        indicator.pack();
         Rectangle sb = shell.getBounds();
-        Point sz = copiedIndicator.getSize();
+        Point sz = indicator.getSize();
         // Near the bottom rather than dead centre, so it doesn't sit on top of whatever text
-        // was just selected and copied.
-        copiedIndicator.setLocation(sb.x + (sb.width - sz.x) / 2, sb.y + sb.height - sz.y - 60);
-        copiedIndicator.setVisible(true);
+        // was just selected/read on screen.
+        indicator.setLocation(sb.x + (sb.width - sz.x) / 2, sb.y + sb.height - sz.y - 60);
+        indicator.setVisible(true);
 
+        Shell toHide = indicator;
         display.timerExec(900, () -> {
-            if (copiedIndicator != null && !copiedIndicator.isDisposed()) copiedIndicator.setVisible(false);
+            if (!toHide.isDisposed()) toHide.setVisible(false);
         });
+        return indicator;
     }
 
     // -----------------------------------------------------------------------
@@ -1740,6 +1760,7 @@ public class TerminalTab {
             if (glyphFallback != null) glyphFallback.dispose();
             if (resizeIndicator != null && !resizeIndicator.isDisposed()) resizeIndicator.dispose();
             if (copiedIndicator != null && !copiedIndicator.isDisposed()) copiedIndicator.dispose();
+            if (traceDumpIndicator != null && !traceDumpIndicator.isDisposed()) traceDumpIndicator.dispose();
             if (colOverlayScrim != null && !colOverlayScrim.isDisposed()) colOverlayScrim.dispose();
             if (colOverlayText  != null && !colOverlayText.isDisposed())  colOverlayText.dispose();
             if (colReconnect    != null && !colReconnect.isDisposed())    colReconnect.dispose();
@@ -1831,6 +1852,8 @@ public class TerminalTab {
      *  byte records. No-op when not tracing — there is no file to write to. */
     public void dumpTraceState() {
         TerminalTrace t = trace;
-        if (t != null) t.state(emulator.dumpState());
+        if (t == null) return;
+        t.state(emulator.dumpState());
+        showTraceDumpIndicator();
     }
 }
