@@ -617,38 +617,80 @@ class TerminalEmulatorTest {
     }
 
     // -----------------------------------------------------------------------
-    // Alt-buffer nesting — the YaST-inside-MC bug (build 30)
+    // Repeated alt-screen requests (build 277)
+    //
+    // Builds 30-276 counted "nesting depth", incrementing on every ESC[?1049h and only really
+    // leaving the alternate screen once the count fell back to zero. That assumed each request
+    // was a distinct app stacking on top of the last (YaST launched from inside MC), but programs
+    // re-emit the sequence freely on ordinary repaints. A captured session of Claude Code's CLI
+    // sent ESC[?1049h fourteen times against six ESC[?1049l, leaving the emulator eight levels
+    // deep and permanently unable to return to the primary buffer — so quitting the program left
+    // its screen frozen in place instead of restoring the shell.
+    //
+    // xterm has no such counter (ToAlternate/FromAlternate): entering is idempotent, leaving is
+    // unconditional. These tests pin that down.
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("Activating the alt buffer while already in it (nested, e.g. YaST inside MC) clears the alt buffer for the inner app")
-    void altBufferNesting_nestedActivate_clearsInnerScreenOnly() {
+    @DisplayName("A repeated ESC[?1049h while already on the alternate screen changes nothing")
+    void altBuffer_repeatedActivate_isIdempotent() {
         TerminalEmulator emu = new TerminalEmulator(80, 24);
         send(emu, "primary text");
-        send(emu, ESC + "[?1049h"); // MC enters the alt buffer
-        send(emu, "MC content");
-        send(emu, ESC + "[?1049h"); // YaST enters the alt buffer too (nested)
-        assertEquals(' ', emu.getCell(0, 0, 0).character, "nested activation must clear the alt buffer for the inner app");
+        send(emu, ESC + "[?1049h");
+        send(emu, "app content");
+        send(emu, ESC + "[?1049h"); // the program repaints and re-asserts alternate mode
+
         assertTrue(emu.isAltBufferActive());
+        assertEquals('a', emu.getCell(0, 0, 0).character,
+                "re-entering the alternate screen must not wipe what the program already drew — "
+              + "it never asked for a clear, and it will only repaint the cells it thinks changed");
     }
 
     @Test
-    @DisplayName("Deactivating a NESTED alt buffer (inner app exiting) stays in alt buffer and preserves its content — the actual build-30 bug")
-    void altBufferNesting_nestedDeactivate_staysInAltBuffer_preservesContent() {
+    @DisplayName("ESC[?1049l returns to the primary buffer no matter how many ESC[?1049h preceded it")
+    void altBuffer_leaveAfterManyActivates_returnsToPrimary() {
         TerminalEmulator emu = new TerminalEmulator(80, 24);
-        send(emu, ESC + "[?1049h"); // MC enters the alt buffer
-        send(emu, "MC");
-        send(emu, ESC + "[?1049h"); // YaST enters (nested)
-        send(emu, "YaST content");
-        send(emu, ESC + "[?1049l"); // YaST exits (nested deactivate)
+        send(emu, "shell prompt");
+        for (int i = 0; i < 14; i++) send(emu, ESC + "[?1049h"); // as captured from a real CLI
+        send(emu, "app content");
+        send(emu, ESC + "[?1049l");
 
-        assertTrue(emu.isAltBufferActive(),
-                "exiting the INNER app must not close the OUTER app's (MC's) alt buffer too — this "
-              + "was the actual build-30 bug: a bare 'if (altBufferActive) return' with no nesting "
-              + "counter meant YaST exiting also kicked MC back to the primary buffer");
-        assertEquals('Y', emu.getCell(0, 0, 0).character,
-                "the alt buffer must still hold whatever the inner app last drew, not be cleared or "
-              + "reverted — MC does its own differential redraw from that state");
+        assertFalse(emu.isAltBufferActive(),
+                "a single leave request must always return to the primary buffer; counting entries "
+              + "and requiring a matching number of exits strands the terminal on the alternate "
+              + "screen for good once a program repaints more often than it quits");
+        assertEquals('s', emu.getCell(0, 0, 0).character,
+                "the shell's screen must come back exactly as it was left");
+    }
+
+    @Test
+    @DisplayName("A genuine re-entry (after leaving) clears the alternate screen, as ESC[?1049h specifies")
+    void altBuffer_reEnterAfterLeave_clearsAlternateScreen() {
+        // The distinction that matters: a *repeated* request while already on the alternate screen
+        // is a no-op (previous test), but a real entry — the terminal was on the primary buffer —
+        // clears first. That is what separates 1049 from 47/1047, and ncurses relies on it: after
+        // endwin()/re-entry it repaints in full precisely because it knows the screen was wiped.
+        TerminalEmulator emu = new TerminalEmulator(80, 24);
+        send(emu, ESC + "[?1049h");
+        send(emu, "MC");
+        send(emu, ESC + "[?1049l");   // endwin() before launching a child program
+        send(emu, ESC + "[?1049h");   // back after the child exits
+
+        assertTrue(emu.isAltBufferActive());
+        assertEquals(' ', emu.getCell(0, 0, 0).character,
+                "entering the alternate screen from the primary one must clear it first");
+    }
+
+    @Test
+    @DisplayName("ESC[?1049l while already on the primary buffer is a no-op")
+    void altBuffer_leaveWhenNotInAltScreen_isNoOp() {
+        TerminalEmulator emu = new TerminalEmulator(80, 24);
+        send(emu, "primary");
+        send(emu, ESC + "[?1049l");
+
+        assertFalse(emu.isAltBufferActive());
+        assertEquals('p', emu.getCell(0, 0, 0).character,
+                "an unmatched leave request must not disturb the primary buffer");
     }
 
     // -----------------------------------------------------------------------

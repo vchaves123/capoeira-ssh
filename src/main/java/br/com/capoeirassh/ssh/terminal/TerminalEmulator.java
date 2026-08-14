@@ -119,7 +119,6 @@ public class TerminalEmulator {
      *  last column instead of continuing on the next line. */
     private boolean autoWrap = true;
     private boolean altBufferActive = false;
-    private int     altBufferDepth  = 0;   // nesting counter for apps that stack alt-screen
 
     // -----------------------------------------------------------------------
     // UTF-8 incremental decoder
@@ -636,7 +635,6 @@ public class TerminalEmulator {
         for (TerminalCell[] row : alternateBuffer) for (TerminalCell c : row) c.clear();
         scrollback.clear();
         if (altBufferActive) { altBufferActive = false; activeBuffer = primaryBuffer; }
-        altBufferDepth = 0;
         resetState();
     }
 
@@ -852,19 +850,18 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     // Alternate screen buffer
     // -----------------------------------------------------------------------
+    /**
+     * Enters the alternate screen (DECSET 47/1047/1049).
+     *
+     * <p>Idempotent, matching xterm's {@code ToAlternate()}: a request to enter while already on
+     * the alternate screen does nothing at all — it neither clears the buffer nor re-saves the
+     * cursor. Programs re-emit the sequence freely (Claude Code's CLI sends it on every full
+     * repaint), and treating each one as a fresh entry would either wipe the screen the program
+     * still believes it owns, or — as this emulator did until build 277 by counting nesting
+     * depth — leave the terminal unable to ever get back to the primary buffer.
+     */
     private void activateAltBuffer(boolean saveState) {
-        altBufferDepth++;
-        if (altBufferActive) {
-            // Nested activation (e.g. YaST inside MC): just clear the alt buffer
-            // so the inner app gets a clean slate. Don't touch the saved primary state.
-            for (TerminalCell[] row : alternateBuffer) for (TerminalCell c : row) c.clear();
-            cursorRow = 0; cursorCol = 0; wrapPending = false;
-            scrollTop = 0; scrollBottom = rows - 1;
-            g0LineDrawing = false; g1LineDrawing = false; useG1 = false;
-            currentAttrs.clear();
-            notifyAltBufferChanged();
-            return;
-        }
+        if (altBufferActive) return;
         if (saveState) {
             altSavedRow          = cursorRow;
             altSavedCol          = cursorCol;
@@ -886,33 +883,17 @@ public class TerminalEmulator {
         notifyAltBufferChanged();
     }
 
+    /**
+     * Leaves the alternate screen (DECRST 47/1047/1049), restoring the primary buffer.
+     *
+     * <p>Unconditional, matching xterm's {@code FromAlternate()}: whenever the terminal is on the
+     * alternate screen, this request returns it to the primary one. There is no notion of a
+     * partial or nested exit — a program that wants the alternate screen back simply asks for it
+     * again. The alternate buffer's contents are deliberately left untouched, so a program that
+     * re-enters immediately finds what it drew rather than a blank screen it never asked to clear.
+     */
     private void deactivateAltBuffer(boolean restoreState) {
         if (!altBufferActive) return;
-        if (altBufferDepth > 1) {
-            // Nested deactivation (inner app like YaST exiting): stay in alt buffer.
-            // Do NOT clear the alt buffer here. ncurses in the outer app (MC) holds
-            // its own physical-screen model that reflects whatever the inner app drew.
-            // MC will do a differential update from that state — only changing cells
-            // that differ. If we cleared the buffer, cells that ncurses thinks are
-            // already correct would never be redrawn, leaving blank/corrupt cells.
-            // Leaving the inner app's content intact lets the differential update work.
-            altBufferDepth--;
-            if (restoreState) {
-                cursorRow = altSavedRow; cursorCol = altSavedCol;
-                scrollTop = altSavedScrollTop; scrollBottom = altSavedScrollBottom;
-                g0LineDrawing = altSavedG0LineDrawing; g1LineDrawing = altSavedG1LineDrawing;
-                useG1 = altSavedUseG1; appCursorKeys = altSavedAppCursorKeys;
-                currentAttrs.copyFrom(altSavedAttrs);
-            } else {
-                scrollTop = 0; scrollBottom = rows - 1;
-                g0LineDrawing = false; g1LineDrawing = false; useG1 = false;
-                currentAttrs.clear();
-            }
-            wrapPending = false;
-            notifyAltBufferChanged();
-            return;
-        }
-        altBufferDepth = 0;
         altBufferActive = false;
         activeBuffer    = primaryBuffer;
         if (restoreState) {
@@ -1166,7 +1147,6 @@ public class TerminalEmulator {
         sb.append(",\"wrapPending\":").append(wrapPending);
         sb.append(",\"active\":\"").append(altBufferActive ? "alternate" : "primary").append('"');
         sb.append(",\"altBufferActive\":").append(altBufferActive);
-        sb.append(",\"altBufferDepth\":").append(altBufferDepth);
         sb.append(",\"scroll\":[").append(scrollTop).append(',').append(scrollBottom).append(']');
         sb.append(",\"originMode\":").append(originMode);
         sb.append(",\"autoWrap\":").append(autoWrap);
