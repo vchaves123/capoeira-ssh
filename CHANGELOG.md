@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased]
+## [1.7.0] — 2026-08-13
 
 ### Fixed
 - **A full-screen program's display could stay frozen on screen after it exited**, instead of the
