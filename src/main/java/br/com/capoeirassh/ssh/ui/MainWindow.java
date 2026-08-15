@@ -567,9 +567,18 @@ public class MainWindow {
         List<java.io.File> localFiles = new ArrayList<>();
         for (String n : names) localFiles.add(new java.io.File(dir, n));
 
+        // Its own SSH connection, independent of the terminal's — the transfer survives the tab
+        // disconnecting/reconnecting, and vice versa. Costs a fresh credential resolution (silent
+        // for a saved/vaulted credential or a passphrase-less key; a prompt for a manually-typed
+        // password, since that's zeroed right after the terminal's own connect() and can't be reused).
+        ConnectDialog credDlg = new ConnectDialog(shell, terminal.getSessionInfo());
+        char[] password = credDlg.open();
+        if (password == null) return; // cancelled
+
+        br.com.capoeirassh.ssh.ssh.SftpConnection sftpConn = new br.com.capoeirassh.ssh.ssh.SftpConnection();
         com.jcraft.jsch.ChannelSftp sftp;
         try {
-            sftp = terminal.openSftpChannel();
+            sftp = sftpConn.connect(terminal.getSessionInfo(), password, display);
         } catch (Exception ex) {
             sftpChannelError(terminal, ex);
             return;
@@ -577,7 +586,7 @@ public class MainWindow {
         RemoteFileBrowserDialog browser = new RemoteFileBrowserDialog(
             shell, sftp, RemoteFileBrowserDialog.Mode.PICK_FOLDER, "Select destination folder");
         if (!browser.open()) {
-            try { sftp.disconnect(); } catch (Exception ignored) {}
+            sftpConn.close();
             return;
         }
         String remoteDir = browser.getSelectedFolder();
@@ -637,7 +646,7 @@ public class MainWindow {
                 }
             }
             progress.close();
-            try { sftp.disconnect(); } catch (Exception ignored) {}
+            sftpConn.close();
 
             int    finalOkCount   = okCount;
             int    finalSkipCount = skipCount;
@@ -656,9 +665,15 @@ public class MainWindow {
     /** Lets the user browse the tab's live SFTP session, pick one or more remote files, and save
      *  them to a local folder. */
     private void downloadFiles(TerminalTab terminal) {
+        // Its own SSH connection, independent of the terminal's — see uploadFiles() for why.
+        ConnectDialog credDlg = new ConnectDialog(shell, terminal.getSessionInfo());
+        char[] password = credDlg.open();
+        if (password == null) return; // cancelled
+
+        br.com.capoeirassh.ssh.ssh.SftpConnection sftpConn = new br.com.capoeirassh.ssh.ssh.SftpConnection();
         com.jcraft.jsch.ChannelSftp sftp;
         try {
-            sftp = terminal.openSftpChannel();
+            sftp = sftpConn.connect(terminal.getSessionInfo(), password, display);
         } catch (Exception ex) {
             sftpChannelError(terminal, ex);
             return;
@@ -666,7 +681,7 @@ public class MainWindow {
         RemoteFileBrowserDialog browser = new RemoteFileBrowserDialog(
             shell, sftp, RemoteFileBrowserDialog.Mode.PICK_FILES, "Select file(s) to download");
         if (!browser.open()) {
-            try { sftp.disconnect(); } catch (Exception ignored) {}
+            sftpConn.close();
             return;
         }
         List<RemoteFileBrowserDialog.PickedFile> remoteFiles = browser.getSelectedFiles();
@@ -675,7 +690,7 @@ public class MainWindow {
         dd.setText("Select destination folder");
         String localDir = dd.open();
         if (localDir == null) { // cancelled
-            try { sftp.disconnect(); } catch (Exception ignored) {}
+            sftpConn.close();
             return;
         }
 
@@ -737,7 +752,7 @@ public class MainWindow {
                 }
             }
             progress.close();
-            try { sftp.disconnect(); } catch (Exception ignored) {}
+            sftpConn.close();
 
             int    finalOkCount   = okCount;
             int    finalSkipCount = skipCount;
@@ -753,7 +768,7 @@ public class MainWindow {
         }, "sftp-download").start();
     }
 
-    /** Shown when {@link TerminalTab#openSftpChannel()} fails. JSch reports this the same way
+    /** Shown when {@link br.com.capoeirassh.ssh.ssh.SftpConnection#connect} fails. JSch reports this the same way
      *  whether the server has no SFTP subsystem enabled, briefly refused the channel, or
      *  something else went wrong opening it — there's no distinct exception type to tell those
      *  apart — so the message leads with the most likely cause and still surfaces the raw JSch

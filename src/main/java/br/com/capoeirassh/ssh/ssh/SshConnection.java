@@ -44,13 +44,7 @@ public class SshConnection {
                          java.util.function.Consumer<String> verboseSink) throws Exception {
         try {
             jsch = new JSch();
-
-            // Known-hosts file — host keys are stored here and verified on every connection.
-            // Pre-create with owner-only permissions so JSch doesn't create it world-readable.
-            Path knownHosts = Path.of(System.getProperty("user.home"), ".capoeira", "known_hosts");
-            if (!Files.exists(knownHosts))
-                br.com.capoeirassh.ssh.storage.SecureFiles.write(knownHosts, new byte[0]);
-            jsch.setKnownHosts(knownHosts.toString());
+            applyKnownHosts(jsch);
 
             if (info.authType == SessionInfo.AuthType.PRIVATE_KEY
                     && info.keyPath != null && !info.keyPath.isBlank()) {
@@ -141,20 +135,6 @@ public class SshConnection {
         return channel != null && channel.isConnected();
     }
 
-    /**
-     * Opens a new SFTP channel over the same, already-authenticated session as the shell —
-     * no second login, no extra credential prompt. Each call returns a fresh channel; the
-     * caller is responsible for disconnecting it (e.g. in a try/finally) once the transfer
-     * or browse is done.
-     */
-    public ChannelSftp openSftpChannel() throws JSchException {
-        if (session == null || !session.isConnected())
-            throw new JSchException("SSH session is not connected");
-        ChannelSftp sftp = (ChannelSftp) session.openChannel("sftp");
-        sftp.connect(15_000);
-        return sftp;
-    }
-
     public void close() {
         try { if (channel != null) channel.disconnect();  } catch (Exception ignored) {}
         try { if (session != null) session.disconnect();  } catch (Exception ignored) {}
@@ -163,6 +143,18 @@ public class SshConnection {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /** Points JSch at the app's known_hosts file, pre-creating it (owner-only permissions, so
+     *  JSch never creates it world-readable) if this is the first connection ever made.
+     *  Package-private so {@link SftpConnection} — an independent SSH connection used for one
+     *  SFTP transfer, not tied to any terminal tab's session — shares the same trust store rather
+     *  than re-verifying host keys the terminal side already accepted. */
+    static void applyKnownHosts(JSch jsch) throws IOException, JSchException {
+        Path knownHosts = Path.of(System.getProperty("user.home"), ".capoeira", "known_hosts");
+        if (!Files.exists(knownHosts))
+            br.com.capoeirassh.ssh.storage.SecureFiles.write(knownHosts, new byte[0]);
+        jsch.setKnownHosts(knownHosts.toString());
+    }
 
     /**
      * Builds SSH terminal modes (RFC 4254 §8) for a sane PTY initial state.
@@ -219,8 +211,9 @@ public class SshConnection {
         };
     }
 
-    /** Convert char[] to UTF-8 bytes without creating an intermediate String. */
-    private static byte[] toBytes(char[] chars) {
+    /** Convert char[] to UTF-8 bytes without creating an intermediate String. Package-private
+     *  so {@link SftpConnection} can reuse it. */
+    static byte[] toBytes(char[] chars) {
         ByteBuffer bb = StandardCharsets.UTF_8.encode(CharBuffer.wrap(chars));
         byte[] b = new byte[bb.remaining()];
         bb.get(b);
@@ -232,7 +225,8 @@ public class SshConnection {
     // Host-key verifier — runs on SSH thread, shows SWT dialog via syncExec
     // -----------------------------------------------------------------------
 
-    private static final class SwtHostVerifier implements UserInfo {
+    /** Package-private (not private) so {@link SftpConnection} can reuse it too. */
+    static final class SwtHostVerifier implements UserInfo {
 
         private final Display display;
         private final String  host;
