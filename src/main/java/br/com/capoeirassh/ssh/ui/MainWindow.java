@@ -777,7 +777,9 @@ public class MainWindow {
         return result[0];
     }
 
-    private static boolean remoteExists(com.jcraft.jsch.ChannelSftp sftp, String path) {
+    /** Package-private (not private) so a JUnit test in this package can drive it directly,
+     *  against a fake {@code ChannelSftp} subclass overriding {@code stat}. */
+    static boolean remoteExists(com.jcraft.jsch.ChannelSftp sftp, String path) {
         try {
             sftp.stat(path);
             return true;
@@ -786,12 +788,12 @@ public class MainWindow {
         }
     }
 
-    private static String joinRemote(String dir, String name) {
+    static String joinRemote(String dir, String name) {
         return dir.endsWith("/") ? dir + name : dir + "/" + name;
     }
 
     /** Finds a "name (1).ext", "name (2).ext", … that doesn't yet exist on the remote side. */
-    private static String uniqueRemoteName(com.jcraft.jsch.ChannelSftp sftp, String dir, String name) {
+    static String uniqueRemoteName(com.jcraft.jsch.ChannelSftp sftp, String dir, String name) {
         String base = name, ext = "";
         int dot = name.lastIndexOf('.');
         if (dot > 0) { base = name.substring(0, dot); ext = name.substring(dot); }
@@ -804,8 +806,9 @@ public class MainWindow {
         return candidate;
     }
 
-    /** Finds a "name (1).ext", "name (2).ext", … that doesn't yet exist in the local folder. */
-    private static String uniqueLocalName(String dir, String name) {
+    /** Finds a "name (1).ext", "name (2).ext", … that doesn't yet exist in the local folder.
+     *  Package-private (not private) so a JUnit test in this package can drive it directly. */
+    static String uniqueLocalName(String dir, String name) {
         String base = name, ext = "";
         int dot = name.lastIndexOf('.');
         if (dot > 0) { base = name.substring(0, dot); ext = name.substring(dot); }

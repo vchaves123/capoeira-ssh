@@ -204,18 +204,20 @@ public class RemoteFileBrowserDialog {
     /** Valid when {@link Mode#PICK_FILES} was confirmed. */
     public List<PickedFile> getSelectedFiles() { return selectedFiles; }
 
-    private static String parentOf(String path) {
+    /** Package-private (not private) so a JUnit test in this package can drive it directly,
+     *  without a Display/SWT dependency — same convention as ImportSessionsDialog.isDuplicate. */
+    static String parentOf(String path) {
         if (path == null || path.isEmpty() || "/".equals(path)) return "/";
         String p = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
         int idx = p.lastIndexOf('/');
         return idx <= 0 ? "/" : p.substring(0, idx);
     }
 
-    private static String joinPath(String dir, String name) {
+    static String joinPath(String dir, String name) {
         return dir.endsWith("/") ? dir + name : dir + "/" + name;
     }
 
-    private static String humanSize(long bytes) {
+    static String humanSize(long bytes) {
         if (bytes < 1024) return bytes + " B";
         int exp = (int) (Math.log(bytes) / Math.log(1024));
         String pre = "KMGTPE".charAt(exp - 1) + "";

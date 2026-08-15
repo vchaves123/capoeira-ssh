@@ -124,11 +124,12 @@ public class TransferProgressDialog {
         display.asyncExec(() -> { if (!dlg.isDisposed()) dlg.dispose(); });
     }
 
-    private static double ratio(long done, long total) {
+    /** Package-private (not private) so a JUnit test in this package can drive it directly. */
+    static double ratio(long done, long total) {
         return Math.max(0.0, Math.min(1.0, (double) done / (double) Math.max(total, 1)));
     }
 
-    private static String humanSize(long bytes) {
+    static String humanSize(long bytes) {
         if (bytes < 1024) return bytes + " B";
         int exp = (int) (Math.log(bytes) / Math.log(1024));
         String pre = "KMGTPE".charAt(exp - 1) + "";
