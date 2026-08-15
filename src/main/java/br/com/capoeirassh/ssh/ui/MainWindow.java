@@ -514,10 +514,15 @@ public class MainWindow {
 
             new MenuItem(menu, SWT.SEPARATOR);
 
-            MenuItem miTrace = new MenuItem(menu, SWT.CHECK);
-            miTrace.setText("Trace Bytes to File");
-            miTrace.setSelection(terminal.isTracing());
-            miTrace.addListener(SWT.Selection, ev -> toggleTrace(terminal));
+            MenuItem miUpload = new MenuItem(menu, SWT.PUSH);
+            miUpload.setText("Upload file(s)...");
+            miUpload.setEnabled(!terminal.isDisconnected());
+            miUpload.addListener(SWT.Selection, ev -> uploadFiles(terminal));
+
+            MenuItem miDownload = new MenuItem(menu, SWT.PUSH);
+            miDownload.setText("Download file(s)...");
+            miDownload.setEnabled(!terminal.isDisconnected());
+            miDownload.addListener(SWT.Selection, ev -> downloadFiles(terminal));
 
             new MenuItem(menu, SWT.SEPARATOR);
 
@@ -545,15 +550,283 @@ public class MainWindow {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // SFTP upload / download (both support selecting several files at once)
+    // -----------------------------------------------------------------------
+
+    /** Lets the user pick one or more local files and send them to a remote folder chosen
+     *  by browsing the tab's live SFTP session. */
+    private void uploadFiles(TerminalTab terminal) {
+        FileDialog fd = new FileDialog(shell, SWT.OPEN | SWT.MULTI);
+        fd.setText("Select file(s) to upload");
+        if (fd.open() == null) return; // cancelled
+
+        String   dir   = fd.getFilterPath();
+        String[] names = fd.getFileNames();
+        if (names == null || names.length == 0) return;
+        List<java.io.File> localFiles = new ArrayList<>();
+        for (String n : names) localFiles.add(new java.io.File(dir, n));
+
+        com.jcraft.jsch.ChannelSftp sftp;
+        try {
+            sftp = terminal.openSftpChannel();
+        } catch (Exception ex) {
+            sftpChannelError(terminal, ex);
+            return;
+        }
+        RemoteFileBrowserDialog browser = new RemoteFileBrowserDialog(
+            shell, sftp, RemoteFileBrowserDialog.Mode.PICK_FOLDER, "Select destination folder");
+        if (!browser.open()) {
+            try { sftp.disconnect(); } catch (Exception ignored) {}
+            return;
+        }
+        String remoteDir = browser.getSelectedFolder();
+
+        long totalBytes = 0;
+        for (java.io.File f : localFiles) totalBytes += f.length();
+
+        // The transfer runs off the UI thread so a large/slow file doesn't freeze the window;
+        // the progress window (built on the UI thread, before this starts) reflects it live.
+        TransferProgressDialog progress = new TransferProgressDialog(shell, "Uploading", localFiles.size(), totalBytes);
+        new Thread(() -> {
+            int  okCount      = 0;
+            int  skipCount    = 0;
+            long[] globalDone = { 0 };
+            StringBuilder errors = new StringBuilder();
+            FileConflictDialog.Action appliedToAll = null;
+            for (int i = 0; i < localFiles.size() && !progress.isCancelled(); i++) {
+                java.io.File f = localFiles.get(i);
+                long fileSize = f.length();
+                int  fileIndex = i + 1;
+                String remotePath = joinRemote(remoteDir, f.getName());
+
+                if (remoteExists(sftp, remotePath)) {
+                    FileConflictDialog.Action action = appliedToAll;
+                    if (action == null) {
+                        FileConflictDialog.Result r = askConflict(f.getName());
+                        action = (r != null) ? r.action() : FileConflictDialog.Action.SKIP;
+                        if (r != null && r.applyToAll()) appliedToAll = action;
+                    }
+                    if (action == FileConflictDialog.Action.SKIP) {
+                        skipCount++;
+                        progress.update(fileIndex, f.getName() + " (skipped)", fileSize, fileSize, globalDone[0]);
+                        continue;
+                    } else if (action == FileConflictDialog.Action.RENAME) {
+                        remotePath = joinRemote(remoteDir, uniqueRemoteName(sftp, remoteDir, f.getName()));
+                    }
+                    // OVERWRITE: keep remotePath as-is
+                }
+
+                long[] fileDone = { 0 };
+                try {
+                    sftp.put(f.getAbsolutePath(), remotePath, new com.jcraft.jsch.SftpProgressMonitor() {
+                        @Override public void init(int op, String src, String dest, long max) {
+                            progress.update(fileIndex, f.getName(), 0, fileSize, globalDone[0]);
+                        }
+                        @Override public boolean count(long bytes) {
+                            fileDone[0]   += bytes;
+                            globalDone[0] += bytes;
+                            progress.update(fileIndex, f.getName(), fileDone[0], fileSize, globalDone[0]);
+                            return !progress.isCancelled();
+                        }
+                        @Override public void end() {}
+                    });
+                    okCount++;
+                } catch (Exception ex) {
+                    errors.append("• ").append(f.getName()).append(": ").append(ex.getMessage()).append("\n");
+                }
+            }
+            progress.close();
+            try { sftp.disconnect(); } catch (Exception ignored) {}
+
+            int    finalOkCount   = okCount;
+            int    finalSkipCount = skipCount;
+            String finalErrors    = errors.toString();
+            display.asyncExec(() -> {
+                MessageBox mb = new MessageBox(shell, (finalErrors.isEmpty() ? SWT.ICON_INFORMATION : SWT.ICON_WARNING) | SWT.OK);
+                mb.setText("Upload");
+                mb.setMessage(finalOkCount + " of " + localFiles.size() + " file(s) uploaded to " + remoteDir
+                    + (finalSkipCount > 0 ? " (" + finalSkipCount + " skipped)" : "")
+                    + (finalErrors.isEmpty() ? "" : "\n\nErrors:\n" + finalErrors));
+                mb.open();
+            });
+        }, "sftp-upload").start();
+    }
+
+    /** Lets the user browse the tab's live SFTP session, pick one or more remote files, and save
+     *  them to a local folder. */
+    private void downloadFiles(TerminalTab terminal) {
+        com.jcraft.jsch.ChannelSftp sftp;
+        try {
+            sftp = terminal.openSftpChannel();
+        } catch (Exception ex) {
+            sftpChannelError(terminal, ex);
+            return;
+        }
+        RemoteFileBrowserDialog browser = new RemoteFileBrowserDialog(
+            shell, sftp, RemoteFileBrowserDialog.Mode.PICK_FILES, "Select file(s) to download");
+        if (!browser.open()) {
+            try { sftp.disconnect(); } catch (Exception ignored) {}
+            return;
+        }
+        List<RemoteFileBrowserDialog.PickedFile> remoteFiles = browser.getSelectedFiles();
+
+        DirectoryDialog dd = new DirectoryDialog(shell, SWT.NONE);
+        dd.setText("Select destination folder");
+        String localDir = dd.open();
+        if (localDir == null) { // cancelled
+            try { sftp.disconnect(); } catch (Exception ignored) {}
+            return;
+        }
+
+        long totalBytes = 0;
+        for (RemoteFileBrowserDialog.PickedFile pf : remoteFiles) totalBytes += pf.size;
+
+        // The transfer runs off the UI thread so a large/slow file doesn't freeze the window;
+        // the progress window (built on the UI thread, before this starts) reflects it live.
+        TransferProgressDialog progress = new TransferProgressDialog(shell, "Downloading", remoteFiles.size(), totalBytes);
+        new Thread(() -> {
+            int    okCount     = 0;
+            int    skipCount   = 0;
+            long[] globalDone  = { 0 };
+            StringBuilder errors = new StringBuilder();
+            FileConflictDialog.Action appliedToAll = null;
+            for (int i = 0; i < remoteFiles.size() && !progress.isCancelled(); i++) {
+                RemoteFileBrowserDialog.PickedFile pf = remoteFiles.get(i);
+                String name      = pf.name();
+                long   fileSize  = pf.size;
+                int    fileIndex = i + 1;
+                String localName = name;
+
+                if (new java.io.File(localDir, localName).exists()) {
+                    FileConflictDialog.Action action = appliedToAll;
+                    if (action == null) {
+                        FileConflictDialog.Result r = askConflict(name);
+                        action = (r != null) ? r.action() : FileConflictDialog.Action.SKIP;
+                        if (r != null && r.applyToAll()) appliedToAll = action;
+                    }
+                    if (action == FileConflictDialog.Action.SKIP) {
+                        skipCount++;
+                        progress.update(fileIndex, name + " (skipped)", fileSize, fileSize, globalDone[0]);
+                        continue;
+                    } else if (action == FileConflictDialog.Action.RENAME) {
+                        localName = uniqueLocalName(localDir, name);
+                    }
+                    // OVERWRITE: keep localName as-is
+                }
+
+                long[] fileDone = { 0 };
+                String finalLocalName = localName;
+                try {
+                    sftp.get(pf.path, new java.io.File(localDir, finalLocalName).getAbsolutePath(),
+                        new com.jcraft.jsch.SftpProgressMonitor() {
+                            @Override public void init(int op, String src, String dest, long max) {
+                                progress.update(fileIndex, name, 0, fileSize, globalDone[0]);
+                            }
+                            @Override public boolean count(long bytes) {
+                                fileDone[0]   += bytes;
+                                globalDone[0] += bytes;
+                                progress.update(fileIndex, name, fileDone[0], fileSize, globalDone[0]);
+                                return !progress.isCancelled();
+                            }
+                            @Override public void end() {}
+                        });
+                    okCount++;
+                } catch (Exception ex) {
+                    errors.append("• ").append(name).append(": ").append(ex.getMessage()).append("\n");
+                }
+            }
+            progress.close();
+            try { sftp.disconnect(); } catch (Exception ignored) {}
+
+            int    finalOkCount   = okCount;
+            int    finalSkipCount = skipCount;
+            String finalErrors    = errors.toString();
+            display.asyncExec(() -> {
+                MessageBox mb = new MessageBox(shell, (finalErrors.isEmpty() ? SWT.ICON_INFORMATION : SWT.ICON_WARNING) | SWT.OK);
+                mb.setText("Download");
+                mb.setMessage(finalOkCount + " of " + remoteFiles.size() + " file(s) downloaded to " + localDir
+                    + (finalSkipCount > 0 ? " (" + finalSkipCount + " skipped)" : "")
+                    + (finalErrors.isEmpty() ? "" : "\n\nErrors:\n" + finalErrors));
+                mb.open();
+            });
+        }, "sftp-download").start();
+    }
+
+    /** Shown when {@link TerminalTab#openSftpChannel()} fails. JSch reports this the same way
+     *  whether the server has no SFTP subsystem enabled, briefly refused the channel, or
+     *  something else went wrong opening it — there's no distinct exception type to tell those
+     *  apart — so the message leads with the most likely cause and still surfaces the raw JSch
+     *  text underneath for anyone who needs to diagnose further. */
+    private void sftpChannelError(TerminalTab terminal, Exception ex) {
+        MessageBox mb = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+        mb.setText("SFTP");
+        mb.setMessage("Could not open an SFTP channel to " + terminal.getSessionInfo().host + ".\n\n"
+            + "This usually means the server's SSH daemon doesn't have the SFTP subsystem enabled "
+            + "(or it briefly refused the request) — the terminal connection itself is unaffected.\n\n"
+            + "Underlying error: " + ex.getMessage());
+        mb.open();
+    }
+
+    /** Opens {@link FileConflictDialog} on the UI thread and blocks the calling (background
+     *  transfer) thread until the user answers — same pattern as any other modal prompt, just
+     *  reached via {@code syncExec} since the caller isn't the UI thread. */
+    private FileConflictDialog.Result askConflict(String fileName) {
+        FileConflictDialog.Result[] result = new FileConflictDialog.Result[1];
+        display.syncExec(() -> result[0] = new FileConflictDialog().open(shell, fileName));
+        return result[0];
+    }
+
+    private static boolean remoteExists(com.jcraft.jsch.ChannelSftp sftp, String path) {
+        try {
+            sftp.stat(path);
+            return true;
+        } catch (com.jcraft.jsch.SftpException ex) {
+            return false;
+        }
+    }
+
+    private static String joinRemote(String dir, String name) {
+        return dir.endsWith("/") ? dir + name : dir + "/" + name;
+    }
+
+    /** Finds a "name (1).ext", "name (2).ext", … that doesn't yet exist on the remote side. */
+    private static String uniqueRemoteName(com.jcraft.jsch.ChannelSftp sftp, String dir, String name) {
+        String base = name, ext = "";
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) { base = name.substring(0, dot); ext = name.substring(dot); }
+        int n = 1;
+        String candidate;
+        do {
+            candidate = base + " (" + n + ")" + ext;
+            n++;
+        } while (remoteExists(sftp, joinRemote(dir, candidate)));
+        return candidate;
+    }
+
+    /** Finds a "name (1).ext", "name (2).ext", … that doesn't yet exist in the local folder. */
+    private static String uniqueLocalName(String dir, String name) {
+        String base = name, ext = "";
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) { base = name.substring(0, dot); ext = name.substring(dot); }
+        int n = 1;
+        String candidate;
+        do {
+            candidate = base + " (" + n + ")" + ext;
+            n++;
+        } while (new java.io.File(dir, candidate).exists());
+        return candidate;
+    }
+
     /**
-     * Turns byte-level tracing on or off for one tab, and tells the user where the file went.
+     * Applies a byte-level tracing change requested from the Configuration Settings dialog, and
+     * tells the user where the file went.
      *
      * <p>The path matters enough to interrupt for: a trace is only useful if it can be found
      * afterwards, and there is no other place in the UI that reveals the file name. Turning it off
      * confirms the same path so the user leaves knowing what to go read.
      */
-    private void toggleTrace(TerminalTab terminal) {
-        boolean turningOn = !terminal.isTracing();
+    private void applyTraceChange(TerminalTab terminal, boolean turningOn) {
         java.nio.file.Path file = terminal.setTracing(turningOn);
 
         if (turningOn && file == null) {
@@ -593,9 +866,15 @@ public class MainWindow {
         current.sshVerbose    = info.sshVerbose;
         current.allowColumnMode = info.allowColumnMode;
 
-        ConfigurationSettingsDialog dlg = new ConfigurationSettingsDialog(shell, "Configuration Setting", current, info.host);
+        ConfigurationSettingsDialog dlg = new ConfigurationSettingsDialog(
+            shell, "Configuration Setting", current, info.host, true, terminal.isTracing());
         if (!dlg.open()) return;
         br.com.capoeirassh.ssh.model.ConfigurationSettings s = dlg.getResult();
+
+        boolean traceRequested = dlg.getTraceEnabled();
+        if (traceRequested != terminal.isTracing()) {
+            applyTraceChange(terminal, traceRequested);
+        }
 
         terminal.applyAppearance(s.appearFontName, s.appearFontSize,
             new org.eclipse.swt.graphics.RGB(s.appearFgR, s.appearFgG, s.appearFgB),

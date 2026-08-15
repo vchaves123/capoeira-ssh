@@ -22,6 +22,10 @@ public class ConfigurationSettingsDialog {
     private final ConfigurationSettings settings;
     private boolean confirmed = false;
 
+    private final boolean supportsTrace;
+    private final boolean traceInitial;
+    private boolean traceResult;
+
     public ConfigurationSettingsDialog(Shell parent, String title, ConfigurationSettings initial) {
         this(parent, title, initial, "");
     }
@@ -30,10 +34,22 @@ public class ConfigurationSettingsDialog {
      *                  typed (matches what TerminalTab actually writes); "" when not applicable
      *                  (e.g. editing global defaults). */
     public ConfigurationSettingsDialog(Shell parent, String title, ConfigurationSettings initial, String hostHint) {
-        this.parent   = parent;
-        this.title    = title;
-        this.settings = initial.copy();
-        this.hostHint = hostHint != null ? hostHint : "";
+        this(parent, title, initial, hostHint, false, false);
+    }
+
+    /** @param supportsTrace whether this dialog instance is scoped to a live terminal tab, the
+     *                       only scope where byte-level tracing applies (it is never persisted
+     *                       to session/global defaults).
+     *  @param tracingNow    the tab's current tracing state, used to seed the checkbox. */
+    public ConfigurationSettingsDialog(Shell parent, String title, ConfigurationSettings initial, String hostHint,
+                                        boolean supportsTrace, boolean tracingNow) {
+        this.parent        = parent;
+        this.title         = title;
+        this.settings       = initial.copy();
+        this.hostHint       = hostHint != null ? hostHint : "";
+        this.supportsTrace  = supportsTrace;
+        this.traceInitial   = tracingNow;
+        this.traceResult    = tracingNow;
     }
 
     /** Returns true if the user pressed OK; {@link #getResult()} then holds the new values. */
@@ -187,6 +203,19 @@ public class ConfigurationSettingsDialog {
             + "messages directly in the terminal as the connection is established.");
         chkVerbose.setSelection(settings.sshVerbose);
 
+        // ── Byte-level trace (only meaningful for a live terminal tab) ───────────
+        Button chkTrace = null;
+        if (supportsTrace) {
+            label(dlg, "Diagnostics:");
+            chkTrace = new Button(dlg, SWT.CHECK);
+            chkTrace.setText("Trace bytes to file");
+            chkTrace.setToolTipText("Records every byte sent and received to a file, plus a screen-state "
+                + "snapshot when you press Ctrl+Shift+D. Not persisted — turns off if left on when the "
+                + "tab closes.");
+            chkTrace.setSelection(traceInitial);
+        }
+        final Button chkTraceFinal = chkTrace;
+
         // ── DECCOLM (80/132 column switching) ─────────────────────────────────
         label(dlg, "Column switching:");
         Button chkColumnMode = new Button(dlg, SWT.CHECK);
@@ -223,6 +252,8 @@ public class ConfigurationSettingsDialog {
             settings.sshVerbose    = chkVerbose.getSelection();
             settings.allowColumnMode = chkColumnMode.getSelection();
 
+            if (chkTraceFinal != null) traceResult = chkTraceFinal.getSelection();
+
             confirmed = true;
             dlg.dispose();
         });
@@ -238,6 +269,9 @@ public class ConfigurationSettingsDialog {
     }
 
     public ConfigurationSettings getResult() { return settings; }
+
+    /** Valid only when this dialog was built with {@code supportsTrace}; the checkbox state at OK time. */
+    public boolean getTraceEnabled() { return traceResult; }
 
     private static final java.util.regex.Pattern TIMESTAMPED_LOG_NAME =
         java.util.regex.Pattern.compile("^\\d{8}_\\d{6}_(.+)\\.log$");

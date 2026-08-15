@@ -1694,6 +1694,13 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     public SessionInfo getSessionInfo()                   { return sessionInfo; }
     public boolean     isDisconnected()                   { return disconnected; }
+
+    /** Opens a new SFTP channel over this tab's live SSH session, for file transfer dialogs.
+     *  Reuses the already-authenticated connection — no separate SFTP login. Throws if the
+     *  tab is disconnected; the caller should check {@link #isDisconnected()} first. */
+    public com.jcraft.jsch.ChannelSftp openSftpChannel() throws com.jcraft.jsch.JSchException {
+        return connection.openSftpChannel();
+    }
     public void        setOnReconnectRequest(Runnable r)  { this.onReconnectRequest = r; }
     /** Called after a tab drag-reorder replaces the underlying CTabItem. */
     public void        replaceTabItem(CTabItem newItem)   { this.tabItem = newItem; }

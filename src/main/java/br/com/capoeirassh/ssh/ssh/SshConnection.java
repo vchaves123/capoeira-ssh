@@ -141,6 +141,20 @@ public class SshConnection {
         return channel != null && channel.isConnected();
     }
 
+    /**
+     * Opens a new SFTP channel over the same, already-authenticated session as the shell —
+     * no second login, no extra credential prompt. Each call returns a fresh channel; the
+     * caller is responsible for disconnecting it (e.g. in a try/finally) once the transfer
+     * or browse is done.
+     */
+    public ChannelSftp openSftpChannel() throws JSchException {
+        if (session == null || !session.isConnected())
+            throw new JSchException("SSH session is not connected");
+        ChannelSftp sftp = (ChannelSftp) session.openChannel("sftp");
+        sftp.connect(15_000);
+        return sftp;
+    }
+
     public void close() {
         try { if (channel != null) channel.disconnect();  } catch (Exception ignored) {}
         try { if (session != null) session.disconnect();  } catch (Exception ignored) {}
