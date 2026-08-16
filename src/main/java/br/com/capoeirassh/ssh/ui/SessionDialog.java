@@ -138,6 +138,11 @@ public class SessionDialog {
 
         Label lblPwd = label(dlg, "Password:");
         Text  txtPwd = PasswordField.create(dlg, fill());
+        // PasswordField.create() wraps the Text in its own Composite (Text + hold-to-reveal eye
+        // button) and it's that wrapping Composite — not txtPwd itself — that actually occupies
+        // the cell in dlg's outer grid. The type-switch toggle below must hide/exclude THIS, or
+        // the password row silently stays in the grid (and visible) when Serial is selected.
+        Composite cmpPwd = txtPwd.getParent();
         // Scrub the native widget buffer on every dispose path — a typed password/passphrase,
         // or one pre-filled from a saved credential, shouldn't linger in the OS text control
         // after this dialog closes.
@@ -239,7 +244,7 @@ public class SessionDialog {
         // ── Type switch: SSH fields vs. Serial fields ────────────────────────
         Control[] sshOnlyControls = {
             lblHost, txtHost, lblPort, txtPort,
-            lblUser, cmbUser, lblKeyFiller, chkKey, lblKeyFile, cmpKey, lblPwd, txtPwd,
+            lblUser, cmbUser, lblKeyFiller, chkKey, lblKeyFile, cmpKey, lblPwd, cmpPwd,
             lblSaveCredFiller, btnSaveCred
         };
         Control[] serialOnlyControls = {
@@ -392,10 +397,10 @@ public class SessionDialog {
         btnConfig.setText("Configuration Setting…");
         btnConfig.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         btnConfig.addListener(SWT.Selection, e -> {
-            String hostHint = cmbType.getSelectionIndex() == 1
-                ? cmbSerialPort.getText().trim() : txtHost.getText().trim();
+            boolean isSerialNow = cmbType.getSelectionIndex() == 1;
+            String hostHint = isSerialNow ? cmbSerialPort.getText().trim() : txtHost.getText().trim();
             ConfigurationSettingsDialog cfgDlg = new ConfigurationSettingsDialog(
-                dlg, "Configuration Setting", config[0], hostHint);
+                dlg, "Configuration Setting", config[0], hostHint, isSerialNow);
             if (cfgDlg.open()) config[0] = cfgDlg.getResult();
         });
 

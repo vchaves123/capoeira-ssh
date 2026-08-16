@@ -890,8 +890,10 @@ public class MainWindow {
         current.sshVerbose    = info.sshVerbose;
         current.allowColumnMode = info.allowColumnMode;
 
+        boolean isSerial = info.connectionType == br.com.capoeirassh.ssh.model.SessionInfo.ConnectionType.SERIAL;
+        String hostHint = isSerial ? info.serialPortName : info.host;
         ConfigurationSettingsDialog dlg = new ConfigurationSettingsDialog(
-            shell, "Configuration Setting", current, info.host, true, terminal.isTracing());
+            shell, "Configuration Setting", current, hostHint, true, terminal.isTracing(), isSerial);
         if (!dlg.open()) return;
         br.com.capoeirassh.ssh.model.ConfigurationSettings s = dlg.getResult();
 
