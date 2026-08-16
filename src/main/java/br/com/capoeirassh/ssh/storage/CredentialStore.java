@@ -232,6 +232,10 @@ public final class CredentialStore {
         masterKeyBytes = null;
         entries        = new LinkedHashMap<>();
         salt           = null;
+        // A cached external KeePass master password (see KdbxMasterPasswordCache) is just as
+        // sensitive as anything in this vault — never let it outlive the vault's own lock,
+        // whether that lock came from inactivity or the user's manual "Lock vault" button.
+        KdbxMasterPasswordCache.getInstance().clearAll();
     }
 
     // -----------------------------------------------------------------------
@@ -400,7 +404,9 @@ public final class CredentialStore {
         int estimate = 64;
         for (CredentialEntry e : list) {
             estimate += 32 + e.label.length() * 2 + e.username.length() * 2
-                + (e.keyPath != null ? e.keyPath.length() * 2 : 0) + e.password.length * 2;
+                + (e.keyPath != null ? e.keyPath.length() * 2 : 0) + e.password.length * 2
+                + (e.kdbxFilePath  != null ? e.kdbxFilePath.length()  * 2 : 0)
+                + (e.kdbxEntryUuid != null ? e.kdbxEntryUuid.length() * 2 : 0);
         }
         StringBuilder sb = new StringBuilder(estimate);
         for (CredentialEntry e : list) {
@@ -410,6 +416,11 @@ public final class CredentialStore {
             sb.append("e.").append(e.id).append(".p=");
             escChars(e.password, sb);
             sb.append('\n');
+            // kdbx-reference fields (both blank for an ordinary password/private-key entry) —
+            // not secret (a file path and a KeePass-internal UUID, not credential material), so
+            // plain String escaping is fine here, same as label/username/keyPath above.
+            sb.append("e.").append(e.id).append(".kf=").append(esc(e.kdbxFilePath  != null ? e.kdbxFilePath  : "")).append('\n');
+            sb.append("e.").append(e.id).append(".ke=").append(esc(e.kdbxEntryUuid != null ? e.kdbxEntryUuid : "")).append('\n');
         }
         return sb;
     }
@@ -469,10 +480,15 @@ public final class CredentialStore {
 
             int valStart = eq + 1, valEnd = e;
             switch (p[2]) {
-                case "l" -> ce.label    = unesc(new String(chars, valStart, valEnd - valStart));
-                case "u" -> ce.username = unesc(new String(chars, valStart, valEnd - valStart));
-                case "k" -> ce.keyPath  = unesc(new String(chars, valStart, valEnd - valStart));
-                case "p" -> ce.password = unescChars(chars, valStart, valEnd);
+                case "l"  -> ce.label         = unesc(new String(chars, valStart, valEnd - valStart));
+                case "u"  -> ce.username       = unesc(new String(chars, valStart, valEnd - valStart));
+                case "k"  -> ce.keyPath        = unesc(new String(chars, valStart, valEnd - valStart));
+                case "p"  -> ce.password       = unescChars(chars, valStart, valEnd);
+                // Absent entirely in vaults written before this feature — the map's default
+                // CredentialEntry already leaves these as "", so an old entry deserializes as
+                // an ordinary (non-kdbx-reference) credential exactly as before.
+                case "kf" -> ce.kdbxFilePath   = unesc(new String(chars, valStart, valEnd - valStart));
+                case "ke" -> ce.kdbxEntryUuid  = unesc(new String(chars, valStart, valEnd - valStart));
             }
         }
         return new ArrayList<>(map.values());

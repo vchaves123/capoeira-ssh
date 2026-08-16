@@ -284,6 +284,42 @@ class CredentialStoreTest {
         assertTrue(back.stream().anyMatch(e -> e.id.equals(b.id) && new String(e.password).equals("pw2")));
     }
 
+    @Test
+    @DisplayName("round-trip: a KeePass-reference entry preserves its file path and entry UUID, with no password")
+    void roundTrip_kdbxReference() throws Exception {
+        CredentialEntry original = entry("prod-db", "root", "", new char[0]);
+        original.kdbxFilePath  = "C:\\Users\\me\\Vault.kdbx";
+        original.kdbxEntryUuid = java.util.UUID.randomUUID().toString();
+
+        List<CredentialEntry> back = deserialize(serializeToChars(List.of(original)));
+        assertEquals(1, back.size());
+        CredentialEntry got = back.get(0);
+        assertEquals(original.kdbxFilePath, got.kdbxFilePath);
+        assertEquals(original.kdbxEntryUuid, got.kdbxEntryUuid);
+        assertTrue(got.isKdbxReference());
+        assertEquals(0, got.password.length);
+    }
+
+    @Test
+    @DisplayName("backward compatibility: an entry serialized before the kdbx-reference fields existed still deserializes as an ordinary credential")
+    void deserialize_preKdbxVaultFormat_stillWorks() throws Exception {
+        // Mirrors exactly what serialize() produced before this feature added the ".kf="/".ke="
+        // lines — no kdbx-reference keys present at all, not even blank ones.
+        String id = java.util.UUID.randomUUID().toString();
+        char[] chars = ("e." + id + ".l=old-entry\n"
+                      + "e." + id + ".u=root\n"
+                      + "e." + id + ".k=\n"
+                      + "e." + id + ".p=oldpw\n").toCharArray();
+        List<CredentialEntry> back = deserialize(chars);
+        assertEquals(1, back.size());
+        CredentialEntry got = back.get(0);
+        assertEquals("old-entry", got.label);
+        assertEquals("oldpw", new String(got.password));
+        assertFalse(got.isKdbxReference());
+        assertEquals("", got.kdbxFilePath);
+        assertEquals("", got.kdbxEntryUuid);
+    }
+
     // -----------------------------------------------------------------------
     // Crypto: wrong password -> AEADBadTagException (in isolation, no file I/O)
     // -----------------------------------------------------------------------

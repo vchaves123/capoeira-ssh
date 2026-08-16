@@ -30,7 +30,7 @@ public class CredentialManagerDialog {
         Shell dlg = new Shell(parent, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM | SWT.RESIZE);
         dlg.setText("Credential Manager");
         AppIcon.apply(dlg);
-        dlg.setSize(500, 380);
+        dlg.setSize(620, 380);
         center(dlg);
 
         GridLayout gl = new GridLayout(2, false);
@@ -44,9 +44,10 @@ public class CredentialManagerDialog {
         GridData gdTable = new GridData(SWT.FILL, SWT.FILL, true, true);
         table.setLayoutData(gdTable);
 
-        TableColumn colLabel = new TableColumn(table, SWT.NONE); colLabel.setText("Label");    colLabel.setWidth(160);
-        TableColumn colUser  = new TableColumn(table, SWT.NONE); colUser.setText("Username");  colUser.setWidth(160);
-        TableColumn colPw    = new TableColumn(table, SWT.NONE); colPw.setText("Password");    colPw.setWidth(100);
+        TableColumn colLabel  = new TableColumn(table, SWT.NONE); colLabel.setText("Label");    colLabel.setWidth(150);
+        TableColumn colUser   = new TableColumn(table, SWT.NONE); colUser.setText("Username");  colUser.setWidth(140);
+        TableColumn colPw     = new TableColumn(table, SWT.NONE); colPw.setText("Password");    colPw.setWidth(90);
+        TableColumn colSource = new TableColumn(table, SWT.NONE); colSource.setText("Source");  colSource.setWidth(180);
 
         // Button column
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
@@ -74,7 +75,8 @@ public class CredentialManagerDialog {
                 TableItem ti = new TableItem(table, SWT.NONE);
                 ti.setText(0, e.label.isBlank() ? "(no label)" : e.label);
                 ti.setText(1, e.username);
-                ti.setText(2, "••••••••");
+                ti.setText(2, e.isKdbxReference() ? "" : "••••••••");
+                ti.setText(3, sourceLabel(e));
                 ti.setData(e);
             }
         };
@@ -123,7 +125,7 @@ public class CredentialManagerDialog {
         Shell dlg = new Shell(owner, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
         dlg.setText(existing == null ? "New Credential" : "Edit Credential");
         AppIcon.apply(dlg);
-        dlg.setSize(400, 290);
+        dlg.setSize(420, 320);
         center(dlg, owner);
 
         GridLayout gl = new GridLayout(3, false);
@@ -149,21 +151,59 @@ public class CredentialManagerDialog {
         Button btnBrowse = new Button(dlg, SWT.PUSH); btnBrowse.setText("…");
         btnBrowse.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
 
+        // KeePass-reference info + unlink — only ever relevant for an entry imported via
+        // KdbxImportDialog (see CredentialEntry.isKdbxReference()). Tracked as a local flag
+        // rather than mutating `existing` directly, so Cancel leaves the original untouched.
+        boolean[] kdbxLinked = { existing != null && existing.isKdbxReference() };
+
+        Label lblKdbxInfo = new Label(dlg, SWT.WRAP);
+        GridData gdKdbxInfo = new GridData(SWT.FILL, SWT.CENTER, true, false, 3, 1);
+        lblKdbxInfo.setLayoutData(gdKdbxInfo);
+        if (kdbxLinked[0]) {
+            String fname = java.nio.file.Path.of(existing.kdbxFilePath).getFileName().toString();
+            lblKdbxInfo.setText("🔑 Password comes from KeePass file: " + fname
+                + "\nFetched fresh on every connect — never stored here.");
+        }
+
+        new Label(dlg, SWT.NONE);
+        Button btnUnlink = new Button(dlg, SWT.PUSH);
+        btnUnlink.setText("Unlink from KeePass…");
+        GridData gdUnlink = new GridData(SWT.LEFT, SWT.CENTER, false, false, 2, 1);
+        btnUnlink.setLayoutData(gdUnlink);
+
         Label lblPass = lbl(dlg, "Password:");
+        lblPass.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         Text txtPass = PasswordField.create(dlg, new GridData(SWT.FILL, SWT.CENTER, true, false, 2, 1));
         // Scrub the native widget buffer on every dispose path — a typed or pre-filled
         // password/passphrase shouldn't linger in the OS text control after this dialog closes.
         dlg.addDisposeListener(e -> PasswordField.scrub(txtPass));
 
-        Runnable updateKeyMode = () -> {
+        Runnable updateMode = () -> {
+            boolean linked = kdbxLinked[0];
             boolean useKey = chkKey.getSelection();
-            lblKey.setVisible(useKey);
-            txtKeyPath.setVisible(useKey);
-            btnBrowse.setVisible(useKey);
-            ((GridData) lblKey.getLayoutData()).exclude = !useKey;
-            ((GridData) txtKeyPath.getLayoutData()).exclude = !useKey;
-            ((GridData) btnBrowse.getLayoutData()).exclude = !useKey;
+
+            chkKey.setVisible(!linked);
+            ((GridData) chkKey.getLayoutData()).exclude = linked;
+
+            boolean showKeyRow = !linked && useKey;
+            lblKey.setVisible(showKeyRow);
+            txtKeyPath.setVisible(showKeyRow);
+            btnBrowse.setVisible(showKeyRow);
+            ((GridData) lblKey.getLayoutData()).exclude     = !showKeyRow;
+            ((GridData) txtKeyPath.getLayoutData()).exclude = !showKeyRow;
+            ((GridData) btnBrowse.getLayoutData()).exclude  = !showKeyRow;
+
+            lblKdbxInfo.setVisible(linked);
+            gdKdbxInfo.exclude = !linked;
+            btnUnlink.setVisible(linked);
+            gdUnlink.exclude   = !linked;
+
+            lblPass.setVisible(!linked);
+            txtPass.setVisible(!linked);
+            ((GridData) lblPass.getLayoutData()).exclude = linked;
+            ((GridData) txtPass.getLayoutData()).exclude = linked;
             lblPass.setText(useKey ? "Passphrase:" : "Password:");
+
             dlg.layout(true, true);
         };
 
@@ -173,7 +213,15 @@ public class CredentialManagerDialog {
             String path = fd.open();
             if (path != null) txtKeyPath.setText(path);
         });
-        chkKey.addListener(SWT.Selection, e -> updateKeyMode.run());
+        chkKey.addListener(SWT.Selection, e -> updateMode.run());
+        btnUnlink.addListener(SWT.Selection, e -> {
+            // Converts this entry back into an ordinary credential the user must now set a
+            // manual password (or private key) for — the KeePass reference fields are dropped
+            // for good once Save is clicked (see the Save handler below), not just hidden.
+            kdbxLinked[0] = false;
+            chkKey.setSelection(false);
+            updateMode.run();
+        });
 
         if (existing != null) {
             txtLabel.setText(existing.label);
@@ -183,7 +231,7 @@ public class CredentialManagerDialog {
             chkKey.setSelection(useKey);
             if (useKey) txtKeyPath.setText(existing.keyPath);
         }
-        updateKeyMode.run();
+        updateMode.run();
 
         new Label(dlg, SWT.NONE);
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
@@ -201,14 +249,25 @@ public class CredentialManagerDialog {
         btnSave.addListener(SWT.Selection, e -> {
             String user = txtUser.getText().trim();
             if (user.isEmpty()) { error(dlg, "Username is required."); return; }
-            if (chkKey.getSelection() && txtKeyPath.getText().trim().isEmpty()) {
+            if (!kdbxLinked[0] && chkKey.getSelection() && txtKeyPath.getText().trim().isEmpty()) {
                 error(dlg, "Key file is required."); return;
             }
             CredentialEntry ce = existing != null ? existing : new CredentialEntry();
             ce.label    = txtLabel.getText().trim();
             ce.username = user;
-            ce.password = txtPass.getTextChars();
-            ce.keyPath  = chkKey.getSelection() ? txtKeyPath.getText().trim() : "";
+            if (kdbxLinked[0]) {
+                // Still linked — password/key stay empty; kdbxFilePath/kdbxEntryUuid on `ce`
+                // (== existing here) are untouched, so the reference survives the edit.
+                ce.password = new char[0];
+                ce.keyPath  = "";
+            } else {
+                ce.password = txtPass.getTextChars();
+                ce.keyPath  = chkKey.getSelection() ? txtKeyPath.getText().trim() : "";
+                // A brand-new entry already has these blank; an unlinked one must drop its old
+                // reference for good, not just hide it, once the user commits with Save.
+                ce.kdbxFilePath  = "";
+                ce.kdbxEntryUuid = "";
+            }
             result[0]   = ce;
             dlg.dispose();
         });
@@ -238,6 +297,15 @@ public class CredentialManagerDialog {
                 refresh.run();
             });
         }, "credential-persist").start();
+    }
+
+    /** "Source" column text for the list table. */
+    private static String sourceLabel(CredentialEntry e) {
+        if (e.isKdbxReference()) {
+            String fname = java.nio.file.Path.of(e.kdbxFilePath).getFileName().toString();
+            return "🔑 KeePass: " + fname;
+        }
+        return (e.keyPath != null && !e.keyPath.isBlank()) ? "Private key" : "Password";
     }
 
     // -----------------------------------------------------------------------
