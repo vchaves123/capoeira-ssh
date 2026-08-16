@@ -209,6 +209,12 @@ public class MainWindow {
 
         TerminalTab tab = new TerminalTab(tabFolder, info, password);
         tab.setOnReconnectRequest(() -> reconnectTab(tab));
+        tab.setOnCloseRequest(() -> {
+            if (confirmCloseTab("This tab is disconnected. Closing it will discard the "
+                    + "scrollback history if you haven't saved it with \"Save History...\". "
+                    + "Close anyway?"))
+                closeTab(tab);
+        });
         tab.setOnStateChanged(() -> { refreshSelectionColor(); reloadSessionsTab(); });
         if (info.appearFontSize > 0) {
             tab.applyAppearance(info.appearFontName, info.appearFontSize,
@@ -528,13 +534,7 @@ public class MainWindow {
 
             MenuItem miClose = new MenuItem(menu, SWT.PUSH);
             miClose.setText("Close Session");
-            miClose.addListener(SWT.Selection, ev -> {
-                terminalTabs.remove(terminal);
-                terminal.dispose();
-                item.dispose();
-                reloadSessionsTab();
-                if (tabFolder.getItemCount() <= 1) showSessionsTab();
-            });
+            miClose.addListener(SWT.Selection, ev -> closeTab(terminal));
 
             menu.setLocation(e.x, e.y);
             menu.setVisible(true);
@@ -1049,7 +1049,23 @@ public class MainWindow {
         );
     }
 
+    /** Removes a tab and its terminal outright — no confirmation of its own. Callers that can
+     *  lose something the user might not expect (e.g. an unsaved scrollback history) should
+     *  confirm first, via {@link #confirmCloseTab(String)}. */
+    private void closeTab(TerminalTab terminal) {
+        CTabItem item = terminal.getTabItem();
+        terminalTabs.remove(terminal);
+        terminal.dispose();
+        item.dispose();
+        reloadSessionsTab();
+        if (tabFolder.getItemCount() <= 1) showSessionsTab();
+    }
+
     private boolean confirmCloseTab() {
+        return confirmCloseTab("Close this session?");
+    }
+
+    private boolean confirmCloseTab(String message) {
         Shell dlg = new Shell(shell, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);
         dlg.setText("Close Session");
         GridLayout gl = new GridLayout(1, false);
@@ -1057,7 +1073,7 @@ public class MainWindow {
         dlg.setLayout(gl);
 
         Label msg = new Label(dlg, SWT.WRAP);
-        msg.setText("Close this session?");
+        msg.setText(message);
         GridData gd = new GridData(SWT.FILL, SWT.CENTER, true, false);
         gd.widthHint = 240;
         msg.setLayoutData(gd);

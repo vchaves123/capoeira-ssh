@@ -54,6 +54,13 @@ public class TerminalTab {
     private Color colOverlayText; // disconnected "Connection closed" text
     private Color colReconnect;   // disconnected reconnect hint
     private Color colTraceBorder; // red frame drawn while byte tracing is on
+
+    // Disconnected-overlay link hit-boxes, in canvas coordinates — recomputed every paint,
+    // read back by the MouseDown handler to tell which link (if any) was clicked. Null until
+    // the overlay has painted at least once.
+    private Rectangle overlayReconnectBox;
+    private Rectangle overlayCloseBox;
+    private Rectangle overlaySaveHistoryBox;
     private long  logBytesWritten = 0;
     private static final long MAX_LOG_BYTES = 100L * 1024 * 1024; // cap session log at 100 MB
     private static final int  TRACE_BORDER_WIDTH = 2;             // px, red frame while tracing
@@ -101,6 +108,10 @@ public class TerminalTab {
 
     /** Called (on the UI thread) when the user requests a reconnect. */
     private Runnable onReconnectRequest;
+    /** Called (on the UI thread) when the user requests closing this tab from the disconnected
+     *  overlay — MainWindow owns terminalTabs/tabFolder, so it (not this class) does the actual
+     *  close, same reasoning as onReconnectRequest. */
+    private Runnable onCloseRequest;
     /** Called (on the UI thread) whenever the connection state changes (connect / disconnect). */
     private Runnable onStateChanged;
 
@@ -322,7 +333,7 @@ public class TerminalTab {
         canvas.addListener(SWT.MouseWheel, e -> { if (!disconnected) scroll(e.count > 0 ? -3 : 3); });
 
         canvas.addListener(SWT.MouseDown, e -> {
-            if (disconnected) { triggerReconnect(); return; }
+            if (disconnected) { handleOverlayClick(e.x, e.y); return; }
             canvas.setFocus();
             if (e.button == 1 && e.count >= 3) {
                 // Triple click: select the whole line, trimmed to its last non-blank
@@ -821,9 +832,19 @@ public class TerminalTab {
                 if (colReconnect == null || colReconnect.isDisposed())
                     colReconnect = new Color(display, 100, 180, 255);
                 gc.setForeground(colReconnect);
-                String line2 = "▶  Click to reconnect";
-                Point e2 = gc.stringExtent(line2);
-                gc.drawString(line2, (area.width - e2.x) / 2, area.height / 2 + 6, true);
+
+                // Three independently clickable links, stacked below the title. Each one's
+                // painted bounds are saved so the MouseDown handler can tell which was clicked —
+                // unlike before, a click is only a click when it lands on one of these, not
+                // anywhere on the overlay (Close Tab is one accidental click away from losing an
+                // unsaved scrollback history, so it shouldn't fire from a stray click).
+                int lineHeight = e1.y + 6;
+                int y = area.height / 2 + 6;
+                overlayReconnectBox   = drawOverlayLink(gc, "▶  Click to reconnect", area, y);
+                y += lineHeight;
+                overlayCloseBox       = drawOverlayLink(gc, "✕  Close tab", area, y);
+                y += lineHeight;
+                overlaySaveHistoryBox = drawOverlayLink(gc, "↓  Save history to file...", area, y);
             }
 
             // Red frame while tracing, so a session quietly writing every byte to disk is never
@@ -848,6 +869,16 @@ public class TerminalTab {
         screen.drawImage(offscreenBuffer, 0, 0);
         updateScrollBar();
         syncTextBlinkTimer(sawBlinkingCell);
+    }
+
+    /** Draws one centered link line of the disconnected overlay at vertical position {@code y}
+     *  and returns its clickable bounds, in canvas coordinates — used by the MouseDown handler
+     *  to tell which link (if any) was clicked. */
+    private Rectangle drawOverlayLink(GC gc, String text, Rectangle area, int y) {
+        Point extent = gc.stringExtent(text);
+        int x = (area.width - extent.x) / 2;
+        gc.drawString(text, x, y, true);
+        return new Rectangle(x, y, extent.x, extent.y);
     }
 
     /** Starts the blink timer the moment blinking text appears on screen and stops it once none
@@ -1369,6 +1400,27 @@ public class TerminalTab {
         return sb.toString();
     }
 
+    /** Every line the terminal still holds — scrollback plus the current screen — as plain text,
+     *  for "Save History...". Same cell-to-character logic as {@link #getSelectedText}, just
+     *  over the whole buffer instead of a selection. */
+    public String getFullHistoryText() {
+        int cols = emulator.getCols();
+        int totalRows = emulator.getScrollbackSize() + emulator.getRows();
+        StringBuilder sb = new StringBuilder();
+        for (int r = 0; r < totalRows; r++) {
+            StringBuilder line = new StringBuilder();
+            for (int c = 0; c < cols; c++) {
+                TerminalCell cell = emulator.getCellAbs(r, c);
+                if (cell != null && cell.wideTrailer) continue;
+                line.appendCodePoint(cell != null && cell.character != '\0' ? cell.character : ' ');
+            }
+            int end = line.length();
+            while (end > 0 && line.charAt(end - 1) == ' ') end--;
+            sb.append(line, 0, end).append('\n');
+        }
+        return sb.toString();
+    }
+
     private void clearSelection() {
         selAnchorCol = selAnchorRow = selEndCol = selEndRow = -1;
     }
@@ -1689,6 +1741,47 @@ public class TerminalTab {
         if (onReconnectRequest != null) display.asyncExec(onReconnectRequest);
     }
 
+    private void triggerCloseRequest() {
+        if (onCloseRequest != null) display.asyncExec(onCloseRequest);
+    }
+
+    /** Routes a click on the disconnected overlay to whichever link (if any) it landed on. A
+     *  click that misses all three painted links (see {@link #drawOverlayLink}) does nothing —
+     *  unlike the old single-link overlay where any click reconnected, Close Tab in particular
+     *  shouldn't be one stray click away from discarding an unsaved history. */
+    private void handleOverlayClick(int x, int y) {
+        if (overlayReconnectBox != null && overlayReconnectBox.contains(x, y)) {
+            triggerReconnect();
+        } else if (overlayCloseBox != null && overlayCloseBox.contains(x, y)) {
+            triggerCloseRequest();
+        } else if (overlaySaveHistoryBox != null && overlaySaveHistoryBox.contains(x, y)) {
+            saveHistoryToFile();
+        }
+    }
+
+    /** "Save history to file..." — writes the full scrollback + current screen to a text file
+     *  the user picks. Offered from the disconnected overlay since that's the point the buffer
+     *  stops growing and is at its most complete for this session. */
+    private void saveHistoryToFile() {
+        FileDialog fd = new FileDialog(canvas.getShell(), SWT.SAVE);
+        fd.setText("Save History");
+        fd.setFilterExtensions(new String[]{ "*.txt", "*.*" });
+        String ts = java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        fd.setFileName(ts + "_" + sessionInfo.label().replaceAll("[^\\w\\-.]", "_") + "_history.txt");
+        String path = fd.open();
+        if (path == null) return; // cancelled
+
+        try {
+            java.nio.file.Files.writeString(java.nio.file.Path.of(path), getFullHistoryText());
+        } catch (java.io.IOException ex) {
+            MessageBox mb = new MessageBox(canvas.getShell(), SWT.ICON_ERROR | SWT.OK);
+            mb.setText("Save History");
+            mb.setMessage("Could not save the history:\n" + ex.getMessage());
+            mb.open();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Accessors
     // -----------------------------------------------------------------------
@@ -1696,6 +1789,7 @@ public class TerminalTab {
     public boolean     isDisconnected()                   { return disconnected; }
 
     public void        setOnReconnectRequest(Runnable r)  { this.onReconnectRequest = r; }
+    public void        setOnCloseRequest(Runnable r)      { this.onCloseRequest = r; }
     /** Called after a tab drag-reorder replaces the underlying CTabItem. */
     public void        replaceTabItem(CTabItem newItem)   { this.tabItem = newItem; }
     public void        setOnStateChanged(Runnable r)      { this.onStateChanged = r; }
