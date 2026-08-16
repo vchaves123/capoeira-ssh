@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.0.0] — 2026-08-16
+
+### Added
+- **Built-in SFTP client**: upload or download files right from a terminal tab's context menu,
+  with a remote file browser, multi-select, and a two-bar byte progress indicator for each
+  transfer. Uses its own independent SSH connection so large transfers never block or interfere
+  with the interactive shell. Name conflicts on upload/download prompt to Skip, Rename, or
+  Overwrite. The disconnected-tab overlay also gained direct **Close Tab** and **Save History**
+  links.
+- **RS232 serial terminal**: a second connection type alongside SSH, for talking to serial
+  devices (routers' console ports, embedded boards, lab equipment) with local echo and the same
+  terminal emulator used for SSH sessions — configurable port, baud rate, and framing, no
+  authentication or file transfer involved.
+- **KeePass (.kdbx) import**: import entries from an existing KeePass database as live
+  references — the master password can optionally be saved in Capoeira SSH's own vault so future
+  unlocks don't prompt for it again. A short-lived reader subprocess does the actual KDBX
+  decoding and exits immediately after; a busy indicator shows while it runs.
+
+### Changed
+- Bumped the SWT toolkit to 3.134.0 (dropped the deprecated `setSimple`, cleaned up build
+  warnings). The only visible change is square tab corners instead of curved ones.
+- Modernized parts of the codebase to Java 21 idioms (virtual threads for background I/O,
+  pattern-matching `instanceof`, arrow-style `switch`, records, text blocks) — no behavior
+  change.
+
+### Fixed
+- SFTP path traversal and other hardening findings from a follow-up security audit.
+
+---
+
 ## [1.7.0] — 2026-08-13
 
 ### Fixed
