@@ -80,7 +80,7 @@ class GroupManagerDialog {
      *  rename/delete, so blocking here would freeze the window on every such action too. */
     private void refreshList() {
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("group-list-refresh").start(() -> {
             java.util.List<SessionInfo> sessions = SessionStorage.loadAll();
             Map<String, Integer> counts = new TreeMap<>(String::compareToIgnoreCase);
             java.util.List<String> groups;
@@ -99,7 +99,7 @@ class GroupManagerDialog {
                 for (String g : rowGroups) list.add(g + " (" + finalCounts.get(g) + ")");
                 if (rowGroups.isEmpty()) list.add("(no groups yet)");
             });
-        }, "group-list-refresh").start();
+        });
     }
 
     private interface ThrowingRunnable { void run() throws Exception; }
@@ -110,7 +110,7 @@ class GroupManagerDialog {
     private void runBg(String errorPrefix, ThrowingRunnable task, Runnable onSuccess) {
         dlg.setEnabled(false);
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("group-manager-bg").start(() -> {
             String errorMessage = null;
             try { task.run(); } catch (Exception ex) { errorMessage = ex.getMessage(); }
             String finalError = errorMessage;
@@ -120,7 +120,7 @@ class GroupManagerDialog {
                 if (finalError != null) { error(errorPrefix + finalError); return; }
                 onSuccess.run();
             });
-        }, "group-manager-bg").start();
+        });
     }
 
     /** All currently selected group names (List's own multi-selection). */
@@ -180,7 +180,7 @@ class GroupManagerDialog {
         // both stages so the window doesn't freeze while composing the confirmation either.
         dlg.setEnabled(false);
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("group-delete-scan").start(() -> {
             java.util.List<SessionInfo> allSessions = SessionStorage.loadAll();
             java.util.List<SessionInfo> members = allSessions.stream()
                 .filter(s -> groups.contains(s.group)).toList();
@@ -199,7 +199,7 @@ class GroupManagerDialog {
                 if (mb.open() != SWT.YES) return;
 
                 dlg.setEnabled(false);
-                new Thread(() -> {
+                Thread.ofVirtual().name("group-delete").start(() -> {
                     // Move every member out first (same delete-old-file-then-resave pattern as
                     // SessionsTab.moveSessionToGroup) so deleteGroup() then finds an empty directory.
                     for (SessionInfo s : members) {
@@ -222,9 +222,9 @@ class GroupManagerDialog {
                         if (!failures.isEmpty())
                             error("Failed to delete group(s):\n" + String.join("\n", failures));
                     });
-                }, "group-delete").start();
+                });
             });
-        }, "group-delete-scan").start();
+        });
     }
 
     private void error(String message) {

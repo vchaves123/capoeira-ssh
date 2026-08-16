@@ -36,7 +36,7 @@ public final class UpdateChecker {
     /** Runs the check on a background thread, invoked only from the About dialog's
      *  "Check for Updates" button — there is no automatic/startup check. */
     public static void checkNow(Consumer<CheckResult> callback) {
-        Thread t = new Thread(() -> {
+        Thread.ofVirtual().name("update-check").start(() -> {
             CheckResult result;
             try {
                 UpdateInfo info = fetchLatestRelease();
@@ -47,9 +47,7 @@ public final class UpdateChecker {
                 result = new CheckResult(Status.ERROR, null);
             }
             callback.accept(result);
-        }, "update-check");
-        t.setDaemon(true);
-        t.start();
+        });
     }
 
     private static UpdateInfo fetchLatestRelease() throws IOException {

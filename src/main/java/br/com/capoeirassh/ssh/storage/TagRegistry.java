@@ -47,8 +47,7 @@ public final class TagRegistry {
     }
 
     public static synchronized RGB getColor(String tag) {
-        RGB c = tags.get(tag);
-        return c != null ? c : PALETTE[0];
+        return Objects.requireNonNullElse(tags.get(tag), PALETTE[0]);
     }
 
     /** Adds the tag with an auto-picked color if it isn't already known. No-op otherwise —

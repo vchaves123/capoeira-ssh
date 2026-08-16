@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 
 /**
  * A single terminal tab backed by either an SSH connection or a local serial (RS232) connection
@@ -766,7 +767,7 @@ public class TerminalTab {
                     if (cell.character != ' ' && cell.character != '\0' && !cell.wideTrailer) {
                         String glyph = glyphOf(cell.character);
                         Color cfg = fg >= 0 ? swtRgb(fg) : null;
-                        gc.setForeground(cfg != null ? cfg : defaultFg);
+                        gc.setForeground(Objects.requireNonNullElse(cfg, defaultFg));
 
                         // A code point the terminal font has no glyph for is drawn with a
                         // substitute font instead of a tofu box (see GlyphFallback).
@@ -1201,7 +1202,7 @@ public class TerminalTab {
         for (int i = 0; i < len; i++) {
             int b = buf[i] & 0xFF;
             switch (ansiState) {
-                case NORMAL:
+                case NORMAL -> {
                     if (ansiUtf8Remaining > 0) {
                         if ((b & 0xC0) == 0x80) {
                             // continuation byte of a multi-byte UTF-8 character — not a C1 control
@@ -1231,8 +1232,8 @@ public class TerminalTab {
                     else if ((b & 0xF0) == 0xE0)   { out[w++] = (byte) b; ansiUtf8Remaining = 2; }
                     else if ((b & 0xF8) == 0xF0)   { out[w++] = (byte) b; ansiUtf8Remaining = 3; }
                     // other control chars (0x00-0x1F except \r\n\t) — discard
-                    break;
-                case ESC:
+                }
+                case ESC -> {
                     if (b == '[') {
                         ansiState = AnsiState.CSI;
                     } else if (b == ']') {
@@ -1244,26 +1245,24 @@ public class TerminalTab {
                         // 2-char ESC sequence — consume this byte and return to NORMAL
                         ansiState = AnsiState.NORMAL;
                     }
-                    break;
-                case ESC_INTERMEDIATE:
+                }
+                case ESC_INTERMEDIATE ->
                     // Final byte of a 3-char ESC sequence — discard and return to NORMAL
                     ansiState = AnsiState.NORMAL;
-                    break;
-                case CSI:
+                case CSI -> {
                     // CSI ends at a byte in 0x40–0x7E (the "final" byte)
                     if (b >= 0x40 && b <= 0x7E) ansiState = AnsiState.NORMAL;
-                    break;
-                case OSC:
+                }
+                case OSC -> {
                     if (b == 0x07) {            // BEL terminates OSC
                         ansiState = AnsiState.NORMAL;
                     } else if (b == 0x1B) {     // ESC inside OSC → expect '\'
                         ansiState = AnsiState.OSC_ESC;
                     }
-                    break;
-                case OSC_ESC:
+                }
+                case OSC_ESC ->
                     // ESC \ (ST) terminates OSC
                     ansiState = AnsiState.NORMAL;
-                    break;
             }
         }
         return java.util.Arrays.copyOf(out, w);
@@ -1504,7 +1503,7 @@ public class TerminalTab {
         boolean trailingCr = sanitized.endsWith("\r");
         String body = trailingCr ? sanitized.substring(0, sanitized.length() - 1) : sanitized;
         String[] lines = body.split("\r", -1);
-        Thread t = new Thread(() -> {
+        Thread.ofVirtual().name("paste-lines").start(() -> {
             try {
                 for (int i = 0; i < lines.length; i++) {
                     if (!connection.isConnected()) return;
@@ -1514,9 +1513,7 @@ public class TerminalTab {
                     if (!lastLine) Thread.sleep(30);
                 }
             } catch (InterruptedException ignored) {}
-        }, "paste-lines");
-        t.setDaemon(true);
-        t.start();
+        });
     }
 
     /** Strip control bytes (especially ESC) from pasted text so a crafted clipboard can't
@@ -1909,7 +1906,7 @@ public class TerminalTab {
     }
 
     public String getLogFileName() {
-        return sessionInfo.logFileName != null ? sessionInfo.logFileName : "";
+        return Objects.requireNonNullElse(sessionInfo.logFileName, "");
     }
 
     /** Start logging to the given directory and base filename. Stops any active log first. */

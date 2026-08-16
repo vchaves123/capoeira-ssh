@@ -44,10 +44,7 @@ public class RemoteFileBrowserDialog {
 
     /** One remote file chosen in {@link Mode#PICK_FILES} — path plus size, so the caller can
      *  size an overall bytes-transferred progress bar without a second round-trip to the server. */
-    public static final class PickedFile {
-        public final String path;
-        public final long   size;
-        PickedFile(String path, long size) { this.path = path; this.size = size; }
+    public record PickedFile(String path, long size) {
         /** Basename of {@link #path}, split on BOTH '/' and '\' — the remote filename this is
          *  built from (ChannelSftp.LsEntry.getFilename()) comes straight off the SFTP wire with
          *  no validation by the protocol, so a malicious or compromised server can embed a

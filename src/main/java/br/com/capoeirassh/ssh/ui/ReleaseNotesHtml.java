@@ -144,15 +144,15 @@ final class ReleaseNotesHtml {
         return out.toString();
     }
 
-    private static final String CSS =
-        "body{font-family:Segoe UI,Arial,sans-serif;font-size:13px;color:#222;background:#fff;"
-        + "margin:8px 12px;}"
-        + "h1,h2,h3{margin:0.6em 0 0.3em;}"
-        + "p{margin:0.4em 0;}"
-        + "code{background:#f0f0f0;padding:1px 4px;border-radius:3px;font-family:Consolas,monospace;}"
-        + "table{border-collapse:collapse;margin:0.5em 0;width:100%;}"
-        + "th,td{border:1px solid #ccc;padding:4px 8px;text-align:left;}"
-        + "th{background:#f5f5f5;}"
-        + "ul{margin:0.3em 0;padding-left:1.4em;}"
-        + "a{color:#1a5fb4;}";
+    private static final String CSS = """
+        body{font-family:Segoe UI,Arial,sans-serif;font-size:13px;color:#222;background:#fff;margin:8px 12px;}
+        h1,h2,h3{margin:0.6em 0 0.3em;}
+        p{margin:0.4em 0;}
+        code{background:#f0f0f0;padding:1px 4px;border-radius:3px;font-family:Consolas,monospace;}
+        table{border-collapse:collapse;margin:0.5em 0;width:100%;}
+        th,td{border:1px solid #ccc;padding:4px 8px;text-align:left;}
+        th{background:#f5f5f5;}
+        ul{margin:0.3em 0;padding-left:1.4em;}
+        a{color:#1a5fb4;}
+        """;
 }

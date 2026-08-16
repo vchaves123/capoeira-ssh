@@ -16,6 +16,7 @@ import org.eclipse.swt.widgets.*;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
@@ -840,8 +841,8 @@ public class SessionsTab {
      *  moving it between ~/.capoeira/sessions/&lt;group&gt;/ directories. No-op if the
      *  session is already in that group. */
     private void moveSessionToGroup(SessionInfo session, String newGroup) {
-        String normalizedNew = newGroup == null ? "" : newGroup;
-        String normalizedOld = session.group == null ? "" : session.group;
+        String normalizedNew = Objects.requireNonNullElse(newGroup, "");
+        String normalizedOld = Objects.requireNonNullElse(session.group, "");
         if (normalizedOld.equals(normalizedNew)) return;
 
         SessionInfo ghost = new SessionInfo();
@@ -905,7 +906,7 @@ public class SessionsTab {
         hostLbl.addDisposeListener(e -> hostFont.dispose());
         hostLbl.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, false, false));
 
-        String tip = session.name != null ? session.name : "";
+        String tip = Objects.requireNonNullElse(session.name, "");
         String connSummary = session.connectionSummary();
         if (!connSummary.isBlank()) {
             tip += "  —  " + connSummary;
@@ -1061,7 +1062,7 @@ public class SessionsTab {
         });
 
         Label nameLbl = new Label(topRow, SWT.NONE);
-        nameLbl.setText(session.name != null ? session.name : "");
+        nameLbl.setText(Objects.requireNonNullElse(session.name, ""));
         nameLbl.setBackground(cSurface);
         nameLbl.setForeground(cAreia);
         Font boldF = new Font(display, "Arial", 12, SWT.BOLD);
@@ -1276,7 +1277,7 @@ public class SessionsTab {
         nameCol.setLayout(nameGl);
 
         Label nameL = new Label(nameCol, SWT.NONE);
-        nameL.setText(session.name != null ? session.name : "");
+        nameL.setText(Objects.requireNonNullElse(session.name, ""));
         nameL.setBackground(cBg);
         nameL.setForeground(cAreia);
         Font nameF = new Font(display, "Arial", 11, SWT.BOLD);
@@ -1359,8 +1360,8 @@ public class SessionsTab {
             listContainer.redraw();
             if (dragged) commitRowReorder(src, toContainerY(ctrl, e.x, e.y));
         });
-        if (ctrl instanceof Composite) {
-            for (Control c : ((Composite) ctrl).getChildren()) addRowDragRecursive(c, session);
+        if (ctrl instanceof Composite comp) {
+            for (Control c : comp.getChildren()) addRowDragRecursive(c, session);
         }
     }
 
@@ -1502,8 +1503,8 @@ public class SessionsTab {
 
     private void setMenuRecursive(Control ctrl, Menu menu) {
         ctrl.setMenu(menu);
-        if (ctrl instanceof Composite)
-            for (Control c : ((Composite) ctrl).getChildren()) setMenuRecursive(c, menu);
+        if (ctrl instanceof Composite comp)
+            for (Control c : comp.getChildren()) setMenuRecursive(c, menu);
     }
 
     /** Draws the session's icon (if one is set) or a letter-initial fallback into a
@@ -1533,20 +1534,20 @@ public class SessionsTab {
     private void refreshChildren(Composite comp, Color bg) {
         for (Control c : comp.getChildren()) {
             c.setBackground(bg);
-            if (c instanceof Composite) refreshChildren((Composite) c, bg);
+            if (c instanceof Composite child) refreshChildren(child, bg);
         }
     }
 
     private void addDoubleClickRecursive(Control ctrl, SessionInfo session) {
         ctrl.addListener(SWT.MouseDoubleClick, e -> { if (e.button == 1) onConnect.accept(session, null); });
-        if (ctrl instanceof Composite)
-            for (Control c : ((Composite) ctrl).getChildren()) addDoubleClickRecursive(c, session);
+        if (ctrl instanceof Composite comp)
+            for (Control c : comp.getChildren()) addDoubleClickRecursive(c, session);
     }
 
     private void addDoubleClickRecursive(Control ctrl, Runnable action) {
         ctrl.addListener(SWT.MouseDoubleClick, e -> { if (e.button == 1) action.run(); });
-        if (ctrl instanceof Composite)
-            for (Control c : ((Composite) ctrl).getChildren()) addDoubleClickRecursive(c, action);
+        if (ctrl instanceof Composite comp)
+            for (Control c : comp.getChildren()) addDoubleClickRecursive(c, action);
     }
 
     /** Highlights {@code box}'s own border (via its "hoverBorder" data flag, read by its Paint
@@ -1560,8 +1561,8 @@ public class SessionsTab {
             Point local  = box.toControl(cursor);
             if (!box.getClientArea().contains(local)) { box.setData("hoverBorder", null); box.redraw(); }
         });
-        if (ctrl instanceof Composite)
-            for (Control c : ((Composite) ctrl).getChildren()) addHoverBorderRecursive(c, box);
+        if (ctrl instanceof Composite comp)
+            for (Control c : comp.getChildren()) addHoverBorderRecursive(c, box);
     }
 
     private void addSelectionClickRecursive(Control ctrl, SessionInfo session) {
@@ -1607,8 +1608,8 @@ public class SessionsTab {
         ctrl.addListener(SWT.MouseDoubleClick, e -> {
             if (e.button == 1) onConnect.accept(session, null);
         });
-        if (ctrl instanceof Composite) {
-            for (Control c : ((Composite) ctrl).getChildren())
+        if (ctrl instanceof Composite comp) {
+            for (Control c : comp.getChildren())
                 addSelectionClickRecursive(c, session);
         }
     }
@@ -1640,7 +1641,7 @@ public class SessionsTab {
         // background it so deleting a large selection doesn't freeze the window.
         Set<String> ids = new java.util.HashSet<>(selectedIds);
         Display display = shell.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("session-bulk-delete").start(() -> {
             deleteSessionsByIds(ids);
             display.asyncExec(() -> {
                 if (shell.isDisposed()) return;
@@ -1648,7 +1649,7 @@ public class SessionsTab {
                 lastClickedId = null;
                 reload();
             });
-        }, "session-bulk-delete").start();
+        });
     }
 
     /**
@@ -1678,7 +1679,7 @@ public class SessionsTab {
     // -----------------------------------------------------------------------
     private void filterList(String query) {
         if (listContainer == null || listContainer.isDisposed()) return;
-        String q = query == null ? "" : query.trim().toLowerCase();
+        String q = Objects.requireNonNullElse(query, "").trim().toLowerCase();
         if (cardView) {
             filterCardView(listContainer, q);
         } else {
@@ -1771,7 +1772,7 @@ public class SessionsTab {
         // SessionStorage.delete() is a disk write — background it, same pattern as
         // deleteSelectedSessions(), so it doesn't freeze the window.
         Display display = shell.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("session-delete").start(() -> {
             String errorMessage = null;
             try {
                 SessionStorage.delete(session);
@@ -1791,7 +1792,7 @@ public class SessionsTab {
                 }
                 removeSessionFromUi(session);
             });
-        }, "session-delete").start();
+        });
     }
 
     /**
@@ -2010,7 +2011,7 @@ public class SessionsTab {
             String originalText = btnExport.getText();
             btnExport.setText("  Exporting…  ");
             Display display = dlg.getDisplay();
-            Thread t = new Thread(() -> {
+            Thread.ofVirtual().name("backup-export").start(() -> {
                 String errorMessage = null;
                 try {
                     BackupBundle.export(Path.of(path), pw, includeVault);
@@ -2035,9 +2036,7 @@ public class SessionsTab {
                         bAlert(dlg, "Export failed:\n" + finalError);
                     }
                 });
-            }, "backup-export");
-            t.setDaemon(true);
-            t.start();
+            });
         });
 
         dlg.pack();
@@ -2095,7 +2094,7 @@ public class SessionsTab {
             String originalText = btnOk.getText();
             btnOk.setText("  Importing…  ");
             Display display = pwDlg.getDisplay();
-            Thread t = new Thread(() -> {
+            Thread.ofVirtual().name("backup-import").start(() -> {
                 BackupBundle.ImportResult result;
                 try {
                     result = BackupBundle.importBundle(Path.of(path), pw);
@@ -2159,9 +2158,7 @@ public class SessionsTab {
                     MessageBox ok = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
                     ok.setText("Import complete"); ok.setMessage(msg.toString()); ok.open();
                 });
-            }, "backup-import");
-            t.setDaemon(true);
-            t.start();
+            });
         });
 
         pwDlg.pack();

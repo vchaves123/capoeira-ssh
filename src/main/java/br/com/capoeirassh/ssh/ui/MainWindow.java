@@ -608,7 +608,7 @@ public class MainWindow {
         // The transfer runs off the UI thread so a large/slow file doesn't freeze the window;
         // the progress window (built on the UI thread, before this starts) reflects it live.
         TransferProgressDialog progress = new TransferProgressDialog(shell, "Uploading", localFiles.size(), totalBytes);
-        new Thread(() -> {
+        Thread.ofVirtual().name("sftp-upload").start(() -> {
             int  okCount      = 0;
             int  skipCount    = 0;
             long[] globalDone = { 0 };
@@ -670,7 +670,7 @@ public class MainWindow {
                     + (finalErrors.isEmpty() ? "" : "\n\nErrors:\n" + finalErrors));
                 mb.open();
             });
-        }, "sftp-upload").start();
+        });
     }
 
     /** Lets the user browse the tab's live SFTP session, pick one or more remote files, and save
@@ -709,12 +709,12 @@ public class MainWindow {
         }
 
         long totalBytes = 0;
-        for (RemoteFileBrowserDialog.PickedFile pf : remoteFiles) totalBytes += pf.size;
+        for (RemoteFileBrowserDialog.PickedFile pf : remoteFiles) totalBytes += pf.size();
 
         // The transfer runs off the UI thread so a large/slow file doesn't freeze the window;
         // the progress window (built on the UI thread, before this starts) reflects it live.
         TransferProgressDialog progress = new TransferProgressDialog(shell, "Downloading", remoteFiles.size(), totalBytes);
-        new Thread(() -> {
+        Thread.ofVirtual().name("sftp-download").start(() -> {
             int    okCount     = 0;
             int    skipCount   = 0;
             long[] globalDone  = { 0 };
@@ -723,7 +723,7 @@ public class MainWindow {
             for (int i = 0; i < remoteFiles.size() && !progress.isCancelled(); i++) {
                 RemoteFileBrowserDialog.PickedFile pf = remoteFiles.get(i);
                 String name      = pf.name();
-                long   fileSize  = pf.size;
+                long   fileSize  = pf.size();
                 int    fileIndex = i + 1;
                 String localName = name;
 
@@ -757,7 +757,7 @@ public class MainWindow {
                     continue;
                 }
                 try {
-                    sftp.get(pf.path, destFile.getAbsolutePath(),
+                    sftp.get(pf.path(), destFile.getAbsolutePath(),
                         new com.jcraft.jsch.SftpProgressMonitor() {
                             @Override public void init(int op, String src, String dest, long max) {
                                 progress.update(fileIndex, name, 0, fileSize, globalDone[0]);
@@ -789,7 +789,7 @@ public class MainWindow {
                     + (finalErrors.isEmpty() ? "" : "\n\nErrors:\n" + finalErrors));
                 mb.open();
             });
-        }, "sftp-download").start();
+        });
     }
 
     /** Shown when {@link br.com.capoeirassh.ssh.ssh.SftpConnection#connect} fails. JSch reports this the same way
