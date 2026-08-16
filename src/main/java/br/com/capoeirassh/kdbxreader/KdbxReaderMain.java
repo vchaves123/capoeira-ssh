@@ -10,7 +10,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -115,11 +114,18 @@ public final class KdbxReaderMain {
                 System.err.println("kdbx-reader: entry not found");
                 return 3;
             }
-            // Write the raw UTF-8 bytes straight to stdout, a pipe the parent reads directly —
-            // never a file, terminal, or log — and return immediately so this process (and
-            // whatever Strings the library built while parsing) tears down as soon as possible.
+            // getPropertyValue(...).getValueAsBytes() instead of the deprecated getPassword():
+            // the latter materializes the password as a String (via PropertyValue.getValueAsString(),
+            // which this JVM has no supported way to force-zero); the former goes straight from the
+            // library's internal byte[]/SealedStore representation to bytes, so no plaintext String
+            // of the password is ever created here. Belt-and-suspenders on top of the subprocess
+            // isolation below, not a substitute for it — see the class javadoc.
+            //
+            // Write the raw bytes straight to stdout, a pipe the parent reads directly — never a
+            // file, terminal, or log — and return immediately so this process (and whatever the
+            // library left behind while parsing) tears down as soon as possible.
             OutputStream out = System.out;
-            out.write(entry.getPassword().getBytes(StandardCharsets.UTF_8));
+            out.write(entry.getPropertyValue(Entry.STANDARD_PROPERTY_NAME_PASSWORD).getValueAsBytes());
             out.flush();
             return 0;
         } finally {

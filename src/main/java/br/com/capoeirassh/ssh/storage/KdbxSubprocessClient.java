@@ -34,6 +34,7 @@ public final class KdbxSubprocessClient {
     }
 
     public static final class KdbxException extends Exception {
+        private static final long serialVersionUID = 1L;
         public enum Reason { WRONG_PASSWORD, ENTRY_NOT_FOUND, FILE_NOT_FOUND, OTHER }
         public final Reason reason;
         KdbxException(Reason reason, String message) { super(message); this.reason = reason; }

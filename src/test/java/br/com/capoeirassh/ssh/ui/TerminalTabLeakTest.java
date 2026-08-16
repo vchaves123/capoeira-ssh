@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Timeout;
 
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -80,7 +79,7 @@ class TerminalTabLeakTest {
         Thread acceptor = new Thread(() -> {
             while (!fakeServer.isClosed()) {
                 try {
-                    Socket s = fakeServer.accept();
+                    fakeServer.accept();
                     // Accept and hold — deliberately never send the SSH version banner.
                 } catch (Exception e) {
                     break;

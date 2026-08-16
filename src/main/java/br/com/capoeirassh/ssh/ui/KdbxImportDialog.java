@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Lets the user pick entries from an external KeePass (.kdbx) file to import as sessions.
@@ -112,8 +113,7 @@ public class KdbxImportDialog {
         dlg.setDefaultButton(btnImport);
         btnImport.setEnabled(false);
 
-        List<ImportedItem>[] result = new List[]{null};
-        List<KdbxSubprocessClient.KdbxEntryInfo>[] loaded = new List[]{null};
+        AtomicReference<List<ImportedItem>> result = new AtomicReference<>();
 
         // listEntries() launches a JVM subprocess to open the file — background it so a large
         // database (or a slow/AV-hooked child JVM start) doesn't freeze the window, same pattern
@@ -149,7 +149,6 @@ public class KdbxImportDialog {
                     dlg.dispose();
                     return;
                 }
-                loaded[0] = finalEntries;
                 table.setEnabled(true);
                 btnAll.setEnabled(true);
                 btnNone.setEnabled(true);
@@ -177,14 +176,14 @@ public class KdbxImportDialog {
                 selected.add(toImportedItem(kdbxFile, info, saveMaster ? master : null));
             }
             if (selected.isEmpty()) { alert(dlg, "Select at least one entry to import."); return; }
-            result[0] = selected;
+            result.set(selected);
             dlg.dispose();
         });
 
         dlg.open();
         Display d = parent.getDisplay();
         while (!dlg.isDisposed()) { if (!d.readAndDispatch()) d.sleep(); }
-        return result[0];
+        return result.get();
     }
 
     /** @param masterToSave the master password to persist into the created CredentialEntry, or
