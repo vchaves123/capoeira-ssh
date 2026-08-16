@@ -40,6 +40,18 @@
             <version>2.11.4</version>
         </dependency>
 
+        <!-- KeePass (.kdbx) import support. Used ONLY by the disposable reader subprocess
+             entry point (br.com.capoeirassh.kdbxreader.KdbxReaderMain) — never loaded in the
+             main process — so that any decrypted KeePass data (which this library holds as
+             ordinary Strings, not the char[]-and-zero pattern the rest of this codebase uses
+             for secrets) is torn down by the OS when that subprocess exits, rather than left
+             to the JVM's garbage collector. See CHANGELOG.md for the design rationale. -->
+        <dependency>
+            <groupId>org.linguafranca.pwdb</groupId>
+            <artifactId>KeePassJava2-jackson</artifactId>
+            <version>2.2.4</version>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -207,6 +219,13 @@
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>br.com.capoeirassh.ssh.Main</mainClass>
                                 </transformer>
+                                <!-- Jackson (pulled in transitively by KeePassJava2-jackson, used
+                                     only by the disposable br.com.capoeirassh.kdbxreader subprocess)
+                                     registers its modules via META-INF/services. Without merging
+                                     those files across all the shaded jars, only the last jar's
+                                     copy survives shading and KDBX parsing can fail at runtime
+                                     with no compile-time warning. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
                             <filters>
                                 <filter>

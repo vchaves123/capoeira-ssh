@@ -65,6 +65,9 @@ public class ConnectDialog {
             CredentialEntry ce = store.findById(session.credentialId);
             if (ce != null) {
                 session.username = ce.username;
+                if (ce.isKdbxReference()) {
+                    return resolveKdbxOrAlert(ce);
+                }
                 return java.util.Arrays.copyOf(ce.password, ce.password.length);
             }
             // Credential was deleted from vault — fall through to manual dialog
@@ -72,6 +75,21 @@ public class ConnectDialog {
 
         // ── Manual / credential picker dialog ─────────────────────────────
         return showDialog(store);
+    }
+
+    /** Wraps {@link KdbxCredentialResolver#resolve} for the auto-connect path above, where a
+     *  thrown "broken reference" failure has no dialog already on screen to attach a MessageBox
+     *  to other than the caller's own parent shell. */
+    private char[] resolveKdbxOrAlert(CredentialEntry ce) {
+        try {
+            return KdbxCredentialResolver.resolve(parent, ce);
+        } catch (Exception ex) {
+            MessageBox mb = new MessageBox(parent, SWT.ICON_ERROR | SWT.OK);
+            mb.setText("KeePass");
+            mb.setMessage(ex.getMessage());
+            mb.open();
+            return null;
+        }
     }
 
     private char[] showDialog(CredentialStore store) {
@@ -149,8 +167,37 @@ public class ConnectDialog {
                         CredentialEntry ce = creds.get(idx - 1);
                         txtUser.setText(ce.username);
                         txtUser.setEditable(false);
-                        txtPass.setTextChars(ce.password);
-                        txtPass.setEditable(false);
+                        if (ce.isKdbxReference()) {
+                            // ce.password is intentionally always empty for a KeePass-linked
+                            // credential (see CredentialEntry) — fetch the live password now
+                            // instead of blindly filling the field with nothing.
+                            char[] pw;
+                            try {
+                                pw = KdbxCredentialResolver.resolve(dlg, ce);
+                            } catch (Exception ex) {
+                                pw = null;
+                                MessageBox mb = new MessageBox(dlg, SWT.ICON_ERROR | SWT.OK);
+                                mb.setText("KeePass");
+                                mb.setMessage(ex.getMessage());
+                                mb.open();
+                            }
+                            if (pw != null) {
+                                txtPass.setTextChars(pw);
+                                java.util.Arrays.fill(pw, '\0');
+                                txtPass.setEditable(false);
+                            } else {
+                                // Cancelled or failed — revert to manual entry rather than
+                                // leaving the picker on a credential with no usable password.
+                                finalCombo.select(0);
+                                txtUser.setText(session.username);
+                                txtUser.setEditable(true);
+                                txtPass.setText("");
+                                txtPass.setEditable(true);
+                            }
+                        } else {
+                            txtPass.setTextChars(ce.password);
+                            txtPass.setEditable(false);
+                        }
                     }
                 }
             });

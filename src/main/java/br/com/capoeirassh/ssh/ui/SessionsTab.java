@@ -1854,6 +1854,63 @@ public class SessionsTab {
         reload();
     }
 
+    /** Vault must be unlocked (or created) first — imported entries are references (file path +
+     *  entry UUID, never a password) but still live as ordinary CredentialEntry rows in this
+     *  app's own encrypted vault, same storage as any other saved credential. */
+    private void openImportKdbx() {
+        br.com.capoeirassh.ssh.storage.CredentialStore store =
+                br.com.capoeirassh.ssh.storage.CredentialStore.getInstance();
+        if (!store.isUnlocked()) {
+            boolean ok = new MasterPasswordDialog(shell).open();
+            if (!ok) return;
+        }
+
+        KdbxImportDialog dlg = new KdbxImportDialog(shell);
+        List<KdbxImportDialog.ImportedItem> items = dlg.open();
+        if (items == null || items.isEmpty()) return;
+
+        record ImportOutcome(int imported, String errors) {}
+
+        // addOrUpdate() encrypts and rewrites the whole vault file per credential, plus one
+        // SessionStorage.save() disk write per session — background it behind a busy indicator
+        // so a larger batch doesn't freeze the window with no feedback.
+        ImportOutcome outcome;
+        try {
+            outcome = BusyDialog.run(shell, "Importing", "Importing " + items.size() + " session(s)…", () -> {
+                int count = 0;
+                StringBuilder errs = new StringBuilder();
+                for (KdbxImportDialog.ImportedItem item : items) {
+                    try {
+                        store.addOrUpdate(item.credential());
+                        SessionStorage.save(item.session());
+                        count++;
+                    } catch (Exception ex) {
+                        errs.append("\n- ").append(item.session().name).append(": ").append(ex.getMessage());
+                    }
+                }
+                return new ImportOutcome(count, errs.toString());
+            });
+        } catch (Exception ex) {
+            // The task above only ever collects per-item failures into ImportOutcome.errors()
+            // and keeps going — it doesn't itself throw — but handle defensively rather than
+            // assume that always holds.
+            MessageBox err = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+            err.setText("Import error");
+            err.setMessage("Import failed: " + ex.getMessage());
+            err.open();
+            return;
+        }
+
+        reload();
+        if (!outcome.errors().isEmpty()) {
+            MessageBox err = new MessageBox(shell, SWT.ICON_ERROR | SWT.OK);
+            err.setText("Import error");
+            err.setMessage("Imported " + outcome.imported() + " of " + items.size()
+                + " session(s). Failures:" + outcome.errors());
+            err.open();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Unified Import / Export menu
     // -----------------------------------------------------------------------
@@ -1873,6 +1930,10 @@ public class SessionsTab {
         MenuItem miBackup = new MenuItem(menu, SWT.PUSH);
         miBackup.setText("Import from Capoeira backup...");
         miBackup.addListener(SWT.Selection, e -> openImportBackup());
+
+        MenuItem miKdbx = new MenuItem(menu, SWT.PUSH);
+        miKdbx.setText("Import from KeePass (.kdbx)...");
+        miKdbx.addListener(SWT.Selection, e -> openImportKdbx());
 
         Point loc = anchor.toDisplay(anchor.getSize().x, anchor.getSize().y);
         menu.setLocation(loc);
