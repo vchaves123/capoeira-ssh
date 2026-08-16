@@ -295,7 +295,7 @@ public class CredentialManagerDialog {
     private static void runPersist(Shell dlg, ThrowingRunnable task, Runnable refresh) {
         dlg.setEnabled(false);
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("credential-persist").start(() -> {
             String errorMessage = null;
             try { task.run(); } catch (Exception ex) { errorMessage = ex.getMessage(); }
             String finalError = errorMessage;
@@ -305,7 +305,7 @@ public class CredentialManagerDialog {
                 if (finalError != null) error(dlg, finalError);
                 refresh.run();
             });
-        }, "credential-persist").start();
+        });
     }
 
     /** "Source" column text for the list table. */

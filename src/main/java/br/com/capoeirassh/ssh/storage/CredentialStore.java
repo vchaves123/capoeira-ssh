@@ -424,15 +424,15 @@ public final class CredentialStore {
         for (CredentialEntry e : list) {
             sb.append("e.").append(e.id).append(".l=").append(esc(e.label))   .append('\n');
             sb.append("e.").append(e.id).append(".u=").append(esc(e.username)).append('\n');
-            sb.append("e.").append(e.id).append(".k=").append(esc(e.keyPath != null ? e.keyPath : "")).append('\n');
+            sb.append("e.").append(e.id).append(".k=").append(esc(Objects.requireNonNullElse(e.keyPath, ""))).append('\n');
             sb.append("e.").append(e.id).append(".p=");
             escChars(e.password, sb);
             sb.append('\n');
             // kdbx-reference fields (both blank for an ordinary password/private-key entry) —
             // not secret (a file path and a KeePass-internal UUID, not credential material), so
             // plain String escaping is fine here, same as label/username/keyPath above.
-            sb.append("e.").append(e.id).append(".kf=").append(esc(e.kdbxFilePath  != null ? e.kdbxFilePath  : "")).append('\n');
-            sb.append("e.").append(e.id).append(".ke=").append(esc(e.kdbxEntryUuid != null ? e.kdbxEntryUuid : "")).append('\n');
+            sb.append("e.").append(e.id).append(".kf=").append(esc(Objects.requireNonNullElse(e.kdbxFilePath,  ""))).append('\n');
+            sb.append("e.").append(e.id).append(".ke=").append(esc(Objects.requireNonNullElse(e.kdbxEntryUuid, ""))).append('\n');
         }
         return sb;
     }

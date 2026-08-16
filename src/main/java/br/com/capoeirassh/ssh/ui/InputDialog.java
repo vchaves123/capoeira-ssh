@@ -7,6 +7,8 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.layout.RowLayout;
 import org.eclipse.swt.widgets.*;
 
+import java.util.Objects;
+
 /** Minimal one-field modal input dialog. */
 class InputDialog {
     private final Shell  parent;
@@ -19,7 +21,7 @@ class InputDialog {
         this.parent = parent; this.title = title; this.prompt = prompt;
     }
 
-    void setInitialValue(String v) { this.initialValue = v != null ? v : ""; }
+    void setInitialValue(String v) { this.initialValue = Objects.requireNonNullElse(v, ""); }
 
     String open() {
         Shell dlg = new Shell(parent, SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM);

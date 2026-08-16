@@ -122,7 +122,7 @@ public class KdbxImportDialog {
         // a static "please wait" — the listener callback fires on this background thread, so it
         // hops to the UI thread itself before touching the label.
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("kdbx-list-entries").start(() -> {
             List<KdbxSubprocessClient.KdbxEntryInfo> entries = null;
             String errorMessage = null;
             try {
@@ -161,7 +161,7 @@ public class KdbxImportDialog {
                 }
                 dlg.layout(true, true);
             });
-        }, "kdbx-list-entries").start();
+        });
 
         btnCancel.addListener(SWT.Selection, e -> dlg.dispose());
         btnImport.addListener(SWT.Selection, e -> {

@@ -52,7 +52,10 @@ public final class BusyDialog {
         Display display = owner.getDisplay();
         long[] shownAtMs = new long[1];
 
-        Thread t = new Thread(() -> {
+        // Virtual, not platform: this is one fire-and-forget blocking task (network/file/vault
+        // I/O, never a reused worker), and virtual threads are daemon by construction — no
+        // separate setDaemon(true) needed.
+        Thread t = Thread.ofVirtual().name("busy-dialog-task").unstarted(() -> {
             T result = null;
             Exception failure = null;
             try {
@@ -75,8 +78,7 @@ public final class BusyDialog {
                     busy.dispose();
                 }
             });
-        }, "busy-dialog-task");
-        t.setDaemon(true);
+        });
 
         // Show the dialog and let the display actually paint it *before* the background work
         // starts — starting the thread first risks the task finishing (and queuing a dispose)

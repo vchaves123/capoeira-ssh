@@ -121,7 +121,7 @@ public final class KdbxCredentialResolver {
      *  this method returns, which would otherwise race a still-running background read of it. */
     private static void healStoredMasterPassword(CredentialEntry ce, char[] newMaster) {
         char[] masterCopy = Arrays.copyOf(newMaster, newMaster.length);
-        Thread t = new Thread(() -> {
+        Thread.ofVirtual().name("kdbx-heal-master-password").start(() -> {
             try {
                 CredentialEntry updated = CredentialStore.getInstance().findById(ce.id);
                 if (updated == null) return; // deleted from the vault meanwhile
@@ -130,9 +130,7 @@ public final class KdbxCredentialResolver {
             } catch (Exception ignored) {
                 // Non-fatal — see method comment.
             }
-        }, "kdbx-heal-master-password");
-        t.setDaemon(true);
-        t.start();
+        });
     }
 
     private static void alert(Shell parent, String msg) {

@@ -13,6 +13,7 @@ import org.eclipse.swt.widgets.*;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 
 public class SessionDialog {
 
@@ -363,7 +364,7 @@ public class SessionDialog {
             // the whole vault file to disk — background it, same pattern used elsewhere.
             btnSaveCred.setEnabled(false);
             Display display = dlg.getDisplay();
-            new Thread(() -> {
+            Thread.ofVirtual().name("credential-save").start(() -> {
                 String errorMessage = null;
                 try { store.addOrUpdate(ce); }
                 catch (Exception ex) { errorMessage = ex.getMessage(); }
@@ -382,7 +383,7 @@ public class SessionDialog {
                     }
                     applyLockedCredential[0].run();
                 });
-            }, "credential-save").start();
+            });
         });
 
         // ── Configuration (logging / appearance / terminal type / backspace) ───
@@ -462,10 +463,10 @@ public class SessionDialog {
             if (linkedToCredential) {
                 applyLockedCredential[0].run();
             } else {
-                cmbUser.setText(editing.username != null ? editing.username : "");
+                cmbUser.setText(Objects.requireNonNullElse(editing.username, ""));
                 boolean useKey = editing.authType == SessionInfo.AuthType.PRIVATE_KEY;
                 chkKey.setSelection(useKey);
-                if (useKey) txtKey.setText(editing.keyPath != null ? editing.keyPath : "");
+                if (useKey) txtKey.setText(Objects.requireNonNullElse(editing.keyPath, ""));
             }
         } else if (preselectedGroup != null && !preselectedGroup.isBlank()) {
             int idx = cmbGroup.indexOf(preselectedGroup);
@@ -484,13 +485,11 @@ public class SessionDialog {
             if (h.isEmpty() || h.equals(lastLookedUpHost[0])) return;
             lastLookedUpHost[0] = h;
             reverseDnsRef.set(null);
-            Thread t = new Thread(() -> {
+            Thread.ofVirtual().name("rdns-lookup").start(() -> {
                 try {
                     reverseDnsRef.set(java.net.InetAddress.getByName(h).getCanonicalHostName());
                 } catch (Exception ignored) {}
-            }, "rdns-lookup");
-            t.setDaemon(true);
-            t.start();
+            });
         };
         txtHost.addListener(SWT.FocusOut, e -> startDnsLookup.run());
         // In edit mode the host is already filled — start the lookup immediately.
@@ -650,7 +649,7 @@ public class SessionDialog {
             String originalSaveText = btnSave.getText();
             btnSave.setText("Saving…");
             Display display = dlg.getDisplay();
-            new Thread(() -> {
+            Thread.ofVirtual().name("session-save").start(() -> {
                 String errorMessage = null;
                 try {
                     SessionStorage.save(s);
@@ -683,7 +682,7 @@ public class SessionDialog {
                         alert(dlg, "Failed to save session:\n" + finalError);
                     }
                 });
-            }, "session-save").start();
+            });
         });
 
         dlg.open();

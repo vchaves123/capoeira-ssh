@@ -92,7 +92,7 @@ class TagManagerDialog {
      *  rename/recolor/delete, so blocking here would freeze the window on every such action too. */
     private void refreshList() {
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("tag-list-refresh").start(() -> {
             java.util.List<SessionInfo> sessions = SessionStorage.loadAll();
             Map<String, Integer> counts = new TreeMap<>(String::compareToIgnoreCase);
             for (String t : TagRegistry.getAll()) counts.put(t, 0);
@@ -112,7 +112,7 @@ class TagManagerDialog {
                     item.setImage(swatch(d, TagRegistry.getColor(tag)));
                 }
             });
-        }, "tag-list-refresh").start();
+        });
     }
 
     private interface ThrowingRunnable { void run() throws Exception; }
@@ -123,7 +123,7 @@ class TagManagerDialog {
     private void runBg(ThrowingRunnable task, Runnable onSuccess) {
         dlg.setEnabled(false);
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("tag-manager-bg").start(() -> {
             String errorMessage = null;
             try { task.run(); } catch (Exception ex) { errorMessage = ex.getMessage(); }
             String finalError = errorMessage;
@@ -133,7 +133,7 @@ class TagManagerDialog {
                 if (finalError != null) { error(finalError); return; }
                 onSuccess.run();
             });
-        }, "tag-manager-bg").start();
+        });
     }
 
     private final java.util.List<Image> swatches = new java.util.ArrayList<>();
@@ -203,7 +203,7 @@ class TagManagerDialog {
         String finalNewName = newName;
         dlg.setEnabled(false);
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("tag-rename").start(() -> {
             TagRegistry.rename(tag, finalNewName);
             java.util.List<String> failures = new java.util.ArrayList<>();
             for (SessionInfo s : SessionStorage.loadAll()) {
@@ -225,7 +225,7 @@ class TagManagerDialog {
                 if (!failures.isEmpty())
                     error("Failed to rename tag on:\n" + String.join("\n", failures));
             });
-        }, "tag-rename").start();
+        });
     }
 
     private void recolorSelectedTag() {
@@ -251,7 +251,7 @@ class TagManagerDialog {
         // while composing the confirmation either, same pattern as GroupManagerDialog.
         dlg.setEnabled(false);
         Display display = dlg.getDisplay();
-        new Thread(() -> {
+        Thread.ofVirtual().name("tag-delete-scan").start(() -> {
             int affected = 0;
             for (SessionInfo s : SessionStorage.loadAll())
                 if (s.tags.stream().anyMatch(tags::contains)) affected++;
@@ -269,7 +269,7 @@ class TagManagerDialog {
                 if (mb.open() != SWT.YES) return;
 
                 dlg.setEnabled(false);
-                new Thread(() -> {
+                Thread.ofVirtual().name("tag-delete").start(() -> {
                     java.util.List<String> failures = new java.util.ArrayList<>();
                     for (SessionInfo s : SessionStorage.loadAll()) {
                         if (!s.tags.removeAll(tags)) continue;
@@ -286,9 +286,9 @@ class TagManagerDialog {
                         if (!failures.isEmpty())
                             error("Failed to remove tag on:\n" + String.join("\n", failures));
                     });
-                }, "tag-delete").start();
+                });
             });
-        }, "tag-delete-scan").start();
+        });
     }
 
     private void error(String message) {

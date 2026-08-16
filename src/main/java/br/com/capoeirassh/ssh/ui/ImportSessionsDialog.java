@@ -70,7 +70,7 @@ public class ImportSessionsDialog {
             btnPutty.setEnabled(false);
             btnPutty.setText("Scanning…");
             Display display = dlg.getDisplay();
-            new Thread(() -> {
+            Thread.ofVirtual().name("putty-scan").start(() -> {
                 List<SessionInfo> sessions = SessionImporter.fromPutty();
                 display.asyncExec(() -> {
                     if (dlg.isDisposed()) return;
@@ -82,7 +82,7 @@ public class ImportSessionsDialog {
                         addRows(sessions);
                     }
                 });
-            }, "putty-scan").start();
+            });
         });
 
         btnMoba.addListener(SWT.Selection, e -> {
@@ -98,7 +98,7 @@ public class ImportSessionsDialog {
             btnMoba.setEnabled(false);
             btnMoba.setText("Scanning…");
             Display display = dlg.getDisplay();
-            new Thread(() -> {
+            Thread.ofVirtual().name("moba-import").start(() -> {
                 List<SessionInfo> sessions = SessionImporter.fromMobaXtermIni(Path.of(path));
                 display.asyncExec(() -> {
                     if (dlg.isDisposed()) return;
@@ -110,7 +110,7 @@ public class ImportSessionsDialog {
                         addRows(sessions);
                     }
                 });
-            }, "moba-import").start();
+            });
         });
 
         Composite cmpBtns = new Composite(dlg, SWT.NONE);

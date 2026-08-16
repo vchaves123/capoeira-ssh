@@ -108,7 +108,7 @@ public class MasterPasswordDialog {
             btnOk.setText(createMode ? "Creating…" : "Unlocking…");
 
             Display display = dlg.getDisplay();
-            Thread t = new Thread(() -> {
+            Thread.ofVirtual().name(createMode ? "vault-create" : "vault-unlock").start(() -> {
                 String errorMessage = null;
                 boolean wrongPassword = false;
                 try {
@@ -151,9 +151,7 @@ public class MasterPasswordDialog {
                         lblError.setText(finalWrongPassword ? "Wrong password." : finalErrorMessage);
                     }
                 });
-            }, createMode ? "vault-create" : "vault-unlock");
-            t.setDaemon(true);
-            t.start();
+            });
         });
 
         // Pack to each widget's own natural size on the current platform/DPI instead of

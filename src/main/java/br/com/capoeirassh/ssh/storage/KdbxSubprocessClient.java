@@ -70,10 +70,9 @@ public final class KdbxSubprocessClient {
             masterPasswordBytes = charsToBytes(masterPassword);
 
             byte[][] stderrHolder = new byte[1][];
-            Thread errThread = new Thread(() -> {
+            Thread errThread = Thread.ofVirtual().name("kdbx-reader-stderr").start(() -> {
                 try { stderrHolder[0] = readAll(startedProc.getErrorStream()); } catch (IOException ignored) {}
-            }, "kdbx-reader-stderr");
-            errThread.start();
+            });
 
             try (OutputStream stdin = proc.getOutputStream()) {
                 stdin.write(masterPasswordBytes);
@@ -159,10 +158,9 @@ public final class KdbxSubprocessClient {
             // thread against a full OS pipe buffer while it's still busy writing stdin/reading
             // stdout. Output here is at most one short line, but this is cheap insurance.
             byte[][] stderrHolder = new byte[1][];
-            Thread errThread = new Thread(() -> {
+            Thread errThread = Thread.ofVirtual().name("kdbx-reader-stderr").start(() -> {
                 try { stderrHolder[0] = readAll(startedProc.getErrorStream()); } catch (IOException ignored) {}
-            }, "kdbx-reader-stderr");
-            errThread.start();
+            });
 
             try (OutputStream stdin = proc.getOutputStream()) {
                 stdin.write(masterPasswordBytes);

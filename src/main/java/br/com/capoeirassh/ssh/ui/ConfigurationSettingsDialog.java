@@ -8,6 +8,8 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
 
+import java.util.Objects;
+
 /**
  * "Configuration Setting" dialog: logging, appearance, terminal type and backspace key.
  * Reused in three scopes — global defaults (Home tab), a single session
@@ -56,7 +58,7 @@ public class ConfigurationSettingsDialog {
         this.parent        = parent;
         this.title         = title;
         this.settings       = initial.copy();
-        this.hostHint       = hostHint != null ? hostHint : "";
+        this.hostHint       = Objects.requireNonNullElse(hostHint, "");
         this.supportsTrace  = supportsTrace;
         this.traceInitial   = tracingNow;
         this.traceResult    = tracingNow;
@@ -138,7 +140,7 @@ public class ConfigurationSettingsDialog {
         cmpAppear.setLayout(rlApp);
 
         int[]    appFontSize = { settings.appearFontSize };
-        String[] appFontName = { settings.appearFontName != null ? settings.appearFontName : "" };
+        String[] appFontName = { Objects.requireNonNullElse(settings.appearFontName, "") };
         int[]    appFg = { settings.appearFgR, settings.appearFgG, settings.appearFgB };
         int[]    appBg = { settings.appearBgR, settings.appearBgG, settings.appearBgB };
 
