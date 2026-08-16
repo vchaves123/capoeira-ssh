@@ -41,7 +41,7 @@ class GlyphFallbackFitTest {
         GC gc = new GC(display);
         try {
             gc.setFont(terminalFont);
-            cellWidth = gc.getFontMetrics().getAverageCharWidth();
+            cellWidth = (int) Math.round(gc.getFontMetrics().getAverageCharacterWidth());
         } finally {
             gc.dispose();
         }

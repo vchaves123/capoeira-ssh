@@ -149,7 +149,6 @@ public class RemoteFileBrowserDialog {
             List<ChannelSftp.LsEntry> dirs  = new ArrayList<>();
             List<ChannelSftp.LsEntry> files = new ArrayList<>();
             try {
-                @SuppressWarnings("unchecked")
                 Vector<ChannelSftp.LsEntry> ls = sftp.ls(currentDir);
                 for (ChannelSftp.LsEntry e : ls) {
                     String n = e.getFilename();

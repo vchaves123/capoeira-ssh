@@ -11,7 +11,6 @@ import org.junit.jupiter.api.*;
 import java.lang.reflect.Field;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,7 +42,7 @@ class TerminalTabHistoryTest {
         fakeServer = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
         acceptor = new Thread(() -> {
             while (!fakeServer.isClosed()) {
-                try { Socket s = fakeServer.accept(); /* accept and hold, never send a banner */ }
+                try { fakeServer.accept(); /* accept and hold, never send a banner */ }
                 catch (Exception e) { break; }
             }
         }, "fake-ssh-acceptor-history-test");

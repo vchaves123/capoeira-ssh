@@ -21,7 +21,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -62,7 +61,7 @@ class TerminalTabRenderBoundsTest {
         fakeServer = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
         acceptor = new Thread(() -> {
             while (!fakeServer.isClosed()) {
-                try { Socket s = fakeServer.accept(); }
+                try { fakeServer.accept(); }
                 catch (Exception e) { break; }
             }
         }, "fake-ssh-acceptor-renderbounds-test");

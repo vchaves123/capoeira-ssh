@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.net.ServerSocket;
-import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.*;
 

@@ -80,7 +80,6 @@ public class MainWindow {
     // -----------------------------------------------------------------------
     private void buildContent() {
         tabFolder = new CTabFolder(shell, SWT.TOP | SWT.BORDER);
-        tabFolder.setSimple(false);
         tabFolder.setTabHeight(22);
 
         tabFolder.setSelectionBackground(

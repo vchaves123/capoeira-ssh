@@ -34,7 +34,7 @@ class KdbxSubprocessClientIntegrationTest {
     private static final char[] MASTER_PASSWORD = "correct horse battery staple".toCharArray();
     private static final String ENTRY_PASSWORD  = "s3cr3t-server-password!";
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
     @BeforeEach
     void createFixtureDatabase() throws Exception {
         // Raw types here — KeePassJava2's Database<D,G,E,I> self-referencing generics make a
@@ -102,7 +102,7 @@ class KdbxSubprocessClientIntegrationTest {
         assertArrayEquals(MASTER_PASSWORD, pw, "fetchPassword must not mutate the caller's array");
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
     @Test
     void listEntriesReportsProgressAsEachEntryStreamsIn() throws Exception {
         // A separate multi-entry fixture — the shared @BeforeEach one only has a single entry,

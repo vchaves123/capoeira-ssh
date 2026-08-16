@@ -26,7 +26,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class CredentialStoreLookupPerformanceTest {
 
-    @SuppressWarnings("unchecked")
     private static void setEntries(CredentialStore store, Map<String, CredentialEntry> entries) throws Exception {
         Field f = CredentialStore.class.getDeclaredField("entries");
         f.setAccessible(true);

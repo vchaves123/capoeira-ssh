@@ -1,8 +1,6 @@
 package br.com.capoeirassh.ssh.ssh;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
-import org.eclipse.swt.widgets.Display;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
