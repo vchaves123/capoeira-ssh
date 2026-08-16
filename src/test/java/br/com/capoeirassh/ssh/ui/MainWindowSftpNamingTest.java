@@ -103,4 +103,34 @@ class MainWindowSftpNamingTest {
         Files.createFile(tempDir.resolve("README"));
         assertEquals("README (1)", MainWindow.uniqueLocalName(tempDir.toString(), "README"));
     }
+
+    // ── isWithinDir ──────────────────────────────────────────────────────────
+    // Last-line-of-defense containment check backing downloadFiles()'s path-traversal fix —
+    // see RemoteFileBrowserDialogPathTest's PickedFile.name() tests for the matching sanitize-at-
+    // the-source half of the same fix.
+
+    @Test
+    void isWithinDir_plainFileDirectlyInsideDir_isWithin(@TempDir Path tempDir) {
+        String dir = tempDir.toString();
+        assertTrue(MainWindow.isWithinDir(dir, new java.io.File(dir, "report.txt")));
+    }
+
+    @Test
+    void isWithinDir_nestedTraversalEscapingDir_isNotWithin(@TempDir Path tempDir) {
+        String dir = tempDir.toString();
+        // Mirrors what a name() that failed to strip a backslash-laden entry would have produced.
+        assertFalse(MainWindow.isWithinDir(dir, new java.io.File(dir, "..\\..\\evil.exe")));
+    }
+
+    @Test
+    void isWithinDir_bareParentSegment_isNotWithin(@TempDir Path tempDir) {
+        String dir = tempDir.toString();
+        assertFalse(MainWindow.isWithinDir(dir, new java.io.File(dir, "..")));
+    }
+
+    @Test
+    void isWithinDir_dirItself_isNotWithin(@TempDir Path tempDir) {
+        String dir = tempDir.toString();
+        assertFalse(MainWindow.isWithinDir(dir, new java.io.File(dir, ".")));
+    }
 }

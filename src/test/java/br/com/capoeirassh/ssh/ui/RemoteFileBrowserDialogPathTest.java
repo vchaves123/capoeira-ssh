@@ -86,4 +86,93 @@ class RemoteFileBrowserDialogPathTest {
     void humanSize_exactGigabyte() {
         assertEquals("1.0 GB", RemoteFileBrowserDialog.humanSize(1024L * 1024 * 1024));
     }
+
+    // ── PickedFile.name() ────────────────────────────────────────────────────
+    // Regression coverage for a path-traversal fix: the remote filename this is built from
+    // (ChannelSftp.LsEntry.getFilename()) comes straight off the SFTP wire with no validation by
+    // the protocol, so a malicious/compromised server fully controls it — name() must strip on
+    // BOTH '/' and '\', not just '/', the same way BackupBundle.fromProps()'s basename extraction
+    // already does, or a backslash-laden entry name (a valid path separator on Windows) survives
+    // into MainWindow.downloadFiles()'s local destination path unstripped.
+
+    @Test
+    void name_ordinaryFile_isBasename() {
+        assertEquals("report.txt", new RemoteFileBrowserDialog.PickedFile("/home/user/report.txt", 0).name());
+    }
+
+    @Test
+    void name_noSlash_isWholeString() {
+        assertEquals("report.txt", new RemoteFileBrowserDialog.PickedFile("report.txt", 0).name());
+    }
+
+    @Test
+    void name_serverSuppliedBackslashTraversal_isStrippedToBasename() {
+        // A hostile/compromised server's ls() entry name can be an arbitrary string containing
+        // backslashes with no slash at all — lastIndexOf('/') alone would return the whole thing.
+        String malicious = "/remote/dir/..\\..\\..\\AppData\\Roaming\\Startup\\evil.exe";
+        assertEquals("evil.exe", new RemoteFileBrowserDialog.PickedFile(malicious, 0).name());
+    }
+
+    @Test
+    void name_backslashOnlyNoSlash_isStrippedToBasename() {
+        assertEquals("evil.exe",
+            new RemoteFileBrowserDialog.PickedFile("..\\..\\..\\evil.exe", 0).name());
+    }
+
+    // ── sanitizeDisplayName ──────────────────────────────────────────────────
+    // Trojan-Source-style display-spoofing guard: a malicious/compromised SFTP server fully
+    // controls ChannelSftp.LsEntry.getFilename(), so bidi-override/zero-width characters embedded
+    // there must never survive into what the user is shown (or into a downloaded local filename).
+    // The deceptive characters below are the real raw Unicode code points (RLO, zero-width
+    // space/joiners, BOM), not display artifacts — this file is UTF-8, same as the rest of the
+    // codebase; see each test for which exact character it targets.
+
+    @Test
+    void sanitizeDisplayName_ordinaryName_isUnchanged() {
+        assertEquals("report.txt", RemoteFileBrowserDialog.sanitizeDisplayName("report.txt"));
+    }
+
+    @Test
+    void sanitizeDisplayName_nullOrEmpty_isEmptyString() {
+        assertEquals("", RemoteFileBrowserDialog.sanitizeDisplayName(null));
+        assertEquals("", RemoteFileBrowserDialog.sanitizeDisplayName(""));
+    }
+
+    @Test
+    void sanitizeDisplayName_rightToLeftOverride_isStripped() {
+        // U+202E (RLO) is the classic Trojan-Source character: it flips the visual reading order
+        // of everything after it, e.g. disguising "gpj.exe" as "exe.jpg" when rendered.
+        String malicious = "doc‮gpj.exe";
+        String sanitized = RemoteFileBrowserDialog.sanitizeDisplayName(malicious);
+        assertFalse(sanitized.contains("‮"));
+        assertEquals("docgpj.exe", sanitized);
+    }
+
+    @Test
+    void sanitizeDisplayName_zeroWidthCharacters_areStripped() {
+        // U+200B (zero-width space), U+200C (ZWNJ), U+200D (ZWJ).
+        String malicious = "report​‌‍.txt";
+        assertEquals("report.txt", RemoteFileBrowserDialog.sanitizeDisplayName(malicious));
+    }
+
+    @Test
+    void sanitizeDisplayName_bomCharacter_isStripped() {
+        assertEquals("report.txt", RemoteFileBrowserDialog.sanitizeDisplayName("﻿report.txt"));
+    }
+
+    @Test
+    void sanitizeDisplayName_otherControlCharacters_areStripped() {
+        // U+0007 (BEL) — an ordinary ISO control character, not a bidi/zero-width one, covered by
+        // the same sweep for defense in depth.
+        assertEquals("report.txt", RemoteFileBrowserDialog.sanitizeDisplayName("report.txt"));
+    }
+
+    @Test
+    void name_stripsDeceptiveCharactersFromServerSuppliedEntry() {
+        // The same sanitization must also apply to the local download filename, not just the
+        // table display — PickedFile.name() is what MainWindow.downloadFiles() actually writes
+        // to local disk.
+        String malicious = "/remote/dir/doc‮gpj.exe";
+        assertEquals("docgpj.exe", new RemoteFileBrowserDialog.PickedFile(malicious, 0).name());
+    }
 }

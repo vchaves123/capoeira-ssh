@@ -17,6 +17,16 @@ import java.util.Vector;
  * upload/download context-menu actions need: picking a destination folder (upload) or picking
  * one or more files at once (download, multi-selection). Shared by both flows in
  * {@code MainWindow} so there is one navigation implementation, not two.
+ *
+ * <p>Accepted trade-off: unlike opening the connection itself (which {@code MainWindow} now runs
+ * through {@code BusyDialog} — see uploadFiles()/downloadFiles()), every {@code sftp.ls()} call
+ * inside this dialog (initial listing, "Up", double-click into a directory) still runs
+ * synchronously on the UI thread with no indicator. A slow or malicious/compromised server can
+ * still stall a single listing for up to {@code SftpConnection}'s socket-level timeout (15s) per
+ * navigation click — bounded, not indefinite, but still a brief freeze. Backgrounding every
+ * navigation action here (with its own busy indicator, cancellation, etc.) would be a
+ * meaningfully larger change than this dialog's current single-threaded/blocking design and was
+ * deliberately left out of this pass.
  */
 public class RemoteFileBrowserDialog {
 
@@ -38,7 +48,41 @@ public class RemoteFileBrowserDialog {
         public final String path;
         public final long   size;
         PickedFile(String path, long size) { this.path = path; this.size = size; }
-        public String name() { return path.substring(path.lastIndexOf('/') + 1); }
+        /** Basename of {@link #path}, split on BOTH '/' and '\' — the remote filename this is
+         *  built from (ChannelSftp.LsEntry.getFilename()) comes straight off the SFTP wire with
+         *  no validation by the protocol, so a malicious or compromised server can embed a
+         *  backslash (a path separator on Windows, this app's default target platform) to smuggle
+         *  traversal past a '/'-only split. Same fix, same reasoning, as
+         *  BackupBundle.fromProps()'s basename extraction. */
+        public String name() {
+            int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+            String basename = slash >= 0 ? path.substring(slash + 1) : path;
+            return sanitizeDisplayName(basename);
+        }
+    }
+
+    /** Unicode bidirectional-override, embedding, and zero-width characters — the toolkit behind
+     *  "Trojan Source"-style display spoofing. A malicious or compromised SFTP server fully
+     *  controls {@code ChannelSftp.LsEntry.getFilename()} (no format validation by the protocol),
+     *  so it can embed these to make a listed file's name/extension visually different from what
+     *  actually gets downloaded/opened. */
+    private static final java.util.regex.Pattern DECEPTIVE_CHARS = java.util.regex.Pattern.compile(
+        "[\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2069\\uFEFF]");
+
+    /** Strips bidi-override/zero-width characters and other non-printable control characters from
+     *  a server-supplied name before it's ever shown in the UI or used as a local download
+     *  filename — never applied to the actual remote path used for the SFTP transfer itself,
+     *  which must stay byte-exact. Package-private (not private) so a JUnit test in this package
+     *  can drive it directly. */
+    static String sanitizeDisplayName(String rawName) {
+        if (rawName == null || rawName.isEmpty()) return "";
+        String stripped = DECEPTIVE_CHARS.matcher(rawName).replaceAll("");
+        StringBuilder sb = new StringBuilder(stripped.length());
+        for (int i = 0; i < stripped.length(); i++) {
+            char c = stripped.charAt(i);
+            if (!Character.isISOControl(c)) sb.append(c);
+        }
+        return sb.toString();
     }
 
     public RemoteFileBrowserDialog(Shell parent, ChannelSftp sftp, Mode mode, String title) {
@@ -129,13 +173,15 @@ public class RemoteFileBrowserDialog {
             }
             for (ChannelSftp.LsEntry e : dirs) {
                 TableItem it = new TableItem(table, SWT.NONE);
-                it.setText(new String[]{ e.getFilename() + "/", "" });
+                // Display only — never the raw name used for the actual sftp.ls()/sftp.get()
+                // path, which must stay byte-exact to reach the real remote entry.
+                it.setText(new String[]{ sanitizeDisplayName(e.getFilename()) + "/", "" });
                 rowEntries.add(e);
             }
             if (mode == Mode.PICK_FILES) {
                 for (ChannelSftp.LsEntry e : files) {
                     TableItem it = new TableItem(table, SWT.NONE);
-                    it.setText(new String[]{ e.getFilename(), humanSize(e.getAttrs().getSize()) });
+                    it.setText(new String[]{ sanitizeDisplayName(e.getFilename()), humanSize(e.getAttrs().getSize()) });
                     rowEntries.add(e);
                 }
             }

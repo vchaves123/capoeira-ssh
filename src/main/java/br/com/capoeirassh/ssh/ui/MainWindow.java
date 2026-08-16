@@ -584,7 +584,13 @@ public class MainWindow {
         br.com.capoeirassh.ssh.ssh.SftpConnection sftpConn = new br.com.capoeirassh.ssh.ssh.SftpConnection();
         com.jcraft.jsch.ChannelSftp sftp;
         try {
-            sftp = sftpConn.connect(terminal.getSessionInfo(), password, display);
+            // The SSH handshake/SFTP channel-open used to block this thread directly with no
+            // feedback at all — a slow network, or a malicious/compromised server that stalls the
+            // handshake up to its own timeout, froze the whole window (all tabs) with nothing on
+            // screen to explain why. BusyDialog runs it on a background thread and shows
+            // "Connecting…" instead, same pattern already used for the KeePass reader subprocess.
+            sftp = BusyDialog.run(shell, "SFTP", "Connecting to " + terminal.getSessionInfo().host + "…",
+                () -> sftpConn.connect(terminal.getSessionInfo(), password, display));
         } catch (Exception ex) {
             sftpChannelError(terminal, ex);
             return;
@@ -679,7 +685,10 @@ public class MainWindow {
         br.com.capoeirassh.ssh.ssh.SftpConnection sftpConn = new br.com.capoeirassh.ssh.ssh.SftpConnection();
         com.jcraft.jsch.ChannelSftp sftp;
         try {
-            sftp = sftpConn.connect(terminal.getSessionInfo(), password, display);
+            // See uploadFiles() for why this runs through BusyDialog instead of blocking the UI
+            // thread directly with no feedback.
+            sftp = BusyDialog.run(shell, "SFTP", "Connecting to " + terminal.getSessionInfo().host + "…",
+                () -> sftpConn.connect(terminal.getSessionInfo(), password, display));
         } catch (Exception ex) {
             sftpChannelError(terminal, ex);
             return;
@@ -738,8 +747,18 @@ public class MainWindow {
 
                 long[] fileDone = { 0 };
                 String finalLocalName = localName;
+                java.io.File destFile = new java.io.File(localDir, finalLocalName);
+                // Last line of defense before the write: PickedFile.name() already strips a
+                // server-supplied filename down to a basename (splitting on both '/' and '\'),
+                // but the server fully controls that string, so never trust it enough to skip a
+                // final check that the resolved destination is still actually inside localDir.
+                if (!isWithinDir(localDir, destFile)) {
+                    errors.append("• ").append(name).append(": refused — resolved outside the destination folder\n");
+                    progress.update(fileIndex, name + " (refused)", fileSize, fileSize, globalDone[0]);
+                    continue;
+                }
                 try {
-                    sftp.get(pf.path, new java.io.File(localDir, finalLocalName).getAbsolutePath(),
+                    sftp.get(pf.path, destFile.getAbsolutePath(),
                         new com.jcraft.jsch.SftpProgressMonitor() {
                             @Override public void init(int op, String src, String dest, long max) {
                                 progress.update(fileIndex, name, 0, fileSize, globalDone[0]);
@@ -813,6 +832,18 @@ public class MainWindow {
         return dir.endsWith("/") ? dir + name : dir + "/" + name;
     }
 
+    /** True if {@code target} resolves to somewhere strictly inside {@code dir} — the final
+     *  containment check before a downloaded file is written to disk. {@code target} is expected
+     *  to already be {@code new java.io.File(dir, someName)}; this re-derives the actual resolved
+     *  location (normalizing away any {@code ..}/{@code .} segments a server-supplied name could
+     *  still contain) rather than trusting the caller's string arithmetic. Package-private (not
+     *  private) so a JUnit test in this package can drive it directly. */
+    static boolean isWithinDir(String dir, java.io.File target) {
+        java.nio.file.Path base  = new java.io.File(dir).toPath().toAbsolutePath().normalize();
+        java.nio.file.Path child = target.toPath().toAbsolutePath().normalize();
+        return child.startsWith(base) && !child.equals(base);
+    }
+
     /** Finds a "name (1).ext", "name (2).ext", … that doesn't yet exist on the remote side. */
     static String uniqueRemoteName(com.jcraft.jsch.ChannelSftp sftp, String dir, String name) {
         String base = name, ext = "";
@@ -861,11 +892,15 @@ public class MainWindow {
             return;
         }
 
-        MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
+        MessageBox mb = new MessageBox(shell, (turningOn ? SWT.ICON_WARNING : SWT.ICON_INFORMATION) | SWT.OK);
         mb.setText("Trace");
         mb.setMessage(turningOn
             ? "Tracing every byte sent and received to:\n\n" + file
-              + "\n\nPress Ctrl+Shift+D in the terminal to record a snapshot of the screen state."
+              + "\n\nThis captures EVERYTHING verbatim, including any password or passphrase you "
+              + "type into the remote session (e.g. sudo, su, a database login prompt) — the file "
+              + "is not encrypted and has no automatic expiry beyond its own size cap. Only enable "
+              + "this for as long as you need it, and delete the file when you're done.\n\n"
+              + "Press Ctrl+Shift+D in the terminal to record a snapshot of the screen state."
             : "Tracing stopped.\n\n" + (file != null ? file : ""));
         mb.open();
     }

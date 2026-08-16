@@ -151,16 +151,59 @@ public class SshConnection implements TerminalConnection {
     // Helpers
     // -----------------------------------------------------------------------
 
-    /** Points JSch at the app's known_hosts file, pre-creating it (owner-only permissions, so
-     *  JSch never creates it world-readable) if this is the first connection ever made.
-     *  Package-private so {@link SftpConnection} — an independent SSH connection used for one
-     *  SFTP transfer, not tied to any terminal tab's session — shares the same trust store rather
-     *  than re-verifying host keys the terminal side already accepted. */
+    /** Lazily built once per process and then reused by every connection — see
+     *  {@link #applyKnownHosts} for why this must be a single shared object rather than each
+     *  connection loading its own. */
+    private static volatile HostKeyRepository sharedKnownHosts;
+
+    /** Builds (on first use) or returns the ONE {@link HostKeyRepository} every connection in this
+     *  process attaches to, loaded from {@code ~/.capoeira/known_hosts}. Deliberately package-
+     *  private, not exposed on the shared repository directly, so callers keep going through
+     *  {@link #applyKnownHosts}. */
+    private static synchronized HostKeyRepository sharedHostKeyRepository() throws IOException, JSchException {
+        if (sharedKnownHosts == null) {
+            Path knownHosts = Path.of(System.getProperty("user.home"), ".capoeira", "known_hosts");
+            if (!Files.exists(knownHosts))
+                br.com.capoeirassh.ssh.storage.SecureFiles.write(knownHosts, new byte[0]);
+            // A throwaway JSch instance purely to build the KnownHosts object via its own
+            // setKnownHosts() — the instance itself is discarded immediately afterward; only the
+            // HostKeyRepository it built is kept and reused.
+            JSch bootstrap = new JSch();
+            bootstrap.setKnownHosts(knownHosts.toString());
+            sharedKnownHosts = bootstrap.getHostKeyRepository();
+        }
+        return sharedKnownHosts;
+    }
+
+    /**
+     * Attaches {@code jsch} to the app's known_hosts trust store — the SAME {@link HostKeyRepository}
+     * instance every other connection in this process also attaches to, not a fresh one loaded from
+     * disk each time.
+     *
+     * <p>Why this matters: every {@link SshConnection#connect} (one per terminal tab, each on its
+     * own background thread) and every {@link SftpConnection#connect} (one per upload/download)
+     * used to call {@code jsch.setKnownHosts(path)} on its own brand-new {@code JSch} instance.
+     * JSch's {@code KnownHosts.sync()} — invoked when a new/changed host key is accepted — is
+     * {@code synchronized} only on that {@code KnownHosts} object's OWN monitor, so two
+     * independent instances (each loaded from whatever was on disk at the time, with no shared
+     * lock) gave zero mutual exclusion against each other: two connections accepting a host key
+     * close together could each truncate-and-rewrite the whole file from an incomplete in-memory
+     * view, losing or corrupting an already-accepted entry (JSch still fails closed on a real
+     * mismatch — this doesn't bypass verification — but a lost entry means a spurious "unknown/
+     * changed host key" re-prompt for a host the user already trusted, eroding that warning's
+     * credibility for the one case it exists to catch). Routing every connection through one
+     * shared {@link HostKeyRepository} closes that race by construction.
+     *
+     * <p>Deliberately NOT shared: identities/private keys, which stay scoped to each connection's
+     * own {@code JSch} instance (added via {@code jsch.addIdentity} in {@link #connect}) rather
+     * than accumulating indefinitely in a process-wide singleton — that would trade one hygiene
+     * problem for another.
+     *
+     * <p>Package-private so {@link SftpConnection} — an independent SSH connection used for one
+     * SFTP transfer, not tied to any terminal tab's session — shares the same trust store rather
+     * than re-verifying host keys the terminal side already accepted. */
     static void applyKnownHosts(JSch jsch) throws IOException, JSchException {
-        Path knownHosts = Path.of(System.getProperty("user.home"), ".capoeira", "known_hosts");
-        if (!Files.exists(knownHosts))
-            br.com.capoeirassh.ssh.storage.SecureFiles.write(knownHosts, new byte[0]);
-        jsch.setKnownHosts(knownHosts.toString());
+        jsch.setHostKeyRepository(sharedHostKeyRepository());
     }
 
     /**
