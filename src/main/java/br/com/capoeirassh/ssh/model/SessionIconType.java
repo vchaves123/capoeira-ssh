@@ -45,7 +45,8 @@ public enum SessionIconType {
     SAN_NAS("san", "SAN / NAS Storage"),
     HYPERVISOR("hypervisor", "Hypervisor"),
     TAPE_BACKUP("tape", "Tape / Backup Arquivado"),
-    IOT("iot", "IoT / Embedded");
+    IOT("iot", "IoT / Embedded"),
+    SERIAL("serial", "Serial / RS232");
 
     private final String key;
     private final String label;

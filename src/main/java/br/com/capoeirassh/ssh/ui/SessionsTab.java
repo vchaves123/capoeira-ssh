@@ -906,9 +906,9 @@ public class SessionsTab {
         hostLbl.setLayoutData(new GridData(SWT.CENTER, SWT.CENTER, false, false));
 
         String tip = session.name != null ? session.name : "";
-        if (session.host != null && !session.host.isBlank()) {
-            String hostStr = session.host + (session.port != 22 ? ":" + session.port : "");
-            tip += "  —  " + hostStr;
+        String connSummary = session.connectionSummary();
+        if (!connSummary.isBlank()) {
+            tip += "  —  " + connSummary;
         }
         if (session.tags != null && !session.tags.isEmpty()) {
             tip += "  [" + String.join(", ", session.tags) + "]";
@@ -1082,9 +1082,7 @@ public class SessionsTab {
 
         // Host
         Label hostLbl = new Label(card, SWT.NONE);
-        String hostText = (session.host != null ? session.host : "") +
-            (session.port != 22 ? ":" + session.port : "");
-        hostLbl.setText(hostText);
+        hostLbl.setText(session.connectionSummary());
         hostLbl.setBackground(cSurface);
         hostLbl.setForeground(cDim);
         Font hostF = new Font(display, "Arial", 10, SWT.NORMAL);
@@ -1287,9 +1285,7 @@ public class SessionsTab {
         nameL.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
 
         Label hostL = new Label(nameCol, SWT.NONE);
-        String hostStr = (session.host != null ? session.host : "") +
-            (session.port != 22 ? ":" + session.port : "");
-        hostL.setText(hostStr);
+        hostL.setText(session.connectionSummary());
         hostL.setBackground(cBg);
         hostL.setForeground(cDim);
         Font hostF = new Font(display, "Arial", 10, SWT.NORMAL);
@@ -1706,6 +1702,7 @@ public class SessionsTab {
         return q.isEmpty()
             || (s.name  != null && s.name.toLowerCase().contains(q))
             || (s.host  != null && s.host.toLowerCase().contains(q))
+            || (s.serialPortName != null && s.serialPortName.toLowerCase().contains(q))
             || (s.group != null && s.group.toLowerCase().contains(q))
             || (s.tags  != null && s.tags.stream().anyMatch(t -> t.toLowerCase().contains(q)));
     }

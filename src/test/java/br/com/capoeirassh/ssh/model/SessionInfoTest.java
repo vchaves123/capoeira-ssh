@@ -69,6 +69,50 @@ class SessionInfoTest {
         assertEquals(originalId, dest.id, "copy() must preserve the same id — it's used as the on-disk filename");
     }
 
+    @Test
+    void connectionSummary_ssh_omitsPortWhenDefault() {
+        SessionInfo s = new SessionInfo();
+        s.host = "example.com";
+        s.port = 22;
+        assertEquals("example.com", s.connectionSummary());
+    }
+
+    @Test
+    void connectionSummary_ssh_includesNonDefaultPort() {
+        SessionInfo s = new SessionInfo();
+        s.host = "example.com";
+        s.port = 2222;
+        assertEquals("example.com:2222", s.connectionSummary());
+    }
+
+    @Test
+    void connectionSummary_serial_showsPortAndBaud() {
+        SessionInfo s = new SessionInfo();
+        s.connectionType = SessionInfo.ConnectionType.SERIAL;
+        s.serialPortName = "COM3";
+        s.serialBaudRate = 9600;
+        assertEquals("COM3 @ 9600", s.connectionSummary());
+    }
+
+    @Test
+    void label_serial_fallsBackToConnectionSummary_whenNameBlank() {
+        SessionInfo s = new SessionInfo();
+        s.connectionType = SessionInfo.ConnectionType.SERIAL;
+        s.serialPortName = "COM3";
+        s.serialBaudRate = 9600;
+        s.name = "";
+        assertEquals("COM3 @ 9600", s.label());
+    }
+
+    @Test
+    void label_serial_prefersExplicitName() {
+        SessionInfo s = new SessionInfo();
+        s.connectionType = SessionInfo.ConnectionType.SERIAL;
+        s.serialPortName = "COM3";
+        s.name = "Bench scope";
+        assertEquals("Bench scope", s.label());
+    }
+
     // -----------------------------------------------------------------------
     // Reflection plumbing
     // -----------------------------------------------------------------------

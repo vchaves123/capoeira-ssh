@@ -25,6 +25,10 @@ public class ConfigurationSettingsDialog {
     private final boolean supportsTrace;
     private final boolean traceInitial;
     private boolean traceResult;
+    /** True when this dialog is scoped to a Serial (RS232) session — disables the SSH-only
+     *  fields (terminal type, backspace key, SSH diagnostics), which a local serial link has no
+     *  use for (no PTY negotiation, no SSH handshake to trace). */
+    private final boolean isSerial;
 
     public ConfigurationSettingsDialog(Shell parent, String title, ConfigurationSettings initial) {
         this(parent, title, initial, "");
@@ -34,7 +38,13 @@ public class ConfigurationSettingsDialog {
      *                  typed (matches what TerminalTab actually writes); "" when not applicable
      *                  (e.g. editing global defaults). */
     public ConfigurationSettingsDialog(Shell parent, String title, ConfigurationSettings initial, String hostHint) {
-        this(parent, title, initial, hostHint, false, false);
+        this(parent, title, initial, hostHint, false);
+    }
+
+    /** @param isSerial see {@link #isSerial}. */
+    public ConfigurationSettingsDialog(Shell parent, String title, ConfigurationSettings initial, String hostHint,
+                                        boolean isSerial) {
+        this(parent, title, initial, hostHint, false, false, isSerial);
     }
 
     /** @param supportsTrace whether this dialog instance is scoped to a live terminal tab, the
@@ -42,7 +52,7 @@ public class ConfigurationSettingsDialog {
      *                       to session/global defaults).
      *  @param tracingNow    the tab's current tracing state, used to seed the checkbox. */
     public ConfigurationSettingsDialog(Shell parent, String title, ConfigurationSettings initial, String hostHint,
-                                        boolean supportsTrace, boolean tracingNow) {
+                                        boolean supportsTrace, boolean tracingNow, boolean isSerial) {
         this.parent        = parent;
         this.title         = title;
         this.settings       = initial.copy();
@@ -50,6 +60,7 @@ public class ConfigurationSettingsDialog {
         this.supportsTrace  = supportsTrace;
         this.traceInitial   = tracingNow;
         this.traceResult    = tracingNow;
+        this.isSerial       = isSerial;
     }
 
     /** Returns true if the user pressed OK; {@link #getResult()} then holds the new values. */
@@ -202,6 +213,19 @@ public class ConfigurationSettingsDialog {
         chkVerbose.setToolTipText("Prints key exchange, host key and authentication negotiation "
             + "messages directly in the terminal as the connection is established.");
         chkVerbose.setSelection(settings.sshVerbose);
+
+        // Terminal type is read only by SshConnection.connect() to set the SSH channel's PTY
+        // type — protocol-level metadata negotiated with the remote. A raw serial link has no
+        // equivalent negotiation channel, so this field would have nowhere to send its value;
+        // disable rather than hide, so a value the session already carries (e.g. from before it
+        // was switched from SSH to Serial) stays visible but inert instead of disappearing.
+        // Backspace key stays enabled: unlike terminal type, it isn't SSH-specific at all — it's
+        // just which byte the local keyboard sends for Backspace, equally relevant for a serial
+        // console. SSH diagnostics is genuinely SSH-only (there's no handshake to trace here).
+        if (isSerial) {
+            cmbTermType.setEnabled(false);
+            chkVerbose.setEnabled(false);
+        }
 
         // ── Byte-level trace (only meaningful for a live terminal tab) ───────────
         Button chkTrace = null;

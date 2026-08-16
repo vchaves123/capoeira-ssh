@@ -518,17 +518,23 @@ public class MainWindow {
             miSettings.setText("Settings...");
             miSettings.addListener(SWT.Selection, ev -> showConfigurationSettingsDialog(terminal));
 
-            new MenuItem(menu, SWT.SEPARATOR);
+            // SFTP has no meaning over a local serial connection — there's no remote
+            // filesystem on the other end of an RS232 link the way there is over SSH.
+            boolean isSerial = terminal.getSessionInfo().connectionType
+                == br.com.capoeirassh.ssh.model.SessionInfo.ConnectionType.SERIAL;
+            if (!isSerial) {
+                new MenuItem(menu, SWT.SEPARATOR);
 
-            MenuItem miUpload = new MenuItem(menu, SWT.PUSH);
-            miUpload.setText("Upload file(s)...");
-            miUpload.setEnabled(!terminal.isDisconnected());
-            miUpload.addListener(SWT.Selection, ev -> uploadFiles(terminal));
+                MenuItem miUpload = new MenuItem(menu, SWT.PUSH);
+                miUpload.setText("Upload file(s)...");
+                miUpload.setEnabled(!terminal.isDisconnected());
+                miUpload.addListener(SWT.Selection, ev -> uploadFiles(terminal));
 
-            MenuItem miDownload = new MenuItem(menu, SWT.PUSH);
-            miDownload.setText("Download file(s)...");
-            miDownload.setEnabled(!terminal.isDisconnected());
-            miDownload.addListener(SWT.Selection, ev -> downloadFiles(terminal));
+                MenuItem miDownload = new MenuItem(menu, SWT.PUSH);
+                miDownload.setText("Download file(s)...");
+                miDownload.setEnabled(!terminal.isDisconnected());
+                miDownload.addListener(SWT.Selection, ev -> downloadFiles(terminal));
+            }
 
             new MenuItem(menu, SWT.SEPARATOR);
 
@@ -884,8 +890,10 @@ public class MainWindow {
         current.sshVerbose    = info.sshVerbose;
         current.allowColumnMode = info.allowColumnMode;
 
+        boolean isSerial = info.connectionType == br.com.capoeirassh.ssh.model.SessionInfo.ConnectionType.SERIAL;
+        String hostHint = isSerial ? info.serialPortName : info.host;
         ConfigurationSettingsDialog dlg = new ConfigurationSettingsDialog(
-            shell, "Configuration Setting", current, info.host, true, terminal.isTracing());
+            shell, "Configuration Setting", current, hostHint, true, terminal.isTracing(), isSerial);
         if (!dlg.open()) return;
         br.com.capoeirassh.ssh.model.ConfigurationSettings s = dlg.getResult();
 
