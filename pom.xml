@@ -32,6 +32,14 @@
             <version>2.28.6</version>
         </dependency>
 
+        <!-- Serial (RS232) terminal support — pure-Java, bundles its own native libs per OS,
+             so no extra Maven profile is needed the way SWT above requires one. -->
+        <dependency>
+            <groupId>com.fazecast</groupId>
+            <artifactId>jSerialComm</artifactId>
+            <version>2.11.4</version>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

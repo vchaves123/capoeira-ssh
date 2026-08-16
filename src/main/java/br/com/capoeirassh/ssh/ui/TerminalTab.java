@@ -1,7 +1,9 @@
 package br.com.capoeirassh.ssh.ui;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
+import br.com.capoeirassh.ssh.serial.SerialConnection;
 import br.com.capoeirassh.ssh.ssh.SshConnection;
+import br.com.capoeirassh.ssh.ssh.TerminalConnection;
 import br.com.capoeirassh.ssh.terminal.TerminalCell;
 import br.com.capoeirassh.ssh.terminal.TerminalEmulator;
 import br.com.capoeirassh.ssh.terminal.TerminalTrace;
@@ -23,7 +25,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * A single terminal tab backed by an SSH connection.
+ * A single terminal tab backed by either an SSH connection or a local serial (RS232) connection
+ * — see {@link SessionInfo#connectionType} — accessed uniformly through {@link TerminalConnection}.
  * Renders an {@link TerminalEmulator} onto an SWT {@link Canvas} with off-screen
  * double-buffering to avoid flickering.
  */
@@ -39,8 +42,8 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     // Backend
     // -----------------------------------------------------------------------
-    private final TerminalEmulator emulator;
-    private final SshConnection    connection;
+    private final TerminalEmulator   emulator;
+    private final TerminalConnection connection;
 
     // -----------------------------------------------------------------------
     // Rendering
@@ -233,7 +236,8 @@ public class TerminalTab {
             }
         });
 
-        connection = new SshConnection();
+        connection = info.connectionType == SessionInfo.ConnectionType.SERIAL
+            ? new SerialConnection() : new SshConnection();
 
         // Deliver queued terminal responses (DSR, DA, XTWINOPS) to SSH.
         // flushResponses() is called from readSsh() after each processBytes(),
@@ -436,7 +440,7 @@ public class TerminalTab {
             byte[] seq = mapAltKey(e);
             if (seq != null) {
                 e.doit = false;   // prevent SWT menu activation
-                sendToServer(seq);
+                sendUserInput(seq);
             }
         };
         display.addFilter(SWT.KeyDown, altFilter);
@@ -448,7 +452,7 @@ public class TerminalTab {
             byte[] seq = mapFKey(e.keyCode);
             if (seq != null) {
                 e.doit = false;
-                if (!disconnected) sendToServer(seq);
+                if (!disconnected) sendUserInput(seq);
             }
         };
         display.addFilter(SWT.KeyDown, fKeyFilter);
@@ -969,6 +973,23 @@ public class TerminalTab {
         try { connection.send(data); } catch (IOException ignored) {}
     }
 
+    /** Wraps {@link #sendToServer} for bytes that originate from the user (typed keys, pasted
+     *  text) rather than the emulator's own automatic protocol replies (DSR/DA/XTWINOPS, sent
+     *  directly via the {@code dataListener} callback set in the constructor). The distinction
+     *  matters for serial sessions with local echo on: a device at the other end of an RS232
+     *  link typically doesn't echo back what was typed, so nothing would appear on screen while
+     *  typing — echoing here renders it immediately without waiting on (or needing) that device
+     *  to answer. Echoing the emulator's own auto-replies too would instead render their raw
+     *  escape bytes as garbage text, so those must keep going through sendToServer directly. */
+    private void sendUserInput(byte[] data) {
+        sendToServer(data);
+        if (data != null && data.length > 0
+                && sessionInfo.connectionType == SessionInfo.ConnectionType.SERIAL
+                && sessionInfo.serialLocalEcho) {
+            emulator.processBytes(data);
+        }
+    }
+
     private void handleKey(org.eclipse.swt.events.KeyEvent e) {
         // Alt+key is handled entirely by altFilter — skip here to avoid double-send
         if ((e.stateMask & SWT.ALT) != 0) return;
@@ -986,7 +1007,7 @@ public class TerminalTab {
         if (scrollOffset != 0) { scrollOffset = 0; updateScrollBar(); }
         if (hasSelection()) { clearSelection(); canvas.redraw(); }
 
-        sendToServer(mapKey(e));
+        sendUserInput(mapKey(e));
     }
 
     private byte[] mapKey(org.eclipse.swt.events.KeyEvent e) {
@@ -1146,9 +1167,11 @@ public class TerminalTab {
             }
 
             String ts       = LocalDateTime.now().format(LOG_TS);
+            String defaultBase = info.connectionType == SessionInfo.ConnectionType.SERIAL
+                                  ? info.serialPortName : info.host;
             String baseName = (info.logFileName != null && !info.logFileName.isBlank())
                               ? info.logFileName.replaceAll("[^\\w\\-.]", "_")
-                              : info.host.replaceAll("[^\\w\\-.]", "_");
+                              : defaultBase.replaceAll("[^\\w\\-.]", "_");
             String candidate = ts + "_" + baseName;
             Path   file = logDir.resolve(candidate + ".log");
             if (Files.exists(file))
@@ -1463,11 +1486,11 @@ public class TerminalTab {
             // The program asked for bracketed paste, so it will treat everything between the
             // markers as pasted data rather than typing — no line splitting or pacing needed,
             // and the shell won't run anything until the user actually presses Enter.
-            sendToServer(("\033[200~" + sanitized + "\033[201~").getBytes(StandardCharsets.UTF_8));
+            sendUserInput(("\033[200~" + sanitized + "\033[201~").getBytes(StandardCharsets.UTF_8));
         } else if (multiline) {
             sendPastedLines(sanitized);
         } else {
-            sendToServer(sanitized.getBytes(StandardCharsets.UTF_8));
+            sendUserInput(sanitized.getBytes(StandardCharsets.UTF_8));
         }
     }
 
@@ -1487,7 +1510,7 @@ public class TerminalTab {
                     if (!connection.isConnected()) return;
                     boolean lastLine = i == lines.length - 1;
                     String chunk = lines[i] + (!lastLine || trailingCr ? "\r" : "");
-                    sendToServer(chunk.getBytes(StandardCharsets.UTF_8));
+                    sendUserInput(chunk.getBytes(StandardCharsets.UTF_8));
                     if (!lastLine) Thread.sleep(30);
                 }
             } catch (InterruptedException ignored) {}

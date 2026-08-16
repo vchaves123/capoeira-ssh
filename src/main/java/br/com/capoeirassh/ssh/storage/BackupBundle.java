@@ -315,6 +315,17 @@ public final class BackupBundle {
         s.tags          = parseTags(p.getProperty("tags", ""));
         try { s.authType = SessionInfo.AuthType.valueOf(p.getProperty("authType", "PASSWORD")); }
         catch (Exception e) { s.authType = SessionInfo.AuthType.PASSWORD; }
+        try { s.connectionType = SessionInfo.ConnectionType.valueOf(p.getProperty("connectionType", "SSH")); }
+        catch (Exception e) { s.connectionType = SessionInfo.ConnectionType.SSH; }
+        s.serialPortName = p.getProperty("serialPortName", "");
+        s.serialBaudRate = def(p.getProperty("serialBaudRate", "9600"), 9600);
+        s.serialDataBits = def(p.getProperty("serialDataBits", "8"), 8);
+        try { s.serialParity = SessionInfo.SerialParity.valueOf(p.getProperty("serialParity", "NONE")); }
+        catch (Exception e) { s.serialParity = SessionInfo.SerialParity.NONE; }
+        s.serialStopBits = def(p.getProperty("serialStopBits", "1"), 1);
+        try { s.serialFlowControl = SessionInfo.SerialFlowControl.valueOf(p.getProperty("serialFlowControl", "NONE")); }
+        catch (Exception e) { s.serialFlowControl = SessionInfo.SerialFlowControl.NONE; }
+        s.serialLocalEcho = Boolean.parseBoolean(p.getProperty("serialLocalEcho", "false"));
         return s;
     }
 

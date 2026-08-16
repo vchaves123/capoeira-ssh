@@ -6,6 +6,12 @@ public class SessionInfo {
 
     public enum AuthType { PASSWORD, PRIVATE_KEY, SAVED_CREDENTIAL }
 
+    /** SSH: a network shell over jsch. SERIAL: a local RS232 connection over jSerialComm — no
+     *  host/port/auth, just a COM port and line settings (see the serial* fields below). */
+    public enum ConnectionType { SSH, SERIAL }
+    public enum SerialParity { NONE, ODD, EVEN, MARK, SPACE }
+    public enum SerialFlowControl { NONE, RTS_CTS, XON_XOFF }
+
     /** Unique identifier — used as file name on disk. */
     public String   id       = UUID.randomUUID().toString();
     public String   name     = "";
@@ -48,6 +54,22 @@ public class SessionInfo {
     /** Free-form labels for filtering/organizing, independent of group. Capped at 6. */
     public java.util.List<String> tags = new java.util.ArrayList<>();
 
+    // -----------------------------------------------------------------------
+    // Serial (RS232) — only meaningful when connectionType == SERIAL
+    // -----------------------------------------------------------------------
+    public ConnectionType connectionType = ConnectionType.SSH;
+    /** e.g. "COM3" (Windows) or "/dev/ttyUSB0" (Linux/macOS). */
+    public String            serialPortName    = "";
+    public int               serialBaudRate    = 9600;
+    public int               serialDataBits    = 8;
+    public SerialParity      serialParity      = SerialParity.NONE;
+    /** 1 or 2 stop bits. */
+    public int               serialStopBits    = 1;
+    public SerialFlowControl serialFlowControl = SerialFlowControl.NONE;
+    /** Serial devices typically don't echo what's typed the way a remote shell's PTY does —
+     *  off by default; the user turns it on for a device that stays silent while typing. */
+    public boolean           serialLocalEcho   = false;
+
     /** Deep copy (tags gets its own list, not a shared reference). Used wherever code needs to
      *  stage in-progress edits without touching the original — e.g. SessionDialog mutates a
      *  copy while editing, only applying it back to the live/cached instance once
@@ -77,12 +99,32 @@ public class SessionInfo {
         c.allowColumnMode = allowColumnMode;
         c.sortOrder = sortOrder;
         c.tags = new java.util.ArrayList<>(tags);
+        c.connectionType     = connectionType;
+        c.serialPortName     = serialPortName;
+        c.serialBaudRate     = serialBaudRate;
+        c.serialDataBits     = serialDataBits;
+        c.serialParity       = serialParity;
+        c.serialStopBits     = serialStopBits;
+        c.serialFlowControl  = serialFlowControl;
+        c.serialLocalEcho    = serialLocalEcho;
         return c;
     }
 
     /** Label shown in the tab title and session tree. */
     public String label() {
-        return name.isBlank() ? (username + "@" + host) : name;
+        if (name.isBlank())
+            return connectionType == ConnectionType.SERIAL ? connectionSummary() : (username + "@" + host);
+        return name;
+    }
+
+    /** Short "where this connects to" string — "host:port" for SSH (port omitted when 22), or
+     *  "COM3 @ 9600" for a serial session. Used wherever the UI shows a session's target
+     *  alongside its display name (tree tooltips, list rows) instead of duplicating the
+     *  per-connection-type formatting at each call site. */
+    public String connectionSummary() {
+        if (connectionType == ConnectionType.SERIAL)
+            return serialPortName.isBlank() ? "" : serialPortName + " @ " + serialBaudRate;
+        return host + (port != 22 ? ":" + port : "");
     }
 
     public String fileName() {

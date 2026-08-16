@@ -17,7 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 
-public class SshConnection {
+public class SshConnection implements TerminalConnection {
 
     private JSch         jsch;
     private Session      session;
@@ -40,6 +40,7 @@ public class SshConnection {
      *                    the JSch equivalent of {@code ssh -vvv}; ignored when {@code null} or
      *                    when {@code info.sshVerbose} is false
      */
+    @Override
     public void connect(SessionInfo info, char[] password, Display display,
                          java.util.function.Consumer<String> verboseSink) throws Exception {
         try {
@@ -114,27 +115,33 @@ public class SshConnection {
 
     /** Turns SSH protocol log output on/off for the live connection immediately — no
      *  reconnect needed, since the Logger registered in connect() re-checks this on every call. */
+    @Override
     public void setVerbose(boolean on) { this.verboseEnabled = on; }
 
     /** Synchronized: a multi-line paste is now sent line-by-line from a background thread
      *  (see TerminalTab.sendPastedLines), so this can race with the UI thread's own key-typed
      *  sends onto the same OutputStream without this guard. */
+    @Override
     public synchronized void send(byte[] data) throws IOException {
         output.write(data);
         output.flush();
     }
 
+    @Override
     public void updatePtySize(int cols, int rows, int widthPx, int heightPx) {
         if (channel != null && channel.isConnected())
             channel.setPtySize(cols, rows, widthPx, heightPx);
     }
 
+    @Override
     public InputStream getInputStream() { return input; }
 
+    @Override
     public boolean isConnected() {
         return channel != null && channel.isConnected();
     }
 
+    @Override
     public void close() {
         try { if (channel != null) channel.disconnect();  } catch (Exception ignored) {}
         try { if (session != null) session.disconnect();  } catch (Exception ignored) {}

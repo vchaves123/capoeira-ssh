@@ -45,15 +45,22 @@ public class SessionDialog {
         gl.marginWidth = 16; gl.marginHeight = 12; gl.verticalSpacing = 7;
         dlg.setLayout(gl);
 
+        // ── Type ──────────────────────────────────────────────────────────────
+        label(dlg, "Type:");
+        Combo cmbType = new Combo(dlg, SWT.DROP_DOWN | SWT.READ_ONLY);
+        cmbType.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+        cmbType.setItems("SSH", "Serial (RS232)");
+        cmbType.select(0);
+
         // ── Fixed fields ──────────────────────────────────────────────────────
         label(dlg, "Display name:");
         Text txtName = text(dlg);
         txtName.setMessage("e.g. Production Web");
 
-        label(dlg, "Host:");
+        Label lblHost = label(dlg, "Host:");
         Text txtHost = text(dlg);
 
-        label(dlg, "Port:");
+        Label lblPort = label(dlg, "Port:");
         Text txtPort = text(dlg);
         txtPort.setText("22");
 
@@ -106,11 +113,12 @@ public class SessionDialog {
         final int[]    lockedIdx      = {-1};
         final String[] lockedUsername = {null};
 
-        label(dlg, "Username:");
+        Label lblUser = label(dlg, "Username:");
         Combo cmbUser = new Combo(dlg, SWT.DROP_DOWN);
         cmbUser.setLayoutData(fill());
 
-        new Label(dlg, SWT.NONE); // col-1 filler
+        Label lblKeyFiller = new Label(dlg, SWT.NONE); // col-1 filler
+        lblKeyFiller.setLayoutData(new GridData()); // explicit so the type-switch toggle below can set .exclude
         Button chkKey = new Button(dlg, SWT.CHECK);
         chkKey.setText("Use private key");
         chkKey.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
@@ -135,10 +143,67 @@ public class SessionDialog {
         // after this dialog closes.
         dlg.addDisposeListener(e -> PasswordField.scrub(txtPwd));
 
-        new Label(dlg, SWT.NONE); // col-1 filler
+        Label lblSaveCredFiller = new Label(dlg, SWT.NONE); // col-1 filler
+        lblSaveCredFiller.setLayoutData(new GridData()); // explicit so the type-switch toggle below can set .exclude
         Button btnSaveCred = new Button(dlg, SWT.PUSH);
         btnSaveCred.setText("Save Credential…");
         btnSaveCred.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+
+        // ── Serial (RS232) config — shown only when Type = Serial (RS232) ─────
+        Label lblSerialPort = label(dlg, "Serial port:");
+        Composite cmpSerialPort = new Composite(dlg, SWT.NONE);
+        cmpSerialPort.setLayoutData(fill());
+        GridLayout glSerialPort = new GridLayout(2, false);
+        glSerialPort.marginWidth = 0; glSerialPort.marginHeight = 0; glSerialPort.horizontalSpacing = 6;
+        cmpSerialPort.setLayout(glSerialPort);
+        Combo cmbSerialPort = new Combo(cmpSerialPort, SWT.DROP_DOWN);
+        cmbSerialPort.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        Button btnRefreshPorts = new Button(cmpSerialPort, SWT.PUSH);
+        btnRefreshPorts.setText("Refresh");
+        Runnable refreshPorts = () -> {
+            String current = cmbSerialPort.getText();
+            cmbSerialPort.removeAll();
+            for (String pn : br.com.capoeirassh.ssh.serial.SerialConnection.listPortNames()) cmbSerialPort.add(pn);
+            cmbSerialPort.setText(current);
+        };
+        refreshPorts.run();
+        btnRefreshPorts.addListener(SWT.Selection, e -> refreshPorts.run());
+
+        Label lblBaud = label(dlg, "Baud rate:");
+        Combo cmbBaud = new Combo(dlg, SWT.DROP_DOWN);
+        cmbBaud.setLayoutData(fill());
+        cmbBaud.setItems("300", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400");
+        cmbBaud.setText("9600");
+
+        Label lblDataBits = label(dlg, "Data bits:");
+        Combo cmbDataBits = new Combo(dlg, SWT.DROP_DOWN | SWT.READ_ONLY);
+        cmbDataBits.setLayoutData(fill());
+        cmbDataBits.setItems("5", "6", "7", "8");
+        cmbDataBits.select(3);
+
+        Label lblParity = label(dlg, "Parity:");
+        Combo cmbParity = new Combo(dlg, SWT.DROP_DOWN | SWT.READ_ONLY);
+        cmbParity.setLayoutData(fill());
+        cmbParity.setItems("None", "Odd", "Even", "Mark", "Space");
+        cmbParity.select(0);
+
+        Label lblStopBits = label(dlg, "Stop bits:");
+        Combo cmbStopBits = new Combo(dlg, SWT.DROP_DOWN | SWT.READ_ONLY);
+        cmbStopBits.setLayoutData(fill());
+        cmbStopBits.setItems("1", "2");
+        cmbStopBits.select(0);
+
+        Label lblFlowControl = label(dlg, "Flow control:");
+        Combo cmbFlowControl = new Combo(dlg, SWT.DROP_DOWN | SWT.READ_ONLY);
+        cmbFlowControl.setLayoutData(fill());
+        cmbFlowControl.setItems("None", "RTS/CTS (hardware)", "XON/XOFF (software)");
+        cmbFlowControl.select(0);
+
+        Label lblEchoFiller = new Label(dlg, SWT.NONE); // col-1 filler
+        lblEchoFiller.setLayoutData(new GridData()); // explicit so the type-switch toggle below can set .exclude
+        Button chkLocalEcho = new Button(dlg, SWT.CHECK);
+        chkLocalEcho.setText("Local echo (device doesn't echo typed characters back)");
+        chkLocalEcho.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
 
         final String LOCKED_ITEM = "🔒  Vault is locked — click to unlock";
         Runnable reloadCredItems = () -> {
@@ -170,6 +235,38 @@ public class SessionDialog {
             dlg.setSize(fixedWidth, newHeight);
             center(dlg, parent);
         };
+
+        // ── Type switch: SSH fields vs. Serial fields ────────────────────────
+        Control[] sshOnlyControls = {
+            lblHost, txtHost, lblPort, txtPort,
+            lblUser, cmbUser, lblKeyFiller, chkKey, lblKeyFile, cmpKey, lblPwd, txtPwd,
+            lblSaveCredFiller, btnSaveCred
+        };
+        Control[] serialOnlyControls = {
+            lblSerialPort, cmpSerialPort, lblBaud, cmbBaud, lblDataBits, cmbDataBits,
+            lblParity, cmbParity, lblStopBits, cmbStopBits, lblFlowControl, cmbFlowControl,
+            lblEchoFiller, chkLocalEcho
+        };
+        Runnable applyTypeVisibility = () -> {
+            boolean serial = cmbType.getSelectionIndex() == 1;
+            for (Control c : sshOnlyControls) {
+                c.setVisible(!serial);
+                ((GridData) c.getLayoutData()).exclude = serial;
+            }
+            for (Control c : serialOnlyControls) {
+                c.setVisible(serial);
+                ((GridData) c.getLayoutData()).exclude = !serial;
+            }
+            // Reconciles the key-file row's own visibility against chkKey's checked state —
+            // it was just force-hidden above along with the rest of the SSH block.
+            if (!serial) updateKeyRow.run();
+            int fixedWidth = dlg.getSize().x;
+            dlg.layout(true, true);
+            int newHeight = dlg.computeSize(fixedWidth, SWT.DEFAULT).y;
+            dlg.setSize(fixedWidth, newHeight);
+            center(dlg, parent);
+        };
+        cmbType.addListener(SWT.Selection, e -> applyTypeVisibility.run());
 
         // Fills the dependent fields from the credential at lockedIdx and grays them out.
         Runnable[] applyLockedCredential = new Runnable[1];
@@ -295,8 +392,10 @@ public class SessionDialog {
         btnConfig.setText("Configuration Setting…");
         btnConfig.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         btnConfig.addListener(SWT.Selection, e -> {
+            String hostHint = cmbType.getSelectionIndex() == 1
+                ? cmbSerialPort.getText().trim() : txtHost.getText().trim();
             ConfigurationSettingsDialog cfgDlg = new ConfigurationSettingsDialog(
-                dlg, "Configuration Setting", config[0], txtHost.getText().trim());
+                dlg, "Configuration Setting", config[0], hostHint);
             if (cfgDlg.open()) config[0] = cfgDlg.getResult();
         });
 
@@ -316,6 +415,19 @@ public class SessionDialog {
             txtName.setText(editing.name);
             txtHost.setText(editing.host);
             txtPort.setText(String.valueOf(editing.port));
+            if (editing.connectionType == SessionInfo.ConnectionType.SERIAL) {
+                cmbType.select(1);
+                cmbSerialPort.setText(editing.serialPortName);
+                cmbBaud.setText(String.valueOf(editing.serialBaudRate));
+                int dataBitsIdx = editing.serialDataBits - 5; // items are "5","6","7","8"
+                cmbDataBits.select(dataBitsIdx >= 0 && dataBitsIdx <= 3 ? dataBitsIdx : 3);
+                cmbParity.select(editing.serialParity.ordinal());
+                cmbStopBits.select(editing.serialStopBits == 2 ? 1 : 0);
+                cmbFlowControl.select(switch (editing.serialFlowControl) {
+                    case RTS_CTS -> 1; case XON_XOFF -> 2; default -> 0;
+                });
+                chkLocalEcho.setSelection(editing.serialLocalEcho);
+            }
             if (!editing.group.isBlank()) {
                 int idx = cmbGroup.indexOf(editing.group);
                 if (idx >= 0) cmbGroup.select(idx);
@@ -355,6 +467,7 @@ public class SessionDialog {
             if (idx >= 0) cmbGroup.select(idx);
         }
         updateKeyRow.run();
+        applyTypeVisibility.run();
 
         // Reverse-DNS lookup: fires in background when host field loses focus so the
         // result is ready (or timed out) by the time the user clicks Save.
@@ -383,6 +496,16 @@ public class SessionDialog {
         Color colorErrBg = new Color(dsp, 255, 205, 205);
         dlg.addListener(SWT.Dispose, e -> colorErrBg.dispose());
         Runnable validateFields = () -> {
+            // Host/port validity only gates Save for an SSH session — a Serial session's
+            // required field (serial port) is checked on Save itself, like username/key file
+            // are for SSH, since jSerialComm's port list can't be "invalid" the way a
+            // hand-typed hostname/port can.
+            if (cmbType.getSelectionIndex() == 1) {
+                txtHost.setBackground(null);
+                txtPort.setBackground(null);
+                btnSave.setEnabled(true);
+                return;
+            }
             String h = txtHost.getText().trim();
             boolean hostBad = !h.isEmpty() && !isHostValid(h);
             txtHost.setBackground(hostBad ? colorErrBg : null);
@@ -393,6 +516,7 @@ public class SessionDialog {
             btnSave.setEnabled(!hostBad && !portBad);
         };
         txtHost.addListener(SWT.Modify, e -> validateFields.run());
+        cmbType.addListener(SWT.Selection, e -> validateFields.run());
         txtPort.addListener(SWT.Modify, e -> validateFields.run());
         validateFields.run();
 
@@ -404,8 +528,7 @@ public class SessionDialog {
         btnCancel.addListener(SWT.Selection, e -> dlg.dispose());
 
         btnSave.addListener(SWT.Selection, e -> {
-            String host = txtHost.getText().trim();
-            if (host.isEmpty()) { alert(dlg, "Host is required."); return; }
+            boolean isSerial = cmbType.getSelectionIndex() == 1;
 
             List<String> tags = new java.util.ArrayList<>(java.util.Arrays.asList(listTags.getSelection()));
             if (tags.size() > 6) { alert(dlg, "Up to 6 tags allowed."); return; }
@@ -417,70 +540,102 @@ public class SessionDialog {
             SessionInfo s = editing != null ? editing.copy() : new SessionInfo();
             String oldGroup = editing != null ? editing.group : null;
             s.name  = txtName.getText().trim();
-            s.host  = host;
-            s.port  = parsePort(txtPort.getText());
             String groupText = cmbGroup.getText().trim();
             s.group = (groupText.isEmpty() || groupText.equals("(none)")) ? "" : groupText;
             s.iconType = chosenIcon[0] != null ? chosenIcon[0].getKey() : "";
             s.tags = tags;
 
-            String user = cmbUser.getText().trim();
+            if (isSerial) {
+                String portName = cmbSerialPort.getText().trim();
+                if (portName.isEmpty()) { alert(dlg, "Serial port is required."); return; }
 
-            // Editing a vault-linked session while the vault stayed locked (unlock cancelled, or
-            // the credential was deleted): the user could neither see nor change the credential,
-            // so preserve the original link instead of silently downgrading to manual auth and
-            // wiping credentialId. Guarded to the case where the auth fields still match what the
-            // pre-fill restored from the session — any edit to them signals a deliberate switch.
-            String  edUser    = editing != null && editing.username != null ? editing.username : "";
-            String  edKey     = editing != null && editing.keyPath  != null ? editing.keyPath  : "";
-            boolean edKeyMode = editing != null && editing.authType == SessionInfo.AuthType.PRIVATE_KEY;
-            boolean authUntouched =
-                user.equals(edUser)
-                && chkKey.getSelection() == edKeyMode
-                && (!chkKey.getSelection() || txtKey.getText().trim().equals(edKey))
-                && txtPwd.getCharCount() == 0;
-            boolean preserveLink =
-                lockedIdx[0] < 0 && editing != null
-                && editing.credentialId != null && !editing.credentialId.isBlank()
-                && authUntouched;
+                s.connectionType    = SessionInfo.ConnectionType.SERIAL;
+                s.serialPortName    = portName;
+                s.serialBaudRate    = parseBaud(cmbBaud.getText());
+                s.serialDataBits    = parseIntSafe(cmbDataBits.getText(), 8);
+                s.serialParity      = SessionInfo.SerialParity.values()[cmbParity.getSelectionIndex()];
+                s.serialStopBits    = cmbStopBits.getSelectionIndex() == 1 ? 2 : 1;
+                s.serialFlowControl = switch (cmbFlowControl.getSelectionIndex()) {
+                    case 1  -> SessionInfo.SerialFlowControl.RTS_CTS;
+                    case 2  -> SessionInfo.SerialFlowControl.XON_XOFF;
+                    default -> SessionInfo.SerialFlowControl.NONE;
+                };
+                s.serialLocalEcho = chkLocalEcho.getSelection();
+                // No network/credentials concept for a local serial link — never leave these
+                // populated from a prior SSH edit of the same session.
+                s.host = ""; s.port = 22; s.username = "";
+                s.authType = SessionInfo.AuthType.PASSWORD;
+                s.keyPath = ""; s.credentialId = "";
 
-            if (preserveLink) {
-                // s already inherited authType/username/keyPath/credentialId from editing via
-                // copy(), so they're already correct — nothing to do.
-            } else if (lockedIdx[0] >= 0) {
-                List<CredentialEntry> cur = credsRef.get();
-                if (lockedIdx[0] >= cur.size()) { alert(dlg, "Please select a saved credential."); return; }
-                CredentialEntry ce = cur.get(lockedIdx[0]);
-                boolean ceIsKey = ce.keyPath != null && !ce.keyPath.isBlank();
-                // A key-based credential must drive PRIVATE_KEY auth (session.keyPath is what
-                // SshConnection actually reads); a password credential keeps SAVED_CREDENTIAL,
-                // whose username/password are resolved from the vault at connect time.
-                s.authType = ceIsKey ? SessionInfo.AuthType.PRIVATE_KEY : SessionInfo.AuthType.SAVED_CREDENTIAL;
-                s.username = ceIsKey ? ce.username : "";
-                s.keyPath  = ceIsKey ? ce.keyPath  : "";
-                s.credentialId = ce.id;
+                config[0].applyTo(s);
+                if (s.name.isEmpty()) s.name = s.serialPortName;
             } else {
-                if (user.isEmpty()) { alert(dlg, "Username is required."); return; }
-                if (chkKey.getSelection()) {
-                    String key = txtKey.getText().trim();
-                    if (key.isEmpty()) { alert(dlg, "Key file is required."); return; }
-                    s.authType = SessionInfo.AuthType.PRIVATE_KEY;
-                    s.keyPath  = key;
+                String host = txtHost.getText().trim();
+                if (host.isEmpty()) { alert(dlg, "Host is required."); return; }
+
+                s.connectionType = SessionInfo.ConnectionType.SSH;
+                s.host = host;
+                s.port = parsePort(txtPort.getText());
+
+                String user = cmbUser.getText().trim();
+
+                // Editing a vault-linked session while the vault stayed locked (unlock cancelled,
+                // or the credential was deleted): the user could neither see nor change the
+                // credential, so preserve the original link instead of silently downgrading to
+                // manual auth and wiping credentialId. Guarded to the case where the auth fields
+                // still match what the pre-fill restored from the session — any edit to them
+                // signals a deliberate switch.
+                String  edUser    = editing != null && editing.username != null ? editing.username : "";
+                String  edKey     = editing != null && editing.keyPath  != null ? editing.keyPath  : "";
+                boolean edKeyMode = editing != null && editing.authType == SessionInfo.AuthType.PRIVATE_KEY;
+                boolean authUntouched =
+                    user.equals(edUser)
+                    && chkKey.getSelection() == edKeyMode
+                    && (!chkKey.getSelection() || txtKey.getText().trim().equals(edKey))
+                    && txtPwd.getCharCount() == 0;
+                boolean preserveLink =
+                    lockedIdx[0] < 0 && editing != null
+                    && editing.credentialId != null && !editing.credentialId.isBlank()
+                    && authUntouched;
+
+                if (preserveLink) {
+                    // s already inherited authType/username/keyPath/credentialId from editing via
+                    // copy(), so they're already correct — nothing to do.
+                } else if (lockedIdx[0] >= 0) {
+                    List<CredentialEntry> cur = credsRef.get();
+                    if (lockedIdx[0] >= cur.size()) { alert(dlg, "Please select a saved credential."); return; }
+                    CredentialEntry ce = cur.get(lockedIdx[0]);
+                    boolean ceIsKey = ce.keyPath != null && !ce.keyPath.isBlank();
+                    // A key-based credential must drive PRIVATE_KEY auth (session.keyPath is what
+                    // SshConnection actually reads); a password credential keeps SAVED_CREDENTIAL,
+                    // whose username/password are resolved from the vault at connect time.
+                    s.authType = ceIsKey ? SessionInfo.AuthType.PRIVATE_KEY : SessionInfo.AuthType.SAVED_CREDENTIAL;
+                    s.username = ceIsKey ? ce.username : "";
+                    s.keyPath  = ceIsKey ? ce.keyPath  : "";
+                    s.credentialId = ce.id;
                 } else {
-                    s.authType = SessionInfo.AuthType.PASSWORD;
-                    s.keyPath  = "";
+                    if (user.isEmpty()) { alert(dlg, "Username is required."); return; }
+                    if (chkKey.getSelection()) {
+                        String key = txtKey.getText().trim();
+                        if (key.isEmpty()) { alert(dlg, "Key file is required."); return; }
+                        s.authType = SessionInfo.AuthType.PRIVATE_KEY;
+                        s.keyPath  = key;
+                    } else {
+                        s.authType = SessionInfo.AuthType.PASSWORD;
+                        s.keyPath  = "";
+                    }
+                    s.username = user;
+                    s.credentialId = "";
                 }
-                s.username = user;
-                s.credentialId = "";
-            }
 
-            config[0].applyTo(s);
+                config[0].applyTo(s);
 
-            if (s.name.isEmpty()) {
-                String u = !user.isEmpty() ? user : s.username;
-                String fqdn = reverseDnsRef.get();
-                String displayHost = (fqdn != null && !fqdn.equals(host)) ? fqdn : host;
-                s.name = (u.isEmpty() ? "" : u + "@") + displayHost;
+                if (s.name.isEmpty()) {
+                    String u = !user.isEmpty() ? user : s.username;
+                    String fqdn = reverseDnsRef.get();
+                    String displayHost = (fqdn != null && !fqdn.equals(host)) ? fqdn : host;
+                    s.name = (u.isEmpty() ? "" : u + "@") + displayHost;
+                }
             }
 
             // SessionStorage.save()/delete() write to disk — background it so a slow/contended
@@ -550,6 +705,15 @@ public class SessionDialog {
     private static GridData fill() { return new GridData(SWT.FILL, SWT.CENTER, true, false); }
     private static int parsePort(String s) {
         try { return Integer.parseInt(s.trim()); } catch (NumberFormatException e) { return 22; }
+    }
+    private static int parseBaud(String s) {
+        try {
+            int v = Integer.parseInt(s.trim());
+            return v > 0 ? v : 9600;
+        } catch (NumberFormatException e) { return 9600; }
+    }
+    private static int parseIntSafe(String s, int def) {
+        try { return Integer.parseInt(s.trim()); } catch (NumberFormatException e) { return def; }
     }
     private static boolean isHostValid(String host) {
         if (host == null || host.isEmpty()) return false;

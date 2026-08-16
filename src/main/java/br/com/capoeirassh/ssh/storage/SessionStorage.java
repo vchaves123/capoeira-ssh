@@ -68,6 +68,14 @@ public final class SessionStorage {
         p.setProperty("sortOrder",     String.valueOf(s.sortOrder));
         p.setProperty("tags",          String.join(",", s.tags));
         for (String tag : s.tags) TagRegistry.register(tag);
+        p.setProperty("connectionType",    s.connectionType.name());
+        p.setProperty("serialPortName",    s.serialPortName    != null ? s.serialPortName : "");
+        p.setProperty("serialBaudRate",    String.valueOf(s.serialBaudRate));
+        p.setProperty("serialDataBits",    String.valueOf(s.serialDataBits));
+        p.setProperty("serialParity",      s.serialParity.name());
+        p.setProperty("serialStopBits",    String.valueOf(s.serialStopBits));
+        p.setProperty("serialFlowControl", s.serialFlowControl.name());
+        p.setProperty("serialLocalEcho",   String.valueOf(s.serialLocalEcho));
 
         Path file = dir.resolve(s.fileName());
         // Serialize to a byte[] first, then write via SecureFiles' temp-file + atomic-move —
@@ -225,6 +233,19 @@ public final class SessionStorage {
         String at        = p.getProperty("authType", "PASSWORD");
         try { s.authType = SessionInfo.AuthType.valueOf(at); }
         catch (IllegalArgumentException e) { s.authType = SessionInfo.AuthType.PASSWORD; }
+        try { s.connectionType = SessionInfo.ConnectionType.valueOf(p.getProperty("connectionType", "SSH")); }
+        catch (IllegalArgumentException e) { s.connectionType = SessionInfo.ConnectionType.SSH; }
+        s.serialPortName = p.getProperty("serialPortName", "");
+        s.serialBaudRate = parseInt(p.getProperty("serialBaudRate", "9600"));
+        if (s.serialBaudRate <= 0) s.serialBaudRate = 9600;
+        s.serialDataBits = parseInt(p.getProperty("serialDataBits", "8"));
+        try { s.serialParity = SessionInfo.SerialParity.valueOf(p.getProperty("serialParity", "NONE")); }
+        catch (IllegalArgumentException e) { s.serialParity = SessionInfo.SerialParity.NONE; }
+        s.serialStopBits = parseInt(p.getProperty("serialStopBits", "1"));
+        if (s.serialStopBits != 1 && s.serialStopBits != 2) s.serialStopBits = 1;
+        try { s.serialFlowControl = SessionInfo.SerialFlowControl.valueOf(p.getProperty("serialFlowControl", "NONE")); }
+        catch (IllegalArgumentException e) { s.serialFlowControl = SessionInfo.SerialFlowControl.NONE; }
+        s.serialLocalEcho = Boolean.parseBoolean(p.getProperty("serialLocalEcho", "false"));
         return Optional.of(s);
     }
 

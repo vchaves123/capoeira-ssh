@@ -48,6 +48,11 @@ public class ConnectDialog {
      * May return without showing a dialog if the session has a saved credential.
      */
     public char[] open() {
+        // A serial session has no credentials to collect — connecting just means opening a
+        // local COM port, so skip straight past this dialog. Empty (not null) so callers that
+        // treat null as "cancelled" proceed to connect.
+        if (session.connectionType == SessionInfo.ConnectionType.SERIAL) return new char[0];
+
         CredentialStore store = CredentialStore.getInstance();
 
         // ── Saved credential auth type — auto-connect from vault ─────────────
