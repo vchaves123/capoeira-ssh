@@ -84,36 +84,54 @@ public final class SecureFiles {
 
     /**
      * Create a directory (and parents) with owner-only permissions.
-     * On Windows, creates normally (Windows uses ACLs, not POSIX bits).
+     * On Windows, each newly created segment gets the same owner-only ACL restriction as a file
+     * (see {@link #restrictWindows}) — Windows uses ACLs, not POSIX bits, but a directory under
+     * {@code ~/.capoeira} (sessions, traces, etc.) must not simply inherit whatever ACL its parent
+     * happens to have, the same way a file created there never does.
      */
     public static void createDirectories(Path dir) throws IOException {
-        if (POSIX) {
-            // Create each missing segment with restricted permissions.
-            Path current = dir.isAbsolute() ? dir.getRoot() : Path.of("");
-            for (Path segment : dir) {
-                current = current.resolve(segment);
-                if (!Files.exists(current)) {
-                    Files.createDirectory(current,
-                        PosixFilePermissions.asFileAttribute(DIR_PERMS));
+        // Create each missing segment individually, restricting only the ones we actually create
+        // — an already-existing ancestor (e.g. the user's own profile directory) is left alone on
+        // both platforms.
+        Path current = dir.isAbsolute() ? dir.getRoot() : Path.of("");
+        for (Path segment : dir) {
+            current = current.resolve(segment);
+            if (!Files.exists(current)) {
+                if (POSIX) {
+                    Files.createDirectory(current, PosixFilePermissions.asFileAttribute(DIR_PERMS));
+                } else {
+                    Files.createDirectory(current);
+                    restrictWindows(current);
                 }
             }
-        } else {
-            Files.createDirectories(dir);
         }
     }
 
     /**
-     * Restrict a file to the owner only on Windows. java.io.File.setReadable/Writable does
-     * not touch NTFS ACLs (setReadable(false,..) is a silent no-op there), so we use icacls
+     * Restrict a file OR directory to the owner only on Windows. java.io.File.setReadable/Writable
+     * does not touch NTFS ACLs (setReadable(false,..) is a silent no-op there), so we use icacls
      * to remove inherited ACEs (/inheritance:r) and grant the owner Full control (/grant:r).
      * Arguments are passed to icacls directly (no shell), so the path is not interpolated.
      * Falls back to the legacy best-effort DOS-attribute calls if icacls is unavailable.
+     *
+     * <p>For a directory, the grant is made inheritable ({@code (OI)(CI)} — object-inherit,
+     * container-inherit) so a file or subdirectory created inside it later actually inherits the
+     * owner-only ACE via real NTFS inheritance. Without this, a plain non-inheritable grant (fine
+     * for a file, which has no children) leaves a newly created child with none of its parent's
+     * restriction to inherit at all — Windows then falls back to that child's default security
+     * descriptor, which routinely includes {@code BUILTIN\Administrators}/{@code NT AUTHORITY\
+     * SYSTEM} as ordinary (non-inherited) explicit entries that {@code /inheritance:r} + a plain
+     * {@code /grant:r owner:F} on the CHILD wouldn't remove either, since {@code /inheritance:r}
+     * only strips entries actually marked inherited, and {@code /grant:r} only replaces the named
+     * principal's own entries, never removes a different principal's.
      */
     private static void restrictWindows(Path path) {
+        boolean isDir = Files.isDirectory(path);
         try {
             String owner = Files.getOwner(path).getName();   // e.g. "MACHINE\\user"
+            String grant = owner + (isDir ? ":(OI)(CI)F" : ":F");
             Process p = new ProcessBuilder("icacls", path.toString(),
-                    "/inheritance:r", "/grant:r", owner + ":F")
+                    "/inheritance:r", "/grant:r", grant)
                 .redirectErrorStream(true)
                 .start();
             p.getInputStream().readAllBytes();   // drain output so the process can exit

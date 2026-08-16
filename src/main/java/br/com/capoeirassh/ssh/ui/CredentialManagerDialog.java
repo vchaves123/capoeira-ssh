@@ -7,6 +7,8 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.*;
 import org.eclipse.swt.widgets.*;
 
+import java.util.Arrays;
+
 /**
  * Manage saved credentials (add / edit / delete).
  * Opens the MasterPasswordDialog first if the vault is locked.
@@ -255,6 +257,12 @@ public class CredentialManagerDialog {
             CredentialEntry ce = existing != null ? existing : new CredentialEntry();
             ce.label    = txtLabel.getText().trim();
             ce.username = user;
+            // `ce.password` here is this dialog's OWN short-lived copy (store.getAll() returns
+            // deep copies, never the live vault entry — see CredentialEntry.copy()), populated
+            // into txtPass when the dialog opened. About to be superseded below; zero it in place
+            // first rather than just dropping the reference, same discipline this codebase applies
+            // to every other char[] holding a plaintext secret.
+            char[] oldPassword = ce.password;
             if (kdbxLinked[0]) {
                 // Still linked — password/key stay empty; kdbxFilePath/kdbxEntryUuid on `ce`
                 // (== existing here) are untouched, so the reference survives the edit.
@@ -268,6 +276,7 @@ public class CredentialManagerDialog {
                 ce.kdbxFilePath  = "";
                 ce.kdbxEntryUuid = "";
             }
+            if (oldPassword != null && oldPassword != ce.password) Arrays.fill(oldPassword, '\0');
             result[0]   = ce;
             dlg.dispose();
         });

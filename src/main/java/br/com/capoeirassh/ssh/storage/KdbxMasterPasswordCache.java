@@ -52,7 +52,11 @@ public final class KdbxMasterPasswordCache {
         CachedEntry e = cache.get(key);
         if (e == null) return null;
         if (System.currentTimeMillis() >= e.expiresAtMs) {
-            cache.remove(key);
+            // Compare-and-remove: only drop the mapping if it's still exactly the stale entry we
+            // just read. A plain remove(key) here could otherwise delete a brand-new, non-expired
+            // entry that a concurrent put() inserted for the same file between our get() above and
+            // this call — silently discarding a password that was just successfully (re)cached.
+            cache.remove(key, e);
             Arrays.fill(e.password, '\0');
             return null;
         }
@@ -84,13 +88,20 @@ public final class KdbxMasterPasswordCache {
 
     private void sweepExpired() {
         long now = System.currentTimeMillis();
-        cache.entrySet().removeIf(en -> {
-            if (now >= en.getValue().expiresAtMs) {
-                Arrays.fill(en.getValue().password, '\0');
-                return true;
-            }
-            return false;
-        });
+        // computeIfPresent runs its remapping function atomically per key (ConcurrentHashMap
+        // holds that key's bin lock for the duration) — unlike entrySet().removeIf(), which reads
+        // a value and later calls remove(key) as two separate steps, giving a concurrent put() a
+        // window to insert a fresh, non-expired entry that then gets removed here instead of the
+        // actually-stale one this loop meant to drop.
+        for (String key : cache.keySet()) {
+            cache.computeIfPresent(key, (k, entry) -> {
+                if (now >= entry.expiresAtMs) {
+                    Arrays.fill(entry.password, '\0');
+                    return null; // removes the mapping
+                }
+                return entry;
+            });
+        }
     }
 
     /** Resolves symlinks/relative segments so the same file reached via two different-looking

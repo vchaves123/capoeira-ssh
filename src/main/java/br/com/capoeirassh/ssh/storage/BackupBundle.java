@@ -15,12 +15,24 @@ import java.util.zip.*;
 /**
  * Creates and reads encrypted Capoeira SSH backup bundles (.capoeira-backup).
  *
- * Binary format:
+ * Binary format (self-describing header, magic + version + KDF id + iteration count + salt):
  *   [4]  magic  "CAPB"
- *   [1]  version = 1
+ *   [1]  version
+ *   [1]  KDF-algo id           (v2/v3 only; absent, implicit, in v1)
+ *   [4]  PBKDF2 iteration count (v2/v3 only; big-endian; absent, implicit, in v1)
  *   [16] PBKDF2-SHA256 salt
  *   [12] AES-GCM IV
  *   [N]  AES-256-GCM ciphertext  (plaintext = a ZIP archive, see below)
+ *
+ * v1: legacy fixed-iteration format, no self-describing header, no AAD.
+ * v2: self-describing header (KDF id + iteration count), but NOT bound as AAD — this was
+ *     VERSION prior to this fix and is what every bundle exported before it looks like on disk.
+ *     Still readable (without AAD) for backward compatibility — unlike {@link CredentialStore},
+ *     there is no live mutable file to transparently migrate here, so old exported bundles simply
+ *     stay v2 forever.
+ * v3: same self-describing header, ALSO bound to the ciphertext as GCM AAD — mirrors
+ *     CredentialStore's identical v2-&gt;v3 hardening (build 249). This is the only format
+ *     export() writes going forward.
  *
  * ZIP contents:
  *   sessions/                 – *.session files, group subdirs preserved
@@ -29,11 +41,18 @@ import java.util.zip.*;
  */
 public final class BackupBundle {
 
-    private static final byte[] MAGIC        = { 'C', 'A', 'P', 'B' };
-    private static final byte   VERSION      = 2;         // v2 header self-describes KDF params
-    private static final int    KDF_PBKDF2   = 1;         // KDF-algo id in the v2 header
-    private static final int    LEGACY_ITER  = 120_000;   // v1 bundles: iteration count implicit
-    private static final int    CURRENT_ITER = 600_000;   // OWASP-2023 baseline for new bundles
+    private static final byte[] MAGIC          = { 'C', 'A', 'P', 'B' };
+    private static final int    VERSION_NO_AAD = 2;         // pre-hardening format, still read-only supported
+    private static final int    VERSION        = 3;         // header bound as GCM AAD; the only format written now
+    private static final int    KDF_PBKDF2     = 1;         // KDF-algo id in the v2/v3 header
+    private static final int    LEGACY_ITER    = 120_000;   // v1 bundles: iteration count implicit
+    private static final int    CURRENT_ITER   = 600_000;   // OWASP-2023 baseline for new bundles
+
+    // A crafted/oversized .capoeira-backup file must fail cleanly, not risk an OutOfMemoryError
+    // (which extends Error, not Exception, and so isn't caught by importBundle()'s callers) from
+    // Files.readAllBytes() on a file well beyond what any real backup ever needs — a bundle is a
+    // handful of *.session files plus an optional credentials.dat, each at most a few KB.
+    private static final long MAX_BUNDLE_FILE_BYTES = 100L * 1024 * 1024;
 
     private BackupBundle() {}
 
@@ -89,6 +108,10 @@ public final class BackupBundle {
     public record ImportResult(List<SessionInfo> sessions, List<CredentialEntry> credentials) {}
 
     public static ImportResult importBundle(Path source, char[] password) throws Exception {
+        long size = Files.size(source);
+        if (size > MAX_BUNDLE_FILE_BYTES)
+            throw new IOException("Backup file is too large (" + size
+                + " bytes) — refusing to import.");
         byte[] raw = Files.readAllBytes(source);
         byte[] zip = decrypt(raw, password);
         return unzip(zip);
@@ -188,16 +211,29 @@ public final class BackupBundle {
         byte[] salt = new byte[16], iv = new byte[12];
         new SecureRandom().nextBytes(salt);
         new SecureRandom().nextBytes(iv);
+
+        // Build the self-describing header first so it can be bound as GCM AAD below — mirrors
+        // CredentialStore.persist()'s identical construction (magic, version, KDF id, iteration
+        // count, salt), for the same reason: salt/iterations already feed key derivation, so
+        // tampering with them is caught indirectly today, but binding the WHOLE header means that
+        // stays true even if a future format change adds a header field that doesn't happen to
+        // feed derivation, rather than depending on every such field being re-derived correctly.
+        ByteArrayOutputStream hdr = new ByteArrayOutputStream(MAGIC.length + 1 + 1 + 4 + 16);
+        hdr.write(MAGIC);
+        hdr.write(VERSION);
+        hdr.write(KDF_PBKDF2);
+        hdr.write((CURRENT_ITER >>> 24) & 0xFF); hdr.write((CURRENT_ITER >>> 16) & 0xFF);
+        hdr.write((CURRENT_ITER >>>  8) & 0xFF); hdr.write( CURRENT_ITER        & 0xFF);
+        hdr.write(salt);
+        byte[] header = hdr.toByteArray();
+
         Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
         c.init(Cipher.ENCRYPT_MODE, deriveKey(pw, salt, CURRENT_ITER), new GCMParameterSpec(128, iv));
+        c.updateAAD(header);
         byte[] ct = c.doFinal(pt);
-        ByteArrayOutputStream out = new ByteArrayOutputStream(MAGIC.length + 1 + 1 + 4 + 16 + 12 + ct.length);
-        out.write(MAGIC);
-        out.write(VERSION);                               // 2
-        out.write(KDF_PBKDF2);                            // KDF-algo id
-        out.write((CURRENT_ITER >>> 24) & 0xFF); out.write((CURRENT_ITER >>> 16) & 0xFF);
-        out.write((CURRENT_ITER >>>  8) & 0xFF); out.write( CURRENT_ITER        & 0xFF);
-        out.write(salt); out.write(iv); out.write(ct);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream(header.length + 12 + ct.length);
+        out.write(header); out.write(iv); out.write(ct);
         return out.toByteArray();
     }
 
@@ -211,7 +247,7 @@ public final class BackupBundle {
         int iter;
         if (ver == 1) {                       // legacy: KDF params were implicit
             iter = LEGACY_ITER;
-        } else if (ver == 2) {                // self-describing header
+        } else if (ver == VERSION_NO_AAD || ver == VERSION) {  // self-describing header
             if (bundle.length < MAGIC.length + 1 + 1 + 4 + 16 + 12 + 16)
                 throw new IOException("Invalid or corrupt backup file.");
             int kdfId = bundle[off++] & 0xFF;
@@ -227,11 +263,18 @@ public final class BackupBundle {
         } else {
             throw new IOException("Unsupported backup version: " + ver);
         }
-        byte[] salt = Arrays.copyOfRange(bundle, off, off + 16); off += 16;
-        byte[] iv   = Arrays.copyOfRange(bundle, off, off + 12); off += 12;
-        byte[] ct   = Arrays.copyOfRange(bundle, off, bundle.length);
+        byte[] salt   = Arrays.copyOfRange(bundle, off, off + 16); off += 16;
+        int headerEnd = off;   // end of the self-describing header (v2/v3) — start of IV
+        byte[] iv     = Arrays.copyOfRange(bundle, off, off + 12); off += 12;
+        byte[] ct     = Arrays.copyOfRange(bundle, off, bundle.length);
         Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
         c.init(Cipher.DECRYPT_MODE, deriveKey(pw, salt, iter), new GCMParameterSpec(128, iv));
+        // v3 bundles bind their whole self-describing header as AAD — see encrypt(). v1 bundles
+        // predate AAD entirely, and v2 bundles (every bundle exported before this fix) were
+        // encrypted with none either — supplying it here would make every legitimate old v1/v2
+        // bundle unreadable with the objectively correct password. Same reasoning as
+        // CredentialStore.unlock().
+        if (ver == VERSION) c.updateAAD(Arrays.copyOfRange(bundle, 0, headerEnd));
         try {
             return c.doFinal(ct);
         } catch (AEADBadTagException e) {

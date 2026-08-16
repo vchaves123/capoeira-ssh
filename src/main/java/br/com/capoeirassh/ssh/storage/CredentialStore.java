@@ -261,9 +261,21 @@ public final class CredentialStore {
     public synchronized void addOrUpdate(CredentialEntry e) throws Exception {
         touch();
         Map<String, CredentialEntry> snapshot = new LinkedHashMap<>(entries);
-        entries.put(e.id, e);
+        CredentialEntry previous = entries.put(e.id, e);
         try {
             persist();
+            // Only safe to wipe the superseded entry's password once the new one is durably
+            // persisted — every other "replace a live secret" path in this class (lock(),
+            // this method's own failure-rollback below, KdbxMasterPasswordCache) zeroes the
+            // outgoing char[] before dropping it; this was the one that didn't, so a stale
+            // master/account password could linger unzeroed on the heap after an ordinary
+            // credential edit or the KeePass "heal a corrected master password" flow.
+            // previous != e guards a caller that (in principle) mutated and re-added the exact
+            // same object in place — nothing in this codebase does that today, but zeroing the
+            // array persist() just read from before returning would be wrong if it ever did.
+            if (previous != null && previous != e && previous.password != null) {
+                Arrays.fill(previous.password, '\0');
+            }
         } catch (Exception ex) {
             // Roll back so a failed save never leaves e's plaintext password permanently
             // reachable from the store (and never gets silently written by some later,

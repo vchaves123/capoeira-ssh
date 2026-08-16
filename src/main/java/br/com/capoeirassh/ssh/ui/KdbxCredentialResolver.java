@@ -109,16 +109,30 @@ public final class KdbxCredentialResolver {
     /** Re-saves a corrected master password into the vault for an entry that already had one
      *  stored — the user consented to persistent storage for this entry once already, so this
      *  runs silently rather than asking again every time the KeePass file's password changes.
-     *  Best-effort: a failed re-save just means the next connect prompts again, not fatal. */
+     *  Best-effort: a failed re-save just means the next connect prompts again, not fatal.
+     *
+     *  <p>Backgrounded like every other {@code addOrUpdate()} call site (CredentialManagerDialog's
+     *  {@code runPersist}, SessionDialog's "Save Credential" handler) — this method is invoked
+     *  directly from {@link #resolve} on the UI thread (a credential-picker selection listener),
+     *  and {@code addOrUpdate()}'s AES-GCM encrypt-and-rewrite of the whole vault is exactly the
+     *  kind of disk I/O those other call sites deliberately keep off that thread. The defensive
+     *  copy of {@code newMaster} is taken synchronously, before the background thread starts —
+     *  {@link #resolve}'s own {@code finally} block zeroes its {@code master} array as soon as
+     *  this method returns, which would otherwise race a still-running background read of it. */
     private static void healStoredMasterPassword(CredentialEntry ce, char[] newMaster) {
-        try {
-            CredentialEntry updated = CredentialStore.getInstance().findById(ce.id);
-            if (updated == null) return; // deleted from the vault meanwhile
-            updated.password = Arrays.copyOf(newMaster, newMaster.length);
-            CredentialStore.getInstance().addOrUpdate(updated);
-        } catch (Exception ignored) {
-            // Non-fatal — see method comment.
-        }
+        char[] masterCopy = Arrays.copyOf(newMaster, newMaster.length);
+        Thread t = new Thread(() -> {
+            try {
+                CredentialEntry updated = CredentialStore.getInstance().findById(ce.id);
+                if (updated == null) return; // deleted from the vault meanwhile
+                updated.password = masterCopy;
+                CredentialStore.getInstance().addOrUpdate(updated);
+            } catch (Exception ignored) {
+                // Non-fatal — see method comment.
+            }
+        }, "kdbx-heal-master-password");
+        t.setDaemon(true);
+        t.start();
     }
 
     private static void alert(Shell parent, String msg) {

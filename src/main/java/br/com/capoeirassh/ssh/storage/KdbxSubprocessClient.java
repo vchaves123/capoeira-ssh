@@ -208,12 +208,30 @@ public final class KdbxSubprocessClient {
         return Path.of(javaHome, "bin", exe).toString();
     }
 
+    /** Reads the entirety of {@code in} into a byte[], scrubbing every intermediate buffer this
+     *  allocates along the way (not just the final result) once superseded by a bigger one —
+     *  unlike {@link ByteArrayOutputStream}, which grows by abandoning its old backing array as
+     *  ordinary unzeroed garbage and has no supported way to scrub it. {@code in} carries the
+     *  fetched entry password on the stdout path this feeds — the same "can't force-zero it"
+     *  problem the disposable-subprocess design exists to avoid at the process level, one level
+     *  down, at the buffer used to shuttle those bytes across the pipe. The caller owns the
+     *  returned array and must zero it after use, same as every other byte[]-returning method
+     *  in this class. */
     private static byte[] readAll(InputStream in) throws IOException {
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        byte[] chunk = new byte[4096];
-        int n;
-        while ((n = in.read(chunk)) != -1) buf.write(chunk, 0, n);
-        return buf.toByteArray();
+        byte[] buf = new byte[4096];
+        int len = 0, n;
+        while ((n = in.read(buf, len, buf.length - len)) != -1) {
+            len += n;
+            if (len == buf.length) {
+                byte[] bigger = new byte[buf.length * 2];
+                System.arraycopy(buf, 0, bigger, 0, len);
+                Arrays.fill(buf, (byte) 0); // scrub the superseded buffer before dropping it
+                buf = bigger;
+            }
+        }
+        byte[] out = Arrays.copyOf(buf, len);
+        Arrays.fill(buf, (byte) 0); // scrub the final working buffer too — `out` is the only copy kept
+        return out;
     }
 
     private static byte[] charsToBytes(char[] chars) {

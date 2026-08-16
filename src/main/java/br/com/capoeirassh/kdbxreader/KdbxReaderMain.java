@@ -152,12 +152,29 @@ public final class KdbxReaderMain {
         return s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
     }
 
+    /** Reads all of stdin (the master password) into a byte[], scrubbing every intermediate
+     *  buffer this allocates along the way once superseded by a bigger one — unlike
+     *  {@link ByteArrayOutputStream}, which grows by abandoning its old backing array as ordinary
+     *  unzeroed garbage and has no supported way to scrub it. This mirrors {@code
+     *  KdbxSubprocessClient.readAll()} on the parent side of this same pipe (duplicated, not
+     *  shared, for the same reason the rest of this wire protocol's constants are: this class
+     *  never shares a package with the parent). The caller ({@link #run}) zeroes the returned
+     *  array in its own {@code finally} block once done with it. */
     private static byte[] readAllStdin() throws IOException {
-        ByteArrayOutputStream buf = new ByteArrayOutputStream();
-        byte[] chunk = new byte[4096];
-        int n;
-        while ((n = System.in.read(chunk)) != -1) buf.write(chunk, 0, n);
-        return buf.toByteArray();
+        byte[] buf = new byte[4096];
+        int len = 0, n;
+        while ((n = System.in.read(buf, len, buf.length - len)) != -1) {
+            len += n;
+            if (len == buf.length) {
+                byte[] bigger = new byte[buf.length * 2];
+                System.arraycopy(buf, 0, bigger, 0, len);
+                Arrays.fill(buf, (byte) 0); // scrub the superseded buffer before dropping it
+                buf = bigger;
+            }
+        }
+        byte[] out = Arrays.copyOf(buf, len);
+        Arrays.fill(buf, (byte) 0); // scrub the final working buffer too — `out` is the only copy kept
+        return out;
     }
 
     private KdbxReaderMain() {}
