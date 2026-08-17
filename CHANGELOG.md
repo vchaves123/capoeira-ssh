@@ -32,6 +32,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - SFTP path traversal and other hardening findings from a follow-up security audit.
+- Two cross-platform test failures caught by CI on Linux/macOS (build 324): `SerialConnection`
+  now wraps jSerialComm's unchecked `SerialPortInvalidPortException` (thrown up front on
+  Linux/macOS for a malformed port descriptor, unlike Windows) into the `IOException` callers
+  already expect; a redundant path-traversal regression test that only encoded Windows-specific
+  backslash semantics is now Windows-only, since the real cross-platform defense already has its
+  own test.
 
 ---
 

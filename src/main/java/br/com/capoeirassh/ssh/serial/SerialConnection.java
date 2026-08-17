@@ -32,7 +32,16 @@ public class SerialConnection implements TerminalConnection {
     @Override
     public void connect(SessionInfo info, char[] password, Display display,
                          Consumer<String> verboseSink) throws IOException {
-        port = SerialPort.getCommPort(info.serialPortName);
+        try {
+            port = SerialPort.getCommPort(info.serialPortName);
+        } catch (com.fazecast.jSerialComm.SerialPortInvalidPortException e) {
+            // On Linux/macOS jSerialComm validates the descriptor format up front and throws this
+            // unchecked exception immediately; on Windows it accepts any string here and only
+            // fails later, at openPort() below (which already throws IOException). Wrap it so
+            // callers see one consistent failure mode on every platform.
+            throw new IOException("Could not open serial port " + info.serialPortName
+                + " — check that it exists and isn't already in use by another program.", e);
+        }
         port.setComPortParameters(
             info.serialBaudRate,
             info.serialDataBits,

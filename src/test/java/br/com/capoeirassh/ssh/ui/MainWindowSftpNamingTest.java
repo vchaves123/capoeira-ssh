@@ -4,6 +4,8 @@ import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.SftpATTRS;
 import com.jcraft.jsch.SftpException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -116,6 +118,10 @@ class MainWindowSftpNamingTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
+    // Backslash is only a path separator on Windows — on Linux/macOS java.io.File treats
+    // "..\..\evil.exe" as one literal filename, which genuinely does sit inside dir, so this
+    // scenario only exercises the defense it's meant to on Windows.
     void isWithinDir_nestedTraversalEscapingDir_isNotWithin(@TempDir Path tempDir) {
         String dir = tempDir.toString();
         // Mirrors what a name() that failed to strip a backslash-laden entry would have produced.
