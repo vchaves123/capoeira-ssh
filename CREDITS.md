@@ -10,6 +10,8 @@ license requires it for an independently drawn icon set.
 
 ## Third-party libraries
 
+- [SWT (Eclipse Platform)](https://www.eclipse.org/swt/) — the native UI toolkit the whole app is
+  built on.
 - [JSch (mwiede fork)](https://github.com/mwiede/jsch) — SSH client library.
 - [jSerialComm](https://fazecast.github.io/jSerialComm/) — serial (RS232) port access for the
   serial terminal feature.
