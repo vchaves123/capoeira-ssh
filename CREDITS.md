@@ -16,4 +16,8 @@ license requires it for an independently drawn icon set.
 - [jSerialComm](https://fazecast.github.io/jSerialComm/) — serial (RS232) port access for the
   serial terminal feature.
 - [KeePassJava2](https://github.com/jorabin/KeePassJava2) — used only by the disposable KDBX
-  reader subprocess to decode `.kdbx` databases for the KeePass import feature.
+  reader subprocess to decode `.kdbx` databases for the KeePass import feature. Brings in, as
+  transitive dependencies confined to that same subprocess:
+  - [Bouncy Castle](https://www.bouncycastle.org/) — the actual KDBX decryption.
+  - [Jackson](https://github.com/FasterXML/jackson) — parses the KDBX file's internal XML.
+  - [Guava](https://github.com/google/guava) — used internally by KeePassJava2's data model.
