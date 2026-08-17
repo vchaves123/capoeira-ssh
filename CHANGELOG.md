@@ -7,6 +7,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.0] — 2026-08-16
 
+### Distribution
+- Now available on the [Microsoft Store](https://apps.microsoft.com/detail/9pf0mk47tf3x?hl=en-US&gl=BR),
+  alongside the existing GitHub release installers — the MSIX packaging step already existed in
+  the release pipeline, this is its first published listing.
+
 ### Added
 - **Built-in SFTP client**: upload or download files right from a terminal tab's context menu,
   with a remote file browser, multi-select, and a two-bar byte progress indicator for each
