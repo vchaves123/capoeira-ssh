@@ -6,7 +6,7 @@
 
     <groupId>br.com.capoeirassh</groupId>
     <artifactId>capoeira-ssh</artifactId>
-    <version>1.7.0</version>
+    <version>2.0.0</version>
     <packaging>jar</packaging>
     <name>Capoeira SSH Client</name>
 
@@ -15,6 +15,10 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <swt.version>3.134.0</swt.version>
+        <!-- Defaults match the "windows" profile (activeByDefault) — see SWT-OS/SWT-Arch below,
+             and each other platform profile overriding these two. -->
+        <swt.os>win32</swt.os>
+        <swt.arch>x86_64</swt.arch>
         <maven.build.timestamp.format>yyyy-MM-dd HH:mm</maven.build.timestamp.format>
         <junit.version>5.10.2</junit.version>
         <!-- Tests tagged "slow" (currently: CredentialStoreConcurrencyTest, ~7-8 min, over 80%
@@ -67,6 +71,12 @@
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
+            <!-- Redundant with the top-level defaults, but stated explicitly here too so this
+                 profile's own correctness doesn't quietly depend on nobody ever changing them. -->
+            <properties>
+                <swt.os>win32</swt.os>
+                <swt.arch>x86_64</swt.arch>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>org.eclipse.platform</groupId>
@@ -84,6 +94,10 @@
 
         <profile>
             <id>linux</id>
+            <properties>
+                <swt.os>linux</swt.os>
+                <swt.arch>x86_64</swt.arch>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>org.eclipse.platform</groupId>
@@ -101,6 +115,10 @@
 
         <profile>
             <id>macos</id>
+            <properties>
+                <swt.os>macosx</swt.os>
+                <swt.arch>x86_64</swt.arch>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>org.eclipse.platform</groupId>
@@ -118,6 +136,10 @@
 
         <profile>
             <id>macos-arm</id>
+            <properties>
+                <swt.os>macosx</swt.os>
+                <swt.arch>aarch64</swt.arch>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>org.eclipse.platform</groupId>
@@ -216,8 +238,23 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <shadedArtifactAttached>false</shadedArtifactAttached>
                             <transformers>
+                                <!-- mainClass alone REPLACES the merged manifest wholesale — it doesn't
+                                     preserve any dependency jar's own manifest entries. SWT's own
+                                     Library.isLoadable() (added in a recent SWT release) refuses to load
+                                     at all unless the running jar's manifest carries SWT-OS/SWT-Arch
+                                     matching the platform it's actually running on: without these two
+                                     entries surviving the shade, the packaged app printed "Libraries for
+                                     platform win32 cannot be loaded because of incompatible environment"
+                                     to stderr and called System.exit(1) before any of our own code (or
+                                     even our own logging) ran — found while just trying to launch a
+                                     locally built jar to test on this same machine. swt.os/swt.arch are
+                                     set per platform profile above so this stays correct on every target. -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>br.com.capoeirassh.ssh.Main</mainClass>
+                                    <manifestEntries>
+                                        <SWT-OS>${swt.os}</SWT-OS>
+                                        <SWT-Arch>${swt.arch}</SWT-Arch>
+                                    </manifestEntries>
                                 </transformer>
                                 <!-- Jackson (pulled in transitively by KeePassJava2-jackson, used
                                      only by the disposable br.com.capoeirassh.kdbxreader subprocess)

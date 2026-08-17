@@ -11,6 +11,8 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 |---|---|
 | ![Home](docs/screenshots/home.png) Home tab | ![Unlock vault](docs/screenshots/unlock-vault.png) Credential vault unlock |
 | ![Terminal session](docs/screenshots/terminal-session.png) An active terminal session | ![Disconnected tab](docs/screenshots/disconnected-tab.png) Disconnected session (red tab) |
+| ![SFTP menu](docs/screenshots/sftp-menu.png) SFTP upload/download from the tab context menu | ![SFTP listing](docs/screenshots/sftp-listing.png) Remote directory listing over SFTP |
+| ![Serial session config](docs/screenshots/serial-session-config.png) RS232 serial session configuration | ![KeePass import menu](docs/screenshots/keepass-import-menu.png) Import from a KeePass (.kdbx) database |
 
 </details>
 
@@ -24,6 +26,12 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
   group cards; drag a session between group cards to move it; your choice persists across restarts
 - **Authentication** — username/password, private key, or saved credentials (AES-256 encrypted vault)
 - **Credential manager** — store and reuse credentials across sessions, protected by a master password
+- **Built-in SFTP client** — upload/download files from a terminal tab's context menu, with a
+  remote file browser, multi-select, and per-transfer progress
+- **RS232 serial terminal** — connect to serial devices (routers, embedded boards, lab equipment)
+  with configurable port, baud rate and framing, using the same terminal emulator as SSH sessions
+- **KeePass (.kdbx) import** — import entries from an existing KeePass database as live references,
+  with an option to save the master password in the built-in vault
 - **Session groups** — organise sessions into named groups
 - **Encrypted backup** — export all sessions (and, optionally, the credential vault) to a single
   password-protected file, and import it back or merge it into another install
