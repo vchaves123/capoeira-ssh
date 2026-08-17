@@ -2,7 +2,7 @@
 
 A lightweight SSH terminal client with a built-in xterm-256color emulator, built with Java and SWT.
 
-[<img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"/>](https://apps.microsoft.com/detail/9pf0mk47tf3x?hl=en-US&gl=BR)
+[<img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"/>](https://apps.microsoft.com/detail/9pf0mk47tf3x?mode=direct)
 
 ![Capoeira SSH](docs/screenshots/home.png)
 
