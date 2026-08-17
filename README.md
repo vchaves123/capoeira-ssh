@@ -12,6 +12,7 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 | ![Home](docs/screenshots/home.png) Home tab | ![Unlock vault](docs/screenshots/unlock-vault.png) Credential vault unlock |
 | ![Terminal session](docs/screenshots/terminal-session.png) An active terminal session | ![Disconnected tab](docs/screenshots/disconnected-tab.png) Disconnected session (red tab) |
 | ![SFTP menu](docs/screenshots/sftp-menu.png) SFTP upload/download from the tab context menu | ![SFTP listing](docs/screenshots/sftp-listing.png) Remote directory listing over SFTP |
+| ![Serial session config](docs/screenshots/serial-session-config.png) RS232 serial session configuration | ![KeePass import menu](docs/screenshots/keepass-import-menu.png) Import from a KeePass (.kdbx) database |
 
 </details>
 
