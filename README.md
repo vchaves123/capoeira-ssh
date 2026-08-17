@@ -2,6 +2,8 @@
 
 A lightweight SSH terminal client with a built-in xterm-256color emulator, built with Java and SWT.
 
+[<img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft" width="200"/>](https://apps.microsoft.com/detail/9pf0mk47tf3x?hl=en-US&gl=BR)
+
 ![Capoeira SSH](docs/screenshots/home.png)
 
 <details>
@@ -50,7 +52,11 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 
 ## Installation
 
-### From a release binary (recommended)
+### Microsoft Store (Windows, recommended)
+
+Get it from the [Microsoft Store](https://apps.microsoft.com/detail/9pf0mk47tf3x?hl=en-US&gl=BR) — automatic updates, no manual installer needed.
+
+### From a release binary
 
 1. Download the installer for your platform from the [Releases](../../releases) page.
 2. Run the installer — Java is bundled, no separate installation required.
