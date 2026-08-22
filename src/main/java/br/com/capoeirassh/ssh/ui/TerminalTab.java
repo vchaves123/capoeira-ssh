@@ -688,10 +688,20 @@ public class TerminalTab {
 
             // Selection bounds, reprojected onto the current viewport (selection is stored as
             // absolute buffer rows, which move as scrollOffset changes) — computed once here
-            // rather than per cell. selRow0/1 stay -1 when there is no selection or it's
-            // scrolled entirely out of view, so the per-cell check below is a single comparison.
-            int selRow0 = -1, selCol0 = 0, selRow1 = -1, selCol1 = 0;
-            if (selAnchorCol >= 0 && hasSelection()) {
+            // rather than per cell.
+            //
+            // Whether there IS a selection is tracked separately from where it lands: fromAbsRow()
+            // legitimately returns a negative row once the selection's start has scrolled above
+            // the top of the visible area, and a row >= rows once its end is below the bottom.
+            // Folding "no selection" into the same int as a sentinel (selRow0 = -1, gated on
+            // `selRow0 >= 0`) made those two cases indistinguishable, so a selection large enough
+            // to reach off the top of the screen stopped being painted entirely — the exact
+            // reported bug: drag-select down through the scrollback and the highlight vanishes the
+            // moment the selection outgrows the viewport, even though the selection is still there
+            // and right-click still copies the correct text.
+            boolean hasSel = selAnchorCol >= 0 && hasSelection();
+            int selRow0 = 0, selCol0 = 0, selRow1 = 0, selCol1 = 0;
+            if (hasSel) {
                 int[] norm = normalizedSelection();
                 selRow0 = fromAbsRow(norm[0]); selCol0 = norm[1];
                 selRow1 = fromAbsRow(norm[2]); selCol1 = norm[3];
@@ -723,7 +733,7 @@ public class TerminalTab {
                     // SGR reverse (rather than instead of it) means a selected cell that was
                     // already reverse-video correctly reverses back to normal-looking colours,
                     // matching how a real terminal composes the two.
-                    if (selRow0 >= 0 && r >= selRow0 && r <= selRow1
+                    if (hasSel && r >= selRow0 && r <= selRow1
                             && (r > selRow0 || c >= selCol0) && (r < selRow1 || c <= selCol1)) {
                         int[] swapped = swapForReverseVideo(fg, bg, defaultFgRgb, defaultBgRgb);
                         fg = swapped[0]; bg = swapped[1];
