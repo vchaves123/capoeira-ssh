@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.0.1] — 2026-08-22
+
+### Fixed
+- **The selection highlight disappeared once the selected text grew taller than the window.**
+  Scrolling up into the history, starting a selection and dragging downward worked normally until
+  the selected range covered the whole visible area — at which point the highlight vanished and the
+  screen looked as though nothing was selected. The selection was never actually lost (right-click
+  still copied exactly the right text); only the drawing of it stopped, because the code that
+  paints the highlight could not tell "the selection starts above the top of the screen" apart from
+  "there is no selection at all". ([#112](https://github.com/vchaves123/capoeira-ssh/issues/112))
+
+---
+
 ## [2.0.0] — 2026-08-16
 
 ### Distribution
