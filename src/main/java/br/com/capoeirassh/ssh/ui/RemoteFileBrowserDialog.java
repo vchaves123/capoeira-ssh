@@ -117,12 +117,13 @@ public class RemoteFileBrowserDialog {
         table.setHeaderVisible(true);
         table.setLinesVisible(true);
         table.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-        String[] cols = { "Name", "Size" };
-        int[] widths  = { 400, 90 };
+        String[] cols = { "Name", "Size", "Modified" };
+        int[] widths  = { 320, 90, 130 };
         for (int i = 0; i < cols.length; i++) {
             TableColumn c = new TableColumn(table, SWT.NONE);
             c.setText(cols[i]);
             c.setWidth(widths[i]);
+            c.setMoveable(true); // lets the user drag headers to reorder columns
         }
 
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
@@ -164,20 +165,22 @@ public class RemoteFileBrowserDialog {
 
             if (!"/".equals(currentDir)) {
                 TableItem up = new TableItem(table, SWT.NONE);
-                up.setText(new String[]{ "..", "" });
+                up.setText(new String[]{ "..", "", "" });
                 rowEntries.add(null);
             }
             for (ChannelSftp.LsEntry e : dirs) {
                 TableItem it = new TableItem(table, SWT.NONE);
                 // Display only — never the raw name used for the actual sftp.ls()/sftp.get()
                 // path, which must stay byte-exact to reach the real remote entry.
-                it.setText(new String[]{ sanitizeDisplayName(e.getFilename()) + "/", "" });
+                it.setText(new String[]{ sanitizeDisplayName(e.getFilename()) + "/", "",
+                    formatMtime(e.getAttrs().getMTime()) });
                 rowEntries.add(e);
             }
             if (mode == Mode.PICK_FILES) {
                 for (ChannelSftp.LsEntry e : files) {
                     TableItem it = new TableItem(table, SWT.NONE);
-                    it.setText(new String[]{ sanitizeDisplayName(e.getFilename()), humanSize(e.getAttrs().getSize()) });
+                    it.setText(new String[]{ sanitizeDisplayName(e.getFilename()), humanSize(e.getAttrs().getSize()),
+                        formatMtime(e.getAttrs().getMTime()) });
                     rowEntries.add(e);
                 }
             }
@@ -257,6 +260,15 @@ public class RemoteFileBrowserDialog {
 
     static String joinPath(String dir, String name) {
         return dir.endsWith("/") ? dir + name : dir + "/" + name;
+    }
+
+    /** {@code SftpATTRS.getMTime()} is seconds since the epoch (32-bit on the wire, per SFTP v3) —
+     *  formatted in the local timezone since that's what a "last modified" timestamp means to
+     *  the person browsing, same as any file manager. */
+    static String formatMtime(long epochSeconds) {
+        return java.time.Instant.ofEpochSecond(epochSeconds)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
     static String humanSize(long bytes) {
