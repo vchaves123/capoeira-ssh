@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.1.0] — 2026-09-28
+
+### Added
+- **Remote file browser** (used by SFTP upload/download): a "Modified" column now shows each
+  file's and folder's last-modified date/time, alongside Name and Size. Columns can also be
+  dragged by their header to reorder them. ([#113](https://github.com/vchaves123/capoeira-ssh/issues/113))
+
+---
+
 ## [2.0.1] — 2026-08-22
 
 ### Fixed
