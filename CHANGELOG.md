@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.2.0] — 2026-10-09
+
+### Added
+- **SSH tunnels (port forwarding)**: each SSH session can now hold local (`-L`) and remote (`-R`)
+  tunnels, edited from the session's new **Tunnels…** button and started or stopped from the tab's
+  context menu, with live status and per-tunnel errors. Tunnels use their own SSH connection and
+  stop when the tab is closed. Tunnels marked "Auto" start when the session opens, provided its
+  credentials are saved.
+
+---
+
 ## [2.1.0] — 2026-09-28
 
 ### Added
