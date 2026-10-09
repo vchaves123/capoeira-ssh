@@ -1,6 +1,7 @@
 package br.com.capoeirassh.ssh.storage;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
+import br.com.capoeirassh.ssh.model.TunnelSpec;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -76,6 +77,7 @@ public final class SessionStorage {
         p.setProperty("serialStopBits",    String.valueOf(s.serialStopBits));
         p.setProperty("serialFlowControl", s.serialFlowControl.name());
         p.setProperty("serialLocalEcho",   String.valueOf(s.serialLocalEcho));
+        writeTunnels(p, s.tunnels);
 
         Path file = dir.resolve(s.fileName());
         // Serialize to a byte[] first, then write via SecureFiles' temp-file + atomic-move —
@@ -246,7 +248,51 @@ public final class SessionStorage {
         try { s.serialFlowControl = SessionInfo.SerialFlowControl.valueOf(p.getProperty("serialFlowControl", "NONE")); }
         catch (IllegalArgumentException e) { s.serialFlowControl = SessionInfo.SerialFlowControl.NONE; }
         s.serialLocalEcho = Boolean.parseBoolean(p.getProperty("serialLocalEcho", "false"));
+        s.tunnels = readTunnels(p);
         return Optional.of(s);
+    }
+
+    // -----------------------------------------------------------------------
+    // Tunnels — "tunnel.count" plus indexed "tunnel.N.*" keys. Absent on every file written before
+    // tunnels existed, which readTunnels() treats as an empty list (no schemaVersion bump needed).
+    // -----------------------------------------------------------------------
+
+    static void writeTunnels(Properties p, List<TunnelSpec> tunnels) {
+        List<TunnelSpec> list = tunnels == null ? List.of() : tunnels;
+        p.setProperty("tunnel.count", String.valueOf(list.size()));
+        for (int i = 0; i < list.size(); i++) {
+            TunnelSpec t = list.get(i);
+            String k = "tunnel." + i + ".";
+            p.setProperty(k + "type",        t.type.name());
+            p.setProperty(k + "bindHost",    Objects.requireNonNullElse(t.bindHost, ""));
+            p.setProperty(k + "bindPort",    String.valueOf(t.bindPort));
+            p.setProperty(k + "destHost",    Objects.requireNonNullElse(t.destHost, ""));
+            p.setProperty(k + "destPort",    String.valueOf(t.destPort));
+            p.setProperty(k + "description", Objects.requireNonNullElse(t.description, ""));
+            p.setProperty(k + "autoStart",   String.valueOf(t.autoStart));
+        }
+    }
+
+    /** Defensive like {@link #parseTags}: a hand-edited or corrupted file yields only the entries
+     *  that validate, capped at {@link TunnelSpec#MAX_PER_SESSION}, never an exception. */
+    static List<TunnelSpec> readTunnels(Properties p) {
+        List<TunnelSpec> out = new ArrayList<>();
+        int count = Math.min(Math.max(parseInt(p.getProperty("tunnel.count", "0")), 0), TunnelSpec.MAX_PER_SESSION);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < count; i++) {
+            String k = "tunnel." + i + ".";
+            TunnelSpec t = new TunnelSpec();
+            try { t.type = TunnelSpec.Type.valueOf(p.getProperty(k + "type", "LOCAL")); }
+            catch (IllegalArgumentException e) { continue; }
+            t.bindHost    = p.getProperty(k + "bindHost", "127.0.0.1");
+            t.bindPort    = parseInt(p.getProperty(k + "bindPort", "0"));
+            t.destHost    = p.getProperty(k + "destHost", "");
+            t.destPort    = parseInt(p.getProperty(k + "destPort", "0"));
+            t.description = p.getProperty(k + "description", "");
+            t.autoStart   = Boolean.parseBoolean(p.getProperty(k + "autoStart", "false"));
+            if (t.validate() == null && seen.add(t.key())) out.add(t);
+        }
+        return out;
     }
 
     private static Path dir(String group) {

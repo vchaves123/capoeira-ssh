@@ -32,6 +32,12 @@ public class MainWindow {
 
     private final List<TerminalTab> terminalTabs = new ArrayList<>();
 
+    // SSH tunnels, per terminal tab. The connection is created lazily on first use and lives (with
+    // its running tunnels) until the tab is closed — see releaseTunnels().
+    private final java.util.Map<TerminalTab, br.com.capoeirassh.ssh.ssh.TunnelConnection> tunnelConns =
+        new java.util.HashMap<>();
+    private final java.util.Map<TerminalTab, TunnelManagerWindow> tunnelWindows = new java.util.HashMap<>();
+
     // Tab drag-reorder state
     private CTabItem draggedTab     = null;
     private int      dragStartX     = 0;
@@ -126,11 +132,12 @@ public class MainWindow {
                     .findFirst().orElse(null);
                 if (t == null) return;
 
-                if (!confirmCloseTab()) {
+                if (!confirmCloseTab(closeMessageFor(t))) {
                     event.doit = false;
                     return;
                 }
                 terminalTabs.remove(t);
+                releaseTunnels(t);
                 t.dispose();
                 reloadSessionsTab();
                 // Closing the current tab makes SWT auto-select another one without reliably
@@ -211,6 +218,8 @@ public class MainWindow {
         tab.setOnCloseRequest(() -> {
             if (confirmCloseTab("This tab is disconnected. Closing it will discard the "
                     + "scrollback history if you haven't saved it with \"Save History...\". "
+                    + (activeTunnelCount(tab) > 0
+                        ? "Its " + activeTunnelCount(tab) + " active tunnel(s) will also be stopped. " : "")
                     + "Close anyway?"))
                 closeTab(tab);
         });
@@ -228,6 +237,7 @@ public class MainWindow {
         // (e.g. a prior disconnected tab's onStateChanged) have had a chance to run.
         display.asyncExec(this::refreshSelectionColor);
         tab.getCanvas().setFocus();
+        display.asyncExec(() -> { if (terminalTabs.contains(tab)) autoStartTunnels(tab); });
     }
 
     private void reloadSessionsTab() {
@@ -274,7 +284,9 @@ public class MainWindow {
             .filter(t -> t.getTabItem() == current)
             .findFirst()
             .ifPresent(t -> {
+                if (activeTunnelCount(t) > 0 && !confirmCloseTab(closeMessageFor(t))) return;
                 terminalTabs.remove(t);
+                releaseTunnels(t);
                 t.dispose();
                 current.dispose();
                 reloadSessionsTab();
@@ -533,6 +545,13 @@ public class MainWindow {
                 miDownload.setText("Download file(s)...");
                 miDownload.setEnabled(!terminal.isDisconnected());
                 miDownload.addListener(SWT.Selection, ev -> downloadFiles(terminal));
+
+                new MenuItem(menu, SWT.SEPARATOR);
+
+                int activeTunnels = activeTunnelCount(terminal);
+                MenuItem miTunnels = new MenuItem(menu, SWT.PUSH);
+                miTunnels.setText(activeTunnels > 0 ? "Tunnels (" + activeTunnels + " active)..." : "Tunnels...");
+                miTunnels.addListener(SWT.Selection, ev -> openTunnels(terminal));
             }
 
             new MenuItem(menu, SWT.SEPARATOR);
@@ -544,6 +563,64 @@ public class MainWindow {
             menu.setLocation(e.x, e.y);
             menu.setVisible(true);
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // SSH tunnels (local -L / remote -R)
+    // -----------------------------------------------------------------------
+
+    private br.com.capoeirassh.ssh.ssh.TunnelConnection tunnelConnFor(TerminalTab terminal) {
+        return tunnelConns.computeIfAbsent(terminal, t -> new br.com.capoeirassh.ssh.ssh.TunnelConnection());
+    }
+
+    private int activeTunnelCount(TerminalTab terminal) {
+        br.com.capoeirassh.ssh.ssh.TunnelConnection c = tunnelConns.get(terminal);
+        return c == null ? 0 : c.activeCount();
+    }
+
+    /** Stops the tab's tunnels and drops its tunnel SSH connection (and window, if open). */
+    private void releaseTunnels(TerminalTab terminal) {
+        TunnelManagerWindow w = tunnelWindows.remove(terminal);
+        if (w != null) w.close();
+        br.com.capoeirassh.ssh.ssh.TunnelConnection c = tunnelConns.remove(terminal);
+        if (c != null) c.close();
+    }
+
+    private String closeMessageFor(TerminalTab terminal) {
+        int n = activeTunnelCount(terminal);
+        return n > 0
+            ? "Close this session? Its " + n + " active tunnel(s) will be stopped."
+            : "Close this session?";
+    }
+
+    private void openTunnels(TerminalTab terminal) {
+        br.com.capoeirassh.ssh.model.SessionInfo info = terminal.getSessionInfo();
+        if (info.tunnels.isEmpty()) {
+            MessageBox mb = new MessageBox(shell, SWT.ICON_INFORMATION | SWT.OK);
+            mb.setText("Tunnels");
+            mb.setMessage("This session has no tunnels yet.\n\nAdd them with the \"Tunnels…\" button "
+                + "in the session's Edit dialog (Sessions tab → right-click → Edit).");
+            mb.open();
+            return;
+        }
+        TunnelManagerWindow w = tunnelWindows.get(terminal);
+        if (w == null || w.isDisposed()) {
+            w = new TunnelManagerWindow(shell, info, tunnelConnFor(terminal), () -> {});
+            tunnelWindows.put(terminal, w);
+        }
+        w.open();
+    }
+
+    /** Starts the tunnels flagged "auto" right after a tab opens — only when the session's
+     *  credentials resolve silently (a saved credential), so opening a session never springs a
+     *  second password prompt on the user. */
+    private void autoStartTunnels(TerminalTab terminal) {
+        br.com.capoeirassh.ssh.model.SessionInfo info = terminal.getSessionInfo();
+        if (info.connectionType != br.com.capoeirassh.ssh.model.SessionInfo.ConnectionType.SSH) return;
+        if (info.credentialId == null || info.credentialId.isBlank()) return;
+        List<br.com.capoeirassh.ssh.model.TunnelSpec> auto = TunnelManagerWindow.autoStartSpecs(info);
+        if (auto.isEmpty()) return;
+        TunnelManagerWindow.startTunnels(shell, info, tunnelConnFor(terminal), auto, () -> {});
     }
 
     private void renameTab(TerminalTab terminal) {
@@ -955,7 +1032,7 @@ public class MainWindow {
     }
 
     private void closeAll() {
-        for (TerminalTab t : terminalTabs) t.dispose();
+        for (TerminalTab t : new ArrayList<>(terminalTabs)) { releaseTunnels(t); t.dispose(); }
         terminalTabs.clear();
         if (colorSelectionDisconnectedRed != null && !colorSelectionDisconnectedRed.isDisposed())
             colorSelectionDisconnectedRed.dispose();
@@ -1097,6 +1174,7 @@ public class MainWindow {
     private void closeTab(TerminalTab terminal) {
         CTabItem item = terminal.getTabItem();
         terminalTabs.remove(terminal);
+        releaseTunnels(terminal);
         terminal.dispose();
         item.dispose();
         reloadSessionsTab();

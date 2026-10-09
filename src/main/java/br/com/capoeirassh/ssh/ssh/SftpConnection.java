@@ -2,11 +2,8 @@ package br.com.capoeirassh.ssh.ssh;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
 import com.jcraft.jsch.ChannelSftp;
-import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
 import org.eclipse.swt.widgets.Display;
-
-import java.util.Arrays;
 
 /**
  * A standalone SSH connection dedicated to a single SFTP transfer (upload/download), completely
@@ -35,47 +32,10 @@ public class SftpConnection {
      *                 to known_hosts by the terminal's own connection)
      */
     public ChannelSftp connect(SessionInfo info, char[] password, Display display) throws Exception {
-        try {
-            JSch jsch = new JSch();
-            SshConnection.applyKnownHosts(jsch);
-
-            if (info.authType == SessionInfo.AuthType.PRIVATE_KEY
-                    && info.keyPath != null && !info.keyPath.isBlank()) {
-                byte[] passBytes = (password != null && password.length > 0) ? SshConnection.toBytes(password) : null;
-                try {
-                    jsch.addIdentity(info.keyPath, passBytes);
-                } finally {
-                    if (passBytes != null) Arrays.fill(passBytes, (byte) 0);
-                }
-            }
-
-            session = jsch.getSession(info.username, info.host, info.port);
-            session.setConfig("StrictHostKeyChecking", "ask");
-            session.setUserInfo(new SshConnection.SwtHostVerifier(display, info.host, info.port));
-            session.setConfig("ServerAliveInterval", "30");
-
-            if (info.authType == SessionInfo.AuthType.PASSWORD
-                    || info.authType == SessionInfo.AuthType.SAVED_CREDENTIAL) {
-                byte[] passBytes = (password != null) ? SshConnection.toBytes(password) : new byte[0];
-                try {
-                    session.setPassword(passBytes);
-                } finally {
-                    Arrays.fill(passBytes, (byte) 0);
-                }
-                session.setConfig("PreferredAuthentications", "password,keyboard-interactive");
-            } else {
-                session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
-            }
-
-            session.setTimeout(15_000);
-            session.connect(15_000);
-
-            sftp = (ChannelSftp) session.openChannel("sftp");
-            sftp.connect(15_000);
-            return sftp;
-        } finally {
-            if (password != null) Arrays.fill(password, '\0');
-        }
+        session = SshSessions.open(info, password, display);
+        sftp = (ChannelSftp) session.openChannel("sftp");
+        sftp.connect(15_000);
+        return sftp;
     }
 
     /** Disconnects the SFTP channel and the whole session. Safe to call even if {@link #connect}

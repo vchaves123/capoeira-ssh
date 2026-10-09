@@ -3,6 +3,7 @@ package br.com.capoeirassh.ssh.ui;
 import br.com.capoeirassh.ssh.model.CredentialEntry;
 import br.com.capoeirassh.ssh.model.SessionIconType;
 import br.com.capoeirassh.ssh.model.SessionInfo;
+import br.com.capoeirassh.ssh.model.TunnelSpec;
 import br.com.capoeirassh.ssh.storage.CredentialStore;
 import br.com.capoeirassh.ssh.storage.SessionStorage;
 import org.eclipse.swt.SWT;
@@ -253,9 +254,16 @@ public class SessionDialog {
             lblParity, cmbParity, lblStopBits, cmbStopBits, lblFlowControl, cmbFlowControl,
             lblEchoFiller, chkLocalEcho
         };
+        // The Tunnels row is created further down (it sits after the Configuration button), so it
+        // is filled in later; applyTypeVisibility reads it through this holder.
+        final Control[][] tunnelRow = { new Control[0] };
         Runnable applyTypeVisibility = () -> {
             boolean serial = cmbType.getSelectionIndex() == 1;
             for (Control c : sshOnlyControls) {
+                c.setVisible(!serial);
+                ((GridData) c.getLayoutData()).exclude = serial;
+            }
+            for (Control c : tunnelRow[0]) {
                 c.setVisible(!serial);
                 ((GridData) c.getLayoutData()).exclude = serial;
             }
@@ -404,6 +412,24 @@ public class SessionDialog {
                 dlg, "Configuration Setting", config[0], hostHint, isSerialNow);
             if (cfgDlg.open()) config[0] = cfgDlg.getResult();
         });
+
+        // ── Tunnels (SSH port-forwards) — SSH sessions only ─────────────────────
+        final java.util.concurrent.atomic.AtomicReference<List<TunnelSpec>> tunnels =
+            new java.util.concurrent.atomic.AtomicReference<>(new java.util.ArrayList<>());
+        if (editing != null) for (TunnelSpec t : editing.tunnels) tunnels.get().add(t.copy());
+
+        Label lblTunnelFiller = new Label(dlg, SWT.NONE);
+        lblTunnelFiller.setLayoutData(new GridData());
+        Button btnTunnels = new Button(dlg, SWT.PUSH);
+        btnTunnels.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+        Runnable refreshTunnelsBtn = () -> btnTunnels.setText(
+            tunnels.get().isEmpty() ? "Tunnels…" : "Tunnels (" + tunnels.get().size() + ")…");
+        refreshTunnelsBtn.run();
+        btnTunnels.addListener(SWT.Selection, e -> {
+            List<TunnelSpec> edited = new TunnelsDialog(dlg, tunnels.get()).open();
+            if (edited != null) { tunnels.set(edited); refreshTunnelsBtn.run(); }
+        });
+        tunnelRow[0] = new Control[] { lblTunnelFiller, btnTunnels };
 
         // ── Buttons ───────────────────────────────────────────────────────────
         new Label(dlg, SWT.NONE);
@@ -570,6 +596,7 @@ public class SessionDialog {
                 s.host = ""; s.port = 22; s.username = "";
                 s.authType = SessionInfo.AuthType.PASSWORD;
                 s.keyPath = ""; s.credentialId = "";
+                s.tunnels = new java.util.ArrayList<>();
 
                 config[0].applyTo(s);
                 if (s.name.isEmpty()) s.name = s.serialPortName;
@@ -580,6 +607,8 @@ public class SessionDialog {
                 s.connectionType = SessionInfo.ConnectionType.SSH;
                 s.host = host;
                 s.port = parsePort(txtPort.getText());
+                s.tunnels = new java.util.ArrayList<>();
+                for (TunnelSpec t : tunnels.get()) s.tunnels.add(t.copy());
 
                 String user = cmbUser.getText().trim();
 
