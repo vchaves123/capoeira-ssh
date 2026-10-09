@@ -61,6 +61,22 @@ class SessionInfoTest {
     }
 
     @Test
+    void copy_producesIndependentTunnels_deepCopied() {
+        SessionInfo source = new SessionInfo();
+        TunnelSpec t = new TunnelSpec();
+        t.bindPort = 5432; t.destPort = 5432; t.destHost = "db";
+        source.tunnels.add(t);
+
+        SessionInfo dest = source.copy();
+        assertNotSame(source.tunnels, dest.tunnels);
+        assertNotSame(source.tunnels.get(0), dest.tunnels.get(0), "TunnelSpec itself must be copied, not shared");
+        assertEquals(source.tunnels, dest.tunnels);
+
+        dest.tunnels.get(0).destHost = "changed";
+        assertEquals("db", source.tunnels.get(0).destHost, "editing the copy's tunnel must not touch the original");
+    }
+
+    @Test
     void copy_id_isCopiedNotRegenerated() {
         SessionInfo source = new SessionInfo();
         String originalId = source.id;
@@ -137,6 +153,10 @@ class SessionInfoTest {
             f.set(target, 1000 + counter);
         } else if (type == boolean.class) {
             f.set(target, !((boolean) f.get(target))); // flip from the default
+        } else if (type == List.class && f.getName().equals("tunnels")) {
+            TunnelSpec t = new TunnelSpec();
+            t.bindPort = 1000 + counter; t.destPort = 2000 + counter; t.description = "d" + counter;
+            f.set(target, new ArrayList<>(List.of(t)));
         } else if (type == List.class) {
             f.set(target, new ArrayList<>(List.of("tag" + counter)));
         } else if (type.isEnum()) {

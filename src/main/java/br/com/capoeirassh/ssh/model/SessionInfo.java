@@ -53,6 +53,8 @@ public class SessionInfo {
     public int      sortOrder = 0;
     /** Free-form labels for filtering/organizing, independent of group. Capped at 6. */
     public java.util.List<String> tags = new java.util.ArrayList<>();
+    /** Saved SSH port-forwards (local -L / remote -R). Empty for serial sessions. */
+    public java.util.List<TunnelSpec> tunnels = new java.util.ArrayList<>();
 
     // -----------------------------------------------------------------------
     // Serial (RS232) — only meaningful when connectionType == SERIAL
@@ -99,6 +101,8 @@ public class SessionInfo {
         c.allowColumnMode = allowColumnMode;
         c.sortOrder = sortOrder;
         c.tags = new java.util.ArrayList<>(tags);
+        c.tunnels = new java.util.ArrayList<>();
+        for (TunnelSpec t : tunnels) c.tunnels.add(t.copy());
         c.connectionType     = connectionType;
         c.serialPortName     = serialPortName;
         c.serialBaudRate     = serialBaudRate;
