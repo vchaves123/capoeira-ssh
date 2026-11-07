@@ -15,7 +15,9 @@ import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class SshConnection implements TerminalConnection {
 
@@ -79,6 +81,8 @@ public class SshConnection implements TerminalConnection {
             session.setConfig("StrictHostKeyChecking", "ask");
             session.setUserInfo(new SwtHostVerifier(display, info.host, info.port));
             session.setConfig("ServerAliveInterval", "30");
+
+            if (info.legacyAlgorithms) enableLegacyAlgorithms(session);
 
             if (info.authType == SessionInfo.AuthType.PASSWORD
                     || info.authType == SessionInfo.AuthType.SAVED_CREDENTIAL) {
@@ -150,6 +154,53 @@ public class SshConnection implements TerminalConnection {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /**
+     * Widens this session's algorithm proposals to include the SHA-1-era algorithms modern SSH
+     * turned off by default, so a connection can reach legacy network gear whose firmware never
+     * gained anything newer (see {@link SessionInfo#legacyAlgorithms}). Without this, such a
+     * server — typically offering only {@code ssh-rsa} as its host key — shares no algorithm with
+     * our proposal and the connection dies during negotiation, before authentication is attempted.
+     *
+     * <p>Every name below was verified to be registered in this jsch version; the implementations
+     * still ship, only the default proposals dropped them. One notable exception: {@code ssh-dss}
+     * (DSA host keys) is NOT re-enablable this way — jsch no longer maps that name to an
+     * implementation at all — so gear offering only a DSA host key stays unreachable.
+     */
+    private static void enableLegacyAlgorithms(Session session) {
+        appendAlgorithms(session, "server_host_key", "ssh-rsa");
+        appendAlgorithms(session, "PubkeyAcceptedAlgorithms", "ssh-rsa");
+        appendAlgorithms(session, "kex", "diffie-hellman-group14-sha1",
+                                         "diffie-hellman-group1-sha1",
+                                         "diffie-hellman-group-exchange-sha1");
+        for (String key : new String[]{ "cipher.s2c", "cipher.c2s" })
+            appendAlgorithms(session, key, "aes256-cbc", "aes192-cbc", "aes128-cbc", "3des-cbc");
+        for (String key : new String[]{ "mac.s2c", "mac.c2s" })
+            appendAlgorithms(session, key, "hmac-sha1", "hmac-sha1-96", "hmac-md5", "hmac-md5-96");
+    }
+
+    /**
+     * Appends {@code legacy} names to the comma-separated algorithm list already configured under
+     * {@code key}, keeping jsch's own current value as the base.
+     *
+     * <p>Appending rather than replacing is what keeps this safe in two directions. The legacy
+     * names land at the END of the list, i.e. lowest preference, so a server that supports a
+     * modern algorithm still negotiates that one — enabling this adds a fallback, it never
+     * downgrades a connection that had a better option. And because the base is read back from
+     * jsch instead of hardcoded here, a future jsch that adds stronger algorithms contributes
+     * them automatically, with no list of ours silently going stale.
+     *
+     * <p>A {@code key} this jsch version doesn't know returns null and is skipped, so a renamed
+     * config key degrades to "legacy not enabled for that category" rather than clobbering a
+     * default with a list invented here.
+     */
+    private static void appendAlgorithms(Session session, String key, String... legacy) {
+        String current = session.getConfig(key);
+        if (current == null || current.isBlank()) return;
+        List<String> names = new ArrayList<>(Arrays.asList(current.split(",")));
+        for (String name : legacy) if (!names.contains(name)) names.add(name);
+        session.setConfig(key, String.join(",", names));
+    }
 
     /** Lazily built once per process and then reused by every connection — see
      *  {@link #applyKnownHosts} for why this must be a single shared object rather than each

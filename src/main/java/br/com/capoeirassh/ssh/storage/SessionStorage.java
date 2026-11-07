@@ -66,6 +66,7 @@ public final class SessionStorage {
         p.setProperty("backspaceCode", String.valueOf(s.backspaceCode));
         p.setProperty("sshVerbose",    String.valueOf(s.sshVerbose));
         p.setProperty("allowColumnMode", String.valueOf(s.allowColumnMode));
+        p.setProperty("legacyAlgorithms", String.valueOf(s.legacyAlgorithms));
         p.setProperty("sortOrder",     String.valueOf(s.sortOrder));
         p.setProperty("tags",          String.join(",", s.tags));
         for (String tag : s.tags) TagRegistry.register(tag);
@@ -230,6 +231,9 @@ public final class SessionStorage {
         s.sshVerbose    = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
         // Defaults to true, so sessions saved before this option existed get the new behaviour.
         s.allowColumnMode = Boolean.parseBoolean(p.getProperty("allowColumnMode", "true"));
+        // Defaults to false: a session saved before this option existed keeps the modern-only
+        // algorithm set, rather than silently gaining SHA-1 fallbacks it never asked for.
+        s.legacyAlgorithms = Boolean.parseBoolean(p.getProperty("legacyAlgorithms", "false"));
         s.sortOrder     = parseInt(p.getProperty("sortOrder", "0"));
         s.tags          = parseTags(p.getProperty("tags", ""));
         String at        = p.getProperty("authType", "PASSWORD");

@@ -90,6 +90,7 @@ public final class SessionDefaults {
         if (c.backspaceCode != 0x08 && c.backspaceCode != 0x7F) c.backspaceCode = 0x7F;
         c.sshVerbose = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
         c.allowColumnMode = Boolean.parseBoolean(p.getProperty("allowColumnMode", "true"));
+        c.legacyAlgorithms = Boolean.parseBoolean(p.getProperty("legacyAlgorithms", "false"));
         current = c;
     }
 
@@ -115,6 +116,7 @@ public final class SessionDefaults {
         p.setProperty("backspaceCode", String.valueOf(current.backspaceCode));
         p.setProperty("sshVerbose", String.valueOf(current.sshVerbose));
         p.setProperty("allowColumnMode", String.valueOf(current.allowColumnMode));
+        p.setProperty("legacyAlgorithms", String.valueOf(current.legacyAlgorithms));
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             p.store(baos, null);
