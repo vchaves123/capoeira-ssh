@@ -156,6 +156,37 @@ public class SshConnection implements TerminalConnection {
     // -----------------------------------------------------------------------
 
     /**
+     * True when {@code t} is the failure that {@link SessionInfo#legacyAlgorithms} exists to fix:
+     * the two sides found no algorithm in common and gave up before authentication.
+     *
+     * <p>Matched on jsch's own exception type rather than on the message text, so rewording (or
+     * one day localizing) that message cannot silently turn the offer below off. The cause chain
+     * is walked because the throw site is several frames inside jsch and a future version could
+     * wrap it.
+     */
+    public static boolean isAlgorithmNegotiationFailure(Throwable t) {
+        for (Throwable c = t; c != null && c != c.getCause(); c = c.getCause())
+            if (c instanceof JSchAlgoNegoFailException) return true;
+        return false;
+    }
+
+    /**
+     * A one-line, human-sized summary of which algorithm category failed and what the server
+     * offered — e.g. {@code server_host_key: ssh-rsa}.
+     *
+     * <p>jsch's own message embeds both full proposals, which runs to several hundred characters
+     * of algorithm names and tells a user nothing actionable. The server's side alone is the part
+     * worth showing: it is short for exactly the legacy gear this concerns, and it names the thing
+     * our defaults refuse. Returns null when {@code t} is not a negotiation failure.
+     */
+    public static String describeNegotiationFailure(Throwable t) {
+        for (Throwable c = t; c != null && c != c.getCause(); c = c.getCause())
+            if (c instanceof JSchAlgoNegoFailException f)
+                return f.getAlgorithmName() + ": " + f.getServerProposal();
+        return null;
+    }
+
+    /**
      * Widens this session's algorithm proposals to include the SHA-1-era algorithms modern SSH
      * turned off by default, so a connection can reach legacy network gear whose firmware never
      * gained anything newer (see {@link SessionInfo#legacyAlgorithms}). Without this, such a
@@ -166,8 +197,11 @@ public class SshConnection implements TerminalConnection {
      * still ship, only the default proposals dropped them. One notable exception: {@code ssh-dss}
      * (DSA host keys) is NOT re-enablable this way — jsch no longer maps that name to an
      * implementation at all — so gear offering only a DSA host key stays unreachable.
+     *
+     * <p>Package-private, not private, so a test can drive the real thing against a real
+     * {@link Session} rather than re-implementing the logic it means to verify.
      */
-    private static void enableLegacyAlgorithms(Session session) {
+    static void enableLegacyAlgorithms(Session session) {
         appendAlgorithms(session, "server_host_key", "ssh-rsa");
         appendAlgorithms(session, "PubkeyAcceptedAlgorithms", "ssh-rsa");
         appendAlgorithms(session, "kex", "diffie-hellman-group14-sha1",
@@ -193,8 +227,10 @@ public class SshConnection implements TerminalConnection {
      * <p>A {@code key} this jsch version doesn't know returns null and is skipped, so a renamed
      * config key degrades to "legacy not enabled for that category" rather than clobbering a
      * default with a list invented here.
+     *
+     * <p>Package-private for the same reason as {@link #enableLegacyAlgorithms}.
      */
-    private static void appendAlgorithms(Session session, String key, String... legacy) {
+    static void appendAlgorithms(Session session, String key, String... legacy) {
         String current = session.getConfig(key);
         if (current == null || current.isBlank()) return;
         List<String> names = new ArrayList<>(Arrays.asList(current.split(",")));

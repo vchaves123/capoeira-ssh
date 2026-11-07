@@ -1,6 +1,7 @@
 package br.com.capoeirassh.ssh.ui;
 
 import br.com.capoeirassh.ssh.model.SessionInfo;
+import br.com.capoeirassh.ssh.storage.SessionStorage;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.SWTError;
 import org.eclipse.swt.custom.*;
@@ -9,6 +10,7 @@ import org.eclipse.swt.layout.*;
 import org.eclipse.swt.program.Program;
 import org.eclipse.swt.widgets.*;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -215,6 +217,7 @@ public class MainWindow {
 
         TerminalTab tab = new TerminalTab(tabFolder, info, password);
         tab.setOnReconnectRequest(() -> reconnectTab(tab));
+        tab.setOnLegacyRetryRequest(() -> enableLegacyAndReconnect(tab));
         tab.setOnCloseRequest(() -> {
             if (confirmCloseTab("This tab is disconnected. Closing it will discard the "
                     + "scrollback history if you haven't saved it with \"Save History...\". "
@@ -473,6 +476,32 @@ public class MainWindow {
         ConnectDialog dlg = new ConnectDialog(shell, tab.getSessionInfo());
         char[] pw = dlg.open();
         if (pw != null) tab.reconnect(pw);
+    }
+
+    /**
+     * Turns on this session's legacy algorithm fallback and retries, after the user accepted the
+     * offer TerminalTab makes when algorithm negotiation finds nothing in common.
+     *
+     * <p>The choice is written to the session file so the user answers once per device rather
+     * than on every launch — the offer says "this saved session" precisely so that is expected
+     * rather than a surprise. A failed write is reported but does NOT abort the retry: the
+     * in-memory flag is enough to make this connection work, and losing a preference is a far
+     * smaller problem than refusing to connect over it.
+     */
+    private void enableLegacyAndReconnect(TerminalTab tab) {
+        SessionInfo info = tab.getSessionInfo();
+        info.legacyAlgorithms = true;
+        try {
+            SessionStorage.save(info);
+        } catch (IOException e) {
+            MessageBox mb = new MessageBox(shell, SWT.ICON_WARNING | SWT.OK);
+            mb.setText("Session not saved");
+            mb.setMessage("Legacy algorithms are enabled for this connection attempt, but the "
+                + "setting could not be written to the session file:\n" + e.getMessage()
+                + "\n\nYou may need to enable it again next time.");
+            mb.open();
+        }
+        reconnectTab(tab);
     }
 
     // -----------------------------------------------------------------------
