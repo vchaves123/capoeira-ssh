@@ -112,6 +112,10 @@ public class TerminalTab {
 
     /** Called (on the UI thread) when the user requests a reconnect. */
     private Runnable onReconnectRequest;
+    /** Called (on the UI thread) when the user accepts the offer to enable legacy algorithms
+     *  after a failed algorithm negotiation. Persisting the session and reconnecting both belong
+     *  to MainWindow, same reasoning as onReconnectRequest. */
+    private Runnable onLegacyRetryRequest;
     /** Called (on the UI thread) when the user requests closing this tab from the disconnected
      *  overlay — MainWindow owns terminalTabs/tabFolder, so it (not this class) does the actual
      *  close, same reasoning as onReconnectRequest. */
@@ -1295,12 +1299,38 @@ public class TerminalTab {
         } catch (Exception ex) {
             if (closed) return;
             String msg = ex.getMessage();
+            // A no-common-algorithm failure has one specific fix, and the raw jsch message (both
+            // full proposals, several hundred characters of algorithm names) does not hint at it.
+            // Offer it directly instead — but only while the option is still off, so a server that
+            // fails even WITH the legacy set enabled reports the plain error rather than looping
+            // on an offer that already did not help.
+            boolean offerLegacy = !info.legacyAlgorithms
+                && SshConnection.isAlgorithmNegotiationFailure(ex);
+            String negotiationDetail = offerLegacy
+                ? SshConnection.describeNegotiationFailure(ex) : null;
             display.asyncExec(() -> {
                 if (canvas.isDisposed()) return;
-                MessageBox mb = new MessageBox(canvas.getShell(), SWT.ICON_ERROR | SWT.OK);
-                mb.setText("Connection error");
-                mb.setMessage("Could not connect to " + info.label() + ":\n" + msg);
-                mb.open();
+                if (offerLegacy) {
+                    MessageBox ask = new MessageBox(canvas.getShell(),
+                        SWT.ICON_QUESTION | SWT.YES | SWT.NO);
+                    ask.setText("Connection error");
+                    ask.setMessage("Could not connect to " + info.label() + ".\n\n"
+                        + "This server only offers algorithms that modern SSH has disabled ("
+                        + negotiationDetail + "), so no algorithm could be agreed on. That "
+                        + "usually means older network equipment.\n\n"
+                        + "Enable legacy algorithms for this saved session and reconnect?\n\n"
+                        + "These algorithms rely on SHA-1, which weakens the host key check that "
+                        + "detects a man-in-the-middle, so enable it only for devices you trust.");
+                    if (ask.open() == SWT.YES && onLegacyRetryRequest != null) {
+                        onLegacyRetryRequest.run();
+                        return;   // reconnect takes over; no disconnected overlay in between
+                    }
+                } else {
+                    MessageBox mb = new MessageBox(canvas.getShell(), SWT.ICON_ERROR | SWT.OK);
+                    mb.setText("Connection error");
+                    mb.setMessage("Could not connect to " + info.label() + ":\n" + msg);
+                    mb.open();
+                }
             });
             handleDisconnect();
         }
@@ -1819,6 +1849,7 @@ public class TerminalTab {
     public boolean     isDisconnected()                   { return disconnected; }
 
     public void        setOnReconnectRequest(Runnable r)  { this.onReconnectRequest = r; }
+    public void        setOnLegacyRetryRequest(Runnable r){ this.onLegacyRetryRequest = r; }
     public void        setOnCloseRequest(Runnable r)      { this.onCloseRequest = r; }
     /** Called after a tab drag-reorder replaces the underlying CTabItem. */
     public void        replaceTabItem(CTabItem newItem)   { this.tabItem = newItem; }

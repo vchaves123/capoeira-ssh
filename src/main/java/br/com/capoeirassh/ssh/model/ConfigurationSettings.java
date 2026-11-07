@@ -24,6 +24,9 @@ public class ConfigurationSettings {
 
     /** When true, the remote may switch between 80 and 132 columns with DECCOLM, resizing the window. */
     public boolean allowColumnMode = true;
+    /** When true, offer the SHA-1-era algorithms modern SSH disabled, to reach legacy gear —
+     *  see {@link SessionInfo#legacyAlgorithms}. Takes effect on the next connect. */
+    public boolean legacyAlgorithms = false;
 
     public static ConfigurationSettings fromSession(SessionInfo s) {
         ConfigurationSettings c = new ConfigurationSettings();
@@ -38,6 +41,7 @@ public class ConfigurationSettings {
         c.backspaceCode = s.backspaceCode;
         c.sshVerbose    = s.sshVerbose;
         c.allowColumnMode = s.allowColumnMode;
+        c.legacyAlgorithms = s.legacyAlgorithms;
         return c;
     }
 
@@ -53,6 +57,7 @@ public class ConfigurationSettings {
         s.backspaceCode = backspaceCode;
         s.sshVerbose    = sshVerbose;
         s.allowColumnMode = allowColumnMode;
+        s.legacyAlgorithms = legacyAlgorithms;
     }
 
     public ConfigurationSettings copy() {
@@ -64,6 +69,7 @@ public class ConfigurationSettings {
         c.terminalType = terminalType; c.backspaceCode = backspaceCode;
         c.sshVerbose = sshVerbose;
         c.allowColumnMode = allowColumnMode;
+        c.legacyAlgorithms = legacyAlgorithms;
         return c;
     }
 }

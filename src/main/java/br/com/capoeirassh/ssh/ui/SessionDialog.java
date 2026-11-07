@@ -156,6 +156,27 @@ public class SessionDialog {
         btnSaveCred.setText("Save Credential…");
         btnSaveCred.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
 
+        // ── Legacy algorithm fallback — SSH only ─────────────────────────────
+        // Lives here, on the saved session, rather than in the Configuration Setting dialog
+        // reachable from a running tab: this option exists precisely for servers we CANNOT
+        // connect to, where no tab is ever created and that dialog is therefore unreachable.
+        Label lblCompat = label(dlg, "Compatibility:");
+        Button chkLegacy = new Button(dlg, SWT.CHECK);
+        chkLegacy.setText("Allow legacy algorithms for old devices (ssh-rsa / SHA-1)");
+        chkLegacy.setToolTipText(
+            "Some older network equipment only supports algorithms that modern SSH disabled, and "
+          + "fails during negotiation before authentication. Enabling this offers them as a "
+          + "fallback — a server that supports modern algorithms still uses those. Leave off "
+          + "unless a device needs it: these algorithms rely on SHA-1, which weakens the host key "
+          + "check that detects a man-in-the-middle.");
+        chkLegacy.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
+        // Same source the Configuration block below uses: the session being edited, or the
+        // saved defaults for a brand-new one — so this option inherits from "default settings
+        // for new sessions" exactly like every other setting does.
+        chkLegacy.setSelection(editing != null
+            ? editing.legacyAlgorithms
+            : br.com.capoeirassh.ssh.storage.SessionDefaults.get().legacyAlgorithms);
+
         // ── Serial (RS232) config — shown only when Type = Serial (RS232) ─────
         Label lblSerialPort = label(dlg, "Serial port:");
         Composite cmpSerialPort = new Composite(dlg, SWT.NONE);
@@ -247,7 +268,7 @@ public class SessionDialog {
         Control[] sshOnlyControls = {
             lblHost, txtHost, lblPort, txtPort,
             lblUser, cmbUser, lblKeyFiller, chkKey, lblKeyFile, cmpKey, lblPwd, cmpPwd,
-            lblSaveCredFiller, btnSaveCred
+            lblSaveCredFiller, btnSaveCred, lblCompat, chkLegacy
         };
         Control[] serialOnlyControls = {
             lblSerialPort, cmpSerialPort, lblBaud, cmbBaud, lblDataBits, cmbDataBits,
@@ -662,6 +683,11 @@ public class SessionDialog {
                 }
 
                 config[0].applyTo(s);
+                // AFTER applyTo, deliberately: config[0] carries its own copy of this flag (so a
+                // round trip through the Configuration Setting dialog doesn't drop it), and that
+                // copy is whatever the session held when this dialog opened. The checkbox is the
+                // user's current answer, so it has to win over the snapshot.
+                s.legacyAlgorithms = chkLegacy.getSelection();
 
                 if (s.name.isEmpty()) {
                     String u = !user.isEmpty() ? user : s.username;

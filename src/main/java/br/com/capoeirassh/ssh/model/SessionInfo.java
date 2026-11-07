@@ -47,6 +47,18 @@ public class SessionInfo {
      *  equivalent — off there by default, on here, since a full-screen app asking for 132
      *  columns and silently getting 80 renders corrupted output instead of failing visibly. */
     public boolean  allowColumnMode = true;
+    /** When true, the algorithms this client offers are widened to include ones modern SSH
+     *  disabled by default — notably the {@code ssh-rsa} host key (RSA signed with SHA-1), plus
+     *  the SHA-1 key exchanges, CBC ciphers and SHA-1/MD5 MACs of the same generation. Needed to
+     *  reach old network gear whose firmware never gained anything newer; such a server offers
+     *  only {@code ssh-rsa}, finds no overlap with the modern defaults, and the connection fails
+     *  during algorithm negotiation before authentication is ever attempted.
+     *
+     *  <p>Off by default, and deliberately per session: SHA-1 is no longer collision resistant,
+     *  so accepting it weakens exactly the host-key check that detects a man-in-the-middle. The
+     *  legacy names are appended AFTER the modern ones, so a server that supports both still
+     *  negotiates the strong algorithm — this only adds a fallback, it does not prefer it. */
+    public boolean  legacyAlgorithms = false;
     /** Manual display order in the flat sessions list (List view) — lower sorts first.
      *  Sessions sharing the default 0 fall back to their on-disk load order until the user
      *  drags one, at which point the whole visible list is resequenced to 0..N-1. */
@@ -99,6 +111,7 @@ public class SessionInfo {
         c.backspaceCode = backspaceCode;
         c.sshVerbose = sshVerbose;
         c.allowColumnMode = allowColumnMode;
+        c.legacyAlgorithms = legacyAlgorithms;
         c.sortOrder = sortOrder;
         c.tags = new java.util.ArrayList<>(tags);
         c.tunnels = new java.util.ArrayList<>();
