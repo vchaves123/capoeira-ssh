@@ -48,9 +48,12 @@ public class SerialConnection implements TerminalConnection {
             mapStopBits(info.serialStopBits),
             mapParity(info.serialParity));
         port.setFlowControl(mapFlowControl(info.serialFlowControl));
-        // Blocking reads with no timeout — mirrors the semantics TerminalTab's reader thread
-        // already relies on for an SSH channel's InputStream (a blocking read loop).
-        port.setComPortTimeouts(SerialPort.TIMEOUT_READ_BLOCKING, 0, 0);
+        // SEMI_BLOCKING with timeout 0: read() returns as soon as at least one byte is available
+        // and waits indefinitely while the line is idle — what TerminalTab's reader loop needs.
+        // Do NOT use TIMEOUT_READ_BLOCKING here: in jSerialComm it waits until the *whole*
+        // requested count arrives (the reader asks for 4096 bytes), so a console's login prompt
+        // would sit in the driver buffer and nothing would show until ~4 KB had accumulated.
+        port.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
 
         if (!port.openPort())
             throw new IOException("Could not open serial port " + info.serialPortName
