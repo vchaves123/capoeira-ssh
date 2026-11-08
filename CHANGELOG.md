@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.3.0] — 2026-11-08
+
+### Added
+- **Legacy algorithms for old devices (per session)**: a new "Allow legacy algorithms for old
+  devices (ssh-rsa / SHA-1)" option in the session dialog lets Capoeira reach network gear whose
+  firmware only offers algorithms modern SSH has disabled (for example switches that present only
+  an `ssh-rsa` host key). It is **off by default** and applies only to the sessions where you turn
+  it on. The legacy algorithms are appended at the lowest preference, so a server that supports
+  something modern still negotiates that. When a connection fails because of an algorithm
+  mismatch, Capoeira now explains which category failed and what the server offered, and offers to
+  enable the option for that session and reconnect. Not supported: `ssh-dss` (DSA) host keys.
+
+### Fixed
+- **Serial console showed nothing until about 4 KB had arrived.** The reader waited for a full
+  buffer before returning, so a login prompt stayed hidden and then appeared all at once — one
+  prompt per Enter pressed — looking like a login loop. Output now appears as soon as the first
+  byte arrives, and an idle console no longer risks dropping the connection.
+
+### Changed
+- Internal: the terminal repaint routine was split into smaller methods. No visible change.
+
+---
+
 ## [2.2.0] — 2026-10-09
 
 ### Added
