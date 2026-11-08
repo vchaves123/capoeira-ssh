@@ -663,6 +663,217 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     // Rendering  (double-buffered via off-screen Image)
     // -----------------------------------------------------------------------
+    /**
+     * Everything one repaint computes once and then only reads: the grid's dimensions, where the
+     * cursor is, how far the selection reaches, and the pixel extents of the painted area.
+     *
+     * <p>Grouping these lets the per-row and per-cell painting be separate methods taking a
+     * single argument instead of a dozen, which is what keeps {@code render()} small enough for
+     * the JIT to handle — see the comment on {@link #render}.
+     *
+     * <p>One small allocation per repaint. It never escapes {@code render()}, so escape analysis
+     * can usually stack-allocate it away entirely; either way it is noise next to the thousands
+     * of cell operations that follow.
+     */
+    private record Frame(Rectangle area, int cols, int rows, int curRow, int curCol,
+                         boolean hasSel, int selRow0, int selCol0, int selRow1, int selCol1,
+                         int rightMargin, int bottomMargin) { }
+
+    /**
+     * Snapshots the emulator and selection state for one repaint.
+     *
+     * <p>The selection is stored in absolute buffer rows, which move as scrollOffset changes, so
+     * it is reprojected onto the current viewport here — once per frame rather than once per cell.
+     *
+     * <p>Whether there IS a selection is tracked separately from where it lands: {@link
+     * #fromAbsRow} legitimately returns a negative row once the selection's start has scrolled
+     * above the top of the visible area, and a row {@code >= rows} once its end is below the
+     * bottom. Folding "no selection" into the same int as a sentinel (selRow0 = -1, gated on
+     * {@code selRow0 >= 0}) made those two cases indistinguishable, so a selection large enough to
+     * reach off the top of the screen stopped being painted at all — drag-select down through the
+     * scrollback and the highlight vanished the moment it outgrew the viewport, even though the
+     * selection was still there and right-click still copied the correct text.
+     */
+    private Frame currentFrame(Rectangle area) {
+        int cols = emulator.getCols();
+        int rows = emulator.getRows();
+
+        boolean hasSel = selAnchorCol >= 0 && hasSelection();
+        int selRow0 = 0, selCol0 = 0, selRow1 = 0, selCol1 = 0;
+        if (hasSel) {
+            int[] norm = normalizedSelection();
+            selRow0 = fromAbsRow(norm[0]); selCol0 = norm[1];
+            selRow1 = fromAbsRow(norm[2]); selCol1 = norm[3];
+        }
+
+        return new Frame(area, cols, rows,
+                         emulator.getCursorRow(), emulator.getCursorCol(),
+                         hasSel, selRow0, selCol0, selRow1, selCol1,
+                         cols * charWidth, rows * charHeight);
+    }
+
+    /**
+     * Paints every visible row.
+     *
+     * <p>This and {@link #paintRow} exist so that no method carrying real bulk also carries a
+     * loop. HotSpot only ever considers a method for on-stack replacement if it has one, and an
+     * OSR compilation of {@code render()} back when the grid loops were inlined there — 1558
+     * bytes of nested loops, exception handlers and native calls — is what crashed the C2
+     * compiler and took the whole JVM down with it. The two loops now live in methods of a few
+     * dozen bytes each, and the bulky one ({@link #paintCell}) has no loop at all, so it can only
+     * ever be compiled through the ordinary invocation-counter path.
+     *
+     * @return whether any painted cell has SGR 5 set, which drives the text-blink timer
+     */
+    private boolean paintGrid(GC gc, Frame f) {
+        boolean sawBlinkingCell = false;
+        for (int r = 0; r < f.rows(); r++) sawBlinkingCell |= paintRow(gc, f, r);
+        return sawBlinkingCell;
+    }
+
+    /**
+     * Paints one row of cells, then extends the rightmost cell's background into the fractional
+     * column the grid does not fill.
+     *
+     * @return whether any cell in this row has SGR 5 set
+     */
+    private boolean paintRow(GC gc, Frame f, int r) {
+        boolean sawBlinkingCell = false;
+        int lastColBg = -1; // rightmost column's own bg, for right-margin fill
+        for (int c = 0; c < f.cols(); c++) {
+            TerminalCell cell = emulator.getCell(r, c, scrollOffset);
+            if (cell == null) continue;
+            // Detected here rather than inside paintCell so that method can return the
+            // one value the row still needs (lastColBg) instead of a pair — a per-cell
+            // record would mean thousands of allocations per frame. Equivalent to the
+            // old inline code: this ran unconditionally whenever the cell blinks.
+            if (cell.blink) sawBlinkingCell = true;
+            lastColBg = paintCell(gc, f, cell, r, c, lastColBg);
+        }
+        // Extend last cell's background into the fractional-column gap at the right.
+        if (f.rightMargin() < f.area().width && lastColBg >= 0) {
+            Color cbg = swtRgb(lastColBg);
+            gc.setBackground(cbg);
+            gc.fillRectangle(f.rightMargin(), r * charHeight,
+                             f.area().width - f.rightMargin(), charHeight);
+            cbg.dispose();
+        }
+        return sawBlinkingCell;
+    }
+
+    /**
+     * Paints one cell: its background, and its glyph when it has one.
+     *
+     * <p>Extracted from {@code render()}'s inner loop so the loop the JIT compiles on-stack is a
+     * handful of bytecodes instead of the whole 1500-byte method — see {@link #render}.
+     *
+     * @param lastColBg the row's running "background of the rightmost cell", used afterwards to
+     *                  fill the fractional column at the right edge
+     * @return {@code lastColBg}, updated if this cell was that rightmost one
+     */
+    private int paintCell(GC gc, Frame f, TerminalCell cell, int r, int c, int lastColBg) {
+        int fg = TerminalEmulator.resolveColor(cell.fgColor);
+        int bg = TerminalEmulator.resolveColor(cell.bgColor);
+
+        // Reverse video swaps foreground and background. resolveColor returns -1 for
+        // "the terminal default", and swapping -1 with -1 is a no-op — which is why
+        // reverse used to render identically to normal text whenever the cell kept
+        // the default colours (the common case: tput rev, status bars, vttest's
+        // "negative"). Resolve the sentinel to the real colour before swapping.
+        if (cell.reverse) {
+            int[] swapped = swapForReverseVideo(fg, bg, defaultFgRgb, defaultBgRgb);
+            fg = swapped[0]; bg = swapped[1];
+        }
+
+        // cmd.exe-style selection: swap fg/bg, same as reverse video, rather than a
+        // translucent tint over already-rendered text — so a selected cell reads
+        // exactly the way selected text does in a real console. Applying it after
+        // SGR reverse (rather than instead of it) means a selected cell that was
+        // already reverse-video correctly reverses back to normal-looking colours,
+        // matching how a real terminal composes the two.
+        if (f.hasSel() && r >= f.selRow0() && r <= f.selRow1()
+                && (r > f.selRow0() || c >= f.selCol0())
+                && (r < f.selRow1() || c <= f.selCol1())) {
+            int[] swapped = swapForReverseVideo(fg, bg, defaultFgRgb, defaultBgRgb);
+            fg = swapped[0]; bg = swapped[1];
+        }
+
+        // Cursor highlight (only when scrolled to bottom)
+        boolean isCursor = scrollOffset == 0
+                        && r == f.curRow() && c == f.curCol()
+                        && emulator.isCursorVisible();
+        if (isCursor && cursorBlink) {
+            int tmp = (fg < 0 ? 0xCCCCCC : fg);
+            fg = (bg < 0 ? 0 : bg);
+            bg = tmp;
+            if (bg < 0) bg = 0xFFFFFF;
+        }
+
+        int px = c * charWidth;
+        int py = r * charHeight;
+
+        if (bg >= 0) {
+            Color cbg = swtRgb(bg);
+            gc.setBackground(cbg);
+            gc.fillRectangle(px, py, charWidth, charHeight);
+            cbg.dispose();
+        }
+        // The fractional-column gap at the right must match the actual rightmost
+        // cell's own background — not whichever earlier column last had an explicit
+        // colour — so a colour run that ends mid-row doesn't bleed into the border.
+        if (c == f.cols() - 1 && !isCursor) lastColBg = bg;
+
+        // SGR 5: the glyph is hidden on the off phase, but its background still gets
+        // painted above, so a blinking cell pulses its text rather than its block.
+        // (The second assignment below is redundant with the one above — nothing between
+        // them changes bg, isCursor or c — but it is preserved verbatim from the inline
+        // version rather than "tidied" during an extraction whose tests do not cover blink.)
+        if (cell.blink && !textBlinkOn) {
+            if (c == f.cols() - 1 && !isCursor) lastColBg = bg;
+            return lastColBg;
+        }
+
+        // The trailer half of a double-width glyph carries no character of its own —
+        // its background was painted above (so a wide glyph's highlight covers both
+        // columns), but the glyph itself is drawn from the leading cell.
+        if (cell.character != ' ' && cell.character != '\0' && !cell.wideTrailer) {
+            String glyph = glyphOf(cell.character);
+            Color cfg = fg >= 0 ? swtRgb(fg) : null;
+            gc.setForeground(Objects.requireNonNullElse(cfg, defaultFg));
+
+            // A code point the terminal font has no glyph for is drawn with a
+            // substitute font instead of a tofu box (see GlyphFallback).
+            Font drawFont = glyphFallback != null
+                    ? glyphFallback.fontFor(cell.character, cell.bold) : null;
+            if (drawFont == null && cell.bold) {
+                // Reuse a cached bold font — creating and disposing a native Font per
+                // bold cell per frame let a hostile server churn GDI/X11 font handles
+                // and freeze the whole UI thread.
+                if (termFontBold == null || termFontBold.isDisposed())
+                    termFontBold = new Font(display, termFont.getFontData()[0].getName(), termFontSize, SWT.BOLD);
+                drawFont = termFontBold;
+            }
+            if (drawFont != null) {
+                gc.setFont(drawFont);
+                // Substitute glyphs are sized to fit the cell but keep the substitute
+                // font's own side bearings, so centre them in the columns they own
+                // rather than hanging them off the left edge.
+                int gx = glyphFallback != null ? glyphFallback.xOffsetFor(cell.character) : 0;
+                gc.drawString(glyph, px + gx, py, true);
+                gc.setFont(termFont);
+            } else {
+                gc.drawString(glyph, px, py, true);
+            }
+
+            if (cell.underline) {
+                gc.drawLine(px, py + charHeight - 1, px + charWidth - 1, py + charHeight - 1);
+            }
+
+            if (cfg != null) cfg.dispose();
+        }
+        return lastColBg;
+    }
+
     private void render(GC screen) {
         Rectangle area = canvas.getClientArea();
         if (area.width <= 0 || area.height <= 0) return;
@@ -682,146 +893,15 @@ public class TerminalTab {
             gc.setBackground(defaultBg);
             gc.fillRectangle(area);
 
-            int cols    = emulator.getCols();
-            int rows    = emulator.getRows();
-            int curRow  = emulator.getCursorRow();
-            int curCol  = emulator.getCursorCol();
+            Frame f = currentFrame(area);
+            int cols = f.cols(), rows = f.rows();
+            int curRow = f.curRow(), curCol = f.curCol();
+            int rightMargin = f.rightMargin(), bottomMargin = f.bottomMargin();
+            boolean hasSel = f.hasSel();
+            int selRow0 = f.selRow0(), selCol0 = f.selCol0();
+            int selRow1 = f.selRow1(), selCol1 = f.selCol1();
 
-            int rightMargin = cols * charWidth;
-            int bottomMargin = rows * charHeight;
-
-            // Selection bounds, reprojected onto the current viewport (selection is stored as
-            // absolute buffer rows, which move as scrollOffset changes) — computed once here
-            // rather than per cell.
-            //
-            // Whether there IS a selection is tracked separately from where it lands: fromAbsRow()
-            // legitimately returns a negative row once the selection's start has scrolled above
-            // the top of the visible area, and a row >= rows once its end is below the bottom.
-            // Folding "no selection" into the same int as a sentinel (selRow0 = -1, gated on
-            // `selRow0 >= 0`) made those two cases indistinguishable, so a selection large enough
-            // to reach off the top of the screen stopped being painted entirely — the exact
-            // reported bug: drag-select down through the scrollback and the highlight vanishes the
-            // moment the selection outgrows the viewport, even though the selection is still there
-            // and right-click still copies the correct text.
-            boolean hasSel = selAnchorCol >= 0 && hasSelection();
-            int selRow0 = 0, selCol0 = 0, selRow1 = 0, selCol1 = 0;
-            if (hasSel) {
-                int[] norm = normalizedSelection();
-                selRow0 = fromAbsRow(norm[0]); selCol0 = norm[1];
-                selRow1 = fromAbsRow(norm[2]); selCol1 = norm[3];
-            }
-
-            for (int r = 0; r < rows; r++) {
-                int lastColBg = -1; // rightmost column's own bg, for right-margin fill
-                for (int c = 0; c < cols; c++) {
-                    TerminalCell cell = emulator.getCell(r, c, scrollOffset);
-                    if (cell == null) continue;
-
-                    int fg = TerminalEmulator.resolveColor(cell.fgColor);
-                    int bg = TerminalEmulator.resolveColor(cell.bgColor);
-
-                    // Reverse video swaps foreground and background. resolveColor returns -1 for
-                    // "the terminal default", and swapping -1 with -1 is a no-op — which is why
-                    // reverse used to render identically to normal text whenever the cell kept
-                    // the default colours (the common case: tput rev, status bars, vttest's
-                    // "negative"). Resolve the sentinel to the real colour before swapping.
-                    boolean rev = cell.reverse;
-                    if (rev) {
-                        int[] swapped = swapForReverseVideo(fg, bg, defaultFgRgb, defaultBgRgb);
-                        fg = swapped[0]; bg = swapped[1];
-                    }
-
-                    // cmd.exe-style selection: swap fg/bg, same as reverse video, rather than a
-                    // translucent tint over already-rendered text — so a selected cell reads
-                    // exactly the way selected text does in a real console. Applying it after
-                    // SGR reverse (rather than instead of it) means a selected cell that was
-                    // already reverse-video correctly reverses back to normal-looking colours,
-                    // matching how a real terminal composes the two.
-                    if (hasSel && r >= selRow0 && r <= selRow1
-                            && (r > selRow0 || c >= selCol0) && (r < selRow1 || c <= selCol1)) {
-                        int[] swapped = swapForReverseVideo(fg, bg, defaultFgRgb, defaultBgRgb);
-                        fg = swapped[0]; bg = swapped[1];
-                    }
-
-                    // Cursor highlight (only when scrolled to bottom)
-                    boolean isCursor = scrollOffset == 0
-                                    && r == curRow && c == curCol
-                                    && emulator.isCursorVisible();
-                    if (isCursor && cursorBlink) {
-                        int tmp = (fg < 0 ? 0xCCCCCC : fg);
-                        fg = (bg < 0 ? 0 : bg);
-                        bg = tmp;
-                        if (bg < 0) bg = 0xFFFFFF;
-                    }
-
-                    int px = c * charWidth;
-                    int py = r * charHeight;
-
-                    if (bg >= 0) {
-                        Color cbg = swtRgb(bg);
-                        gc.setBackground(cbg);
-                        gc.fillRectangle(px, py, charWidth, charHeight);
-                        cbg.dispose();
-                    }
-                    // The fractional-column gap at the right must match the actual rightmost
-                    // cell's own background — not whichever earlier column last had an explicit
-                    // colour — so a colour run that ends mid-row doesn't bleed into the border.
-                    if (c == cols - 1 && !isCursor) lastColBg = bg;
-
-                    // SGR 5: the glyph is hidden on the off phase, but its background still gets
-                    // painted above, so a blinking cell pulses its text rather than its block.
-                    if (cell.blink) {
-                        sawBlinkingCell = true;
-                        if (!textBlinkOn) { if (c == cols - 1 && !isCursor) lastColBg = bg; continue; }
-                    }
-
-                    // The trailer half of a double-width glyph carries no character of its own —
-                    // its background was painted above (so a wide glyph's highlight covers both
-                    // columns), but the glyph itself is drawn from the leading cell.
-                    if (cell.character != ' ' && cell.character != '\0' && !cell.wideTrailer) {
-                        String glyph = glyphOf(cell.character);
-                        Color cfg = fg >= 0 ? swtRgb(fg) : null;
-                        gc.setForeground(Objects.requireNonNullElse(cfg, defaultFg));
-
-                        // A code point the terminal font has no glyph for is drawn with a
-                        // substitute font instead of a tofu box (see GlyphFallback).
-                        Font drawFont = glyphFallback != null
-                                ? glyphFallback.fontFor(cell.character, cell.bold) : null;
-                        if (drawFont == null && cell.bold) {
-                            // Reuse a cached bold font — creating and disposing a native Font per
-                            // bold cell per frame let a hostile server churn GDI/X11 font handles
-                            // and freeze the whole UI thread.
-                            if (termFontBold == null || termFontBold.isDisposed())
-                                termFontBold = new Font(display, termFont.getFontData()[0].getName(), termFontSize, SWT.BOLD);
-                            drawFont = termFontBold;
-                        }
-                        if (drawFont != null) {
-                            gc.setFont(drawFont);
-                            // Substitute glyphs are sized to fit the cell but keep the substitute
-                            // font's own side bearings, so centre them in the columns they own
-                            // rather than hanging them off the left edge.
-                            int gx = glyphFallback != null ? glyphFallback.xOffsetFor(cell.character) : 0;
-                            gc.drawString(glyph, px + gx, py, true);
-                            gc.setFont(termFont);
-                        } else {
-                            gc.drawString(glyph, px, py, true);
-                        }
-
-                        if (cell.underline) {
-                            gc.drawLine(px, py + charHeight - 1, px + charWidth - 1, py + charHeight - 1);
-                        }
-
-                        if (cfg != null) cfg.dispose();
-                    }
-                }
-                // Extend last cell's background into the fractional-column gap at the right.
-                if (rightMargin < area.width && lastColBg >= 0) {
-                    Color cbg = swtRgb(lastColBg);
-                    gc.setBackground(cbg);
-                    gc.fillRectangle(rightMargin, r * charHeight, area.width - rightMargin, charHeight);
-                    cbg.dispose();
-                }
-            }
+            sawBlinkingCell = paintGrid(gc, f);
             // Fill fractional row gap at the bottom (already covered by initial fill, but be explicit)
             if (bottomMargin < area.height) {
                 gc.setBackground(defaultBg);
