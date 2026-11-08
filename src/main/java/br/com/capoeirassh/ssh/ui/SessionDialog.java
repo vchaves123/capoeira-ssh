@@ -164,11 +164,13 @@ public class SessionDialog {
         Button chkLegacy = new Button(dlg, SWT.CHECK);
         chkLegacy.setText("Allow legacy algorithms for old devices (ssh-rsa / SHA-1)");
         chkLegacy.setToolTipText(
-            "Some older network equipment only supports algorithms that modern SSH disabled, and "
-          + "fails during negotiation before authentication. Enabling this offers them as a "
-          + "fallback — a server that supports modern algorithms still uses those. Leave off "
-          + "unless a device needs it: these algorithms rely on SHA-1, which weakens the host key "
-          + "check that detects a man-in-the-middle.");
+            "Some older network equipment only supports algorithms that\n"
+          + "modern SSH disabled, and fails during negotiation before\n"
+          + "authentication. Enabling this offers them as a fallback — a\n"
+          + "server that supports modern algorithms still uses those.\n"
+          + "Leave off unless a device needs it: these algorithms rely on\n"
+          + "SHA-1, which weakens the host key check that detects a\n"
+          + "man-in-the-middle.");
         chkLegacy.setLayoutData(new GridData(SWT.LEFT, SWT.CENTER, false, false));
         // Same source the Configuration block below uses: the session being edited, or the
         // saved defaults for a brand-new one — so this option inherits from "default settings
