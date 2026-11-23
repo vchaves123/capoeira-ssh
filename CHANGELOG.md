@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.3.7] — 2026-11-23
+
+### Added
+- **Answers to terminal queries.** Programs that ask the terminal something and get no answer wait
+  for a timeout — usually a visibly slow start — and then assume the feature is missing. Capoeira
+  now answers:
+  - the background/foreground colour (`OSC 11;?`, `OSC 10;?`) and palette colours (`OSC 4;n;?`),
+    which editors and pagers use to choose a light or dark theme;
+  - which terminal it is (secondary device attributes, `ESC[>c`, and `ESC[>q` with name and
+    version);
+  - whether a mode is on (`ESC[?Ps$p` / `ESC[Ps$p`);
+  - the cursor position in its private form, and the window size in characters and pixels.
+- **The window title is restored after full-screen programs.** Programs that change the title save
+  the previous one first and restore it on exit (`ESC[22t` / `ESC[23t`); the save/restore was
+  ignored, so the program's title stayed after it quit.
+
+---
+
 ## [2.3.6] — 2026-11-23
 
 ### Added

@@ -51,9 +51,9 @@ class TerminalEmulatorUnhandledLogTest {
     @DisplayName("Queries left unanswered are reported (secondary DA, private DSR)")
     void unansweredQueries_reported() {
         TerminalEmulator emu = emulator();
-        send(emu, ESC + "[>c" + ESC + "[?6n" + ESC + "[7n" + ESC + "[14t");
-        assertEquals(List.of("unhandled: CSI > c", "unhandled: CSI ? 6 n",
-                             "unhandled: CSI 7 n", "unhandled: CSI 14 t"), reports);
+        send(emu, ESC + "[?u" + ESC + "[7n" + ESC + "[8;24;80t" + ESC + "[14t");   // no cell size set
+        assertEquals(List.of("unhandled: CSI ? u", "unhandled: CSI 7 n",
+                             "unhandled: CSI 8;24;80 t", "unhandled: CSI 14 t"), reports);
     }
 
     @Test
@@ -136,7 +136,8 @@ class TerminalEmulatorUnhandledLogTest {
         TerminalEmulator emu = emulator();
         String[] handled = {
             "[H", "[2J", "[3J", "[K", "[1K", "[1;31m", "[0m", "[m", "[38;5;196m", "[48;2;1;2;3m",
-            "[1;4;5;7m", "[22;24;25;27;39;49m", "[2;3;8;9m", "[23;28;29m", "[4h", "[4l", "[I", "[2Z", "[92;104m", "[?25l", "[?25h", "[?1049h", "[?1049l",
+            "[1;4;5;7m", "[22;24;25;27;39;49m", "[2;3;8;9m", "[23;28;29m", "[4h", "[4l", "[I", "[2Z", "[>c", "[>q", "[?6n", "[?2004$p", "[4$p", "[19t",
+            "[22;0;0t", "[23;0;0t", "]10;?\u0007", "]11;?\u0007", "]4;1;?\u0007", "[92;104m", "[?25l", "[?25h", "[?1049h", "[?1049l",
             "[?1h", "[?1l", "[?7l", "[?7h", "[?2004h", "[?2004l", "[?4l", "[?12h", "[?12l",
             "[5;10r", "[r", "[L", "[M", "[P", "[X", "[@", "[S", "[T", "[d", "[G", "[A", "[B",
             "[C", "[D", "[E", "[F", "[3;4f", "[s", "[u", "[3g", "[g", "[6n", "[5n", "[c", "[18t",
