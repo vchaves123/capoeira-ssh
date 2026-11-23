@@ -23,8 +23,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Alternate scroll**: on a full-screen program that requests it, the wheel sends up/down arrow
   keys instead of doing nothing.
 - **Copy from the remote side to the local clipboard (OSC 52)** — used by tmux, vim and neovim to
-  copy over SSH. Write-only: a remote program can never read your clipboard. Every such copy shows
-  the "Copied" indicator, so a remote program can't silently replace what you are about to paste.
+  copy over SSH. **Off by default**: turn it on in Settings ("Allow remote programs to copy to the
+  clipboard"), for all new sessions, one session, or the open tab. Write-only: a remote program can
+  never read your clipboard. Every such copy shows the "Copied" indicator, so a remote program
+  can't silently replace what you are about to paste.
 
 ---
 

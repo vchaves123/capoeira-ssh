@@ -211,6 +211,7 @@ public class TerminalEmulator {
     private boolean focusEvents   = false;   // DECSET 1004
     private boolean altScroll     = false;   // DECSET 1007: wheel sends arrow keys on the alt screen
     private ClipboardListener clipboardListener;
+    private boolean allowClipboardWrite = false;
     /** Distinct unhandled sequences already reported, so each is reported once. */
     private final Set<String> reportedUnhandled = new HashSet<>();
     private boolean unhandledCapped = false;
@@ -290,6 +291,9 @@ public class TerminalEmulator {
     /** Character cell size in pixels, reported to CSI 14 t / CSI 16 t; 0 = unknown (not answered). */
     public synchronized void setCellPixelSize(int w, int h)        { cellPixelW = w; cellPixelH = h; }
     public synchronized void setClipboardListener(ClipboardListener l) { this.clipboardListener = l; }
+    /** Gates OSC 52 clipboard writes (see SessionInfo.allowClipboardWrite) — off by default;
+     *  while off, the sequence is ignored and logged. */
+    public synchronized void setAllowClipboardWrite(boolean on) { this.allowClipboardWrite = on; }
 
     /** True while the remote program wants mouse events (and so a click is not a selection). */
     public synchronized boolean isMouseReporting() { return mouseMode != 0; }
@@ -538,7 +542,7 @@ public class TerminalEmulator {
         int sep = pt.indexOf(';');
         if (sep < 0) return false;
         String data = pt.substring(sep + 1);
-        if (data.equals("?") || oscOverflow || clipboardListener == null) return false;
+        if (!allowClipboardWrite || data.equals("?") || oscOverflow || clipboardListener == null) return false;
         byte[] decoded;
         try {
             decoded = java.util.Base64.getDecoder().decode(data);

@@ -2,7 +2,7 @@ package br.com.capoeirassh.ssh;
 
 public final class BuildInfo {
     public static final String VERSION = "2.4.0";
-    public static final int    BUILD   = 346;
+    public static final int    BUILD   = 347;
     public static final String DATE    = "2026-11-23";
     private BuildInfo() {}
 }

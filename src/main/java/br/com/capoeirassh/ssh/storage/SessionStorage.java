@@ -67,6 +67,7 @@ public final class SessionStorage {
         p.setProperty("sshVerbose",    String.valueOf(s.sshVerbose));
         p.setProperty("allowColumnMode", String.valueOf(s.allowColumnMode));
         p.setProperty("legacyAlgorithms", String.valueOf(s.legacyAlgorithms));
+        p.setProperty("allowClipboardWrite", String.valueOf(s.allowClipboardWrite));
         p.setProperty("sortOrder",     String.valueOf(s.sortOrder));
         p.setProperty("tags",          String.join(",", s.tags));
         for (String tag : s.tags) TagRegistry.register(tag);
@@ -234,6 +235,9 @@ public final class SessionStorage {
         // Defaults to false: a session saved before this option existed keeps the modern-only
         // algorithm set, rather than silently gaining SHA-1 fallbacks it never asked for.
         s.legacyAlgorithms = Boolean.parseBoolean(p.getProperty("legacyAlgorithms", "false"));
+        // Defaults to false: OSC 52 clipboard writes are opt-in, including for sessions saved
+        // before the option existed.
+        s.allowClipboardWrite = Boolean.parseBoolean(p.getProperty("allowClipboardWrite", "false"));
         s.sortOrder     = parseInt(p.getProperty("sortOrder", "0"));
         s.tags          = parseTags(p.getProperty("tags", ""));
         String at        = p.getProperty("authType", "PASSWORD");

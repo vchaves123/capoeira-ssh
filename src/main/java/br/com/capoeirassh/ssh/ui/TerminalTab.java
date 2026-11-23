@@ -276,6 +276,7 @@ public class TerminalTab {
         );
 
         emulator.setAllowColumnMode(info.allowColumnMode);
+        emulator.setAllowClipboardWrite(info.allowClipboardWrite);
         emulator.setColumnModeListener(cols -> display.asyncExec(() -> resizeWindowToColumns(cols)));
 
         // OSC 0/2 "set window/icon title" — reflect it in the main window's title bar, but only
@@ -295,7 +296,8 @@ public class TerminalTab {
         emulator.setUnhandledListener(desc -> System.err.println(
             LocalDateTime.now().format(APP_LOG_TS) + " [terminal \"" + logLabel + "\"] " + desc));
 
-        // OSC 52: a remote program (tmux, vim…) copying to the local clipboard. Write-only — the
+        // OSC 52: a remote program (tmux, vim…) copying to the local clipboard — only when the
+        // session opted in (SessionInfo.allowClipboardWrite, off by default). Write-only: the
         // emulator never answers a read. The "Copied" indicator is shown every time, so a remote
         // program can't silently swap what the user is about to paste.
         emulator.setClipboardListener(text -> display.asyncExec(() -> {
@@ -2157,6 +2159,7 @@ public class TerminalTab {
     public void setSshVerbose(boolean on) { connection.setVerbose(on); }
 
     public void setAllowColumnMode(boolean on) { emulator.setAllowColumnMode(on); }
+    public void setAllowClipboardWrite(boolean on) { emulator.setAllowClipboardWrite(on); }
 
     public String getLogDir() {
         SessionInfo s = sessionInfo;

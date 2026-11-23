@@ -126,7 +126,7 @@ once per tab to `~/.capoeira/log/app.log` as `unhandled: …` — see [Diagnosin
 | 4 (set palette), 104 (reset) | ❌ | the palette is fixed |
 | 10, 11, 12 `;?` (colour queries) | ✅ | reply mirrors the BEL/ST terminator |
 | 10/11/12 set, 110–112 | ❌ | logged |
-| 52 (clipboard) | ✅ | **write-only**; the `?` read is never answered; "Copied" indicator shown |
+| 52 (clipboard) | ✅ | **off by default** — enable in Settings; **write-only**, the `?` read is never answered; "Copied" indicator shown |
 | 7 (cwd), 8 (hyperlink), 9/777 (notification), 133 (shell integration) | ❌ | consumed; hyperlink text still shows |
 
 Payloads of ignored OSC/DCS strings are never logged — only their number and length.

@@ -163,6 +163,7 @@ class TerminfoConformanceTest {
         List<String> reports = new ArrayList<>();
         emu.setUnhandledListener(reports::add);
         emu.setClipboardListener(text -> { });   // a UI is always attached in the real app
+        emu.setAllowClipboardWrite(true);       // OSC 52 is opt-in; this test checks what the emulator CAN handle
         emu.processBytes(seq.getBytes(StandardCharsets.ISO_8859_1));
         assertTrue(emu.dumpState().contains("\"parserState\":\"NORMAL\""),
             "parser did not return to NORMAL — part of the sequence would leak as text");

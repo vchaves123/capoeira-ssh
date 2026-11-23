@@ -251,6 +251,16 @@ public class ConfigurationSettingsDialog {
             + "application expecting 132 columns will draw wrapped, corrupted output.");
         chkColumnMode.setSelection(settings.allowColumnMode);
 
+        // ── OSC 52 (remote → local clipboard) ─────────────────────────────────
+        label(dlg, "Clipboard:");
+        Button chkClipboard = new Button(dlg, SWT.CHECK);
+        chkClipboard.setText("Allow remote programs to copy to the clipboard (OSC 52)");
+        chkClipboard.setToolTipText("Lets tmux, vim and neovim on the server copy text to this "
+            + "computer's clipboard. Write-only: a remote program can never read your clipboard. "
+            + "Off by default, because a program on the server could replace what you are about "
+            + "to paste; every such copy shows the \"Copied\" indicator.");
+        chkClipboard.setSelection(settings.allowClipboardWrite);
+
         // ── Buttons ───────────────────────────────────────────────────────────
         new Label(dlg, SWT.NONE);
         Composite cmpBtns = new Composite(dlg, SWT.NONE);
@@ -277,6 +287,7 @@ public class ConfigurationSettingsDialog {
             settings.backspaceCode = cmbBackspace.getSelectionIndex() == 1 ? 0x08 : 0x7F;
             settings.sshVerbose    = chkVerbose.getSelection();
             settings.allowColumnMode = chkColumnMode.getSelection();
+            settings.allowClipboardWrite = chkClipboard.getSelection();
 
             if (chkTraceFinal != null) traceResult = chkTraceFinal.getSelection();
 

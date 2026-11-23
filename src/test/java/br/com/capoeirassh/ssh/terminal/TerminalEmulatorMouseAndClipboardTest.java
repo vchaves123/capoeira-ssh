@@ -166,8 +166,36 @@ class TerminalEmulatorMouseAndClipboardTest {
         TerminalEmulator emu = new TerminalEmulator(80, 24);
         List<String> clip = new ArrayList<>();
         emu.setClipboardListener(clip::add);
+        emu.setAllowClipboardWrite(true);
         send(emu, ESC + "]52;c;" + b64("olá, mundo") + "\u0007");
         assertEquals(List.of("olá, mundo"), clip);
+    }
+
+    @Test
+    @DisplayName("OSC 52 is off by default: nothing copied, and the attempt is logged")
+    void osc52OffByDefault() {
+        TerminalEmulator emu = new TerminalEmulator(80, 24);
+        List<String> clip = new ArrayList<>();
+        List<String> reports = new ArrayList<>();
+        emu.setClipboardListener(clip::add);
+        emu.setUnhandledListener(reports::add);
+        send(emu, ESC + "]52;c;" + b64("x") + "\u0007");
+        assertTrue(clip.isEmpty(), "the session did not opt in");
+        assertEquals(1, reports.size());
+        assertTrue(reports.get(0).startsWith("unhandled: OSC 52"), reports.get(0));
+    }
+
+    @Test
+    @DisplayName("Turning the option off on a running tab stops further copies")
+    void osc52TurnedOffAtRuntime() {
+        TerminalEmulator emu = new TerminalEmulator(80, 24);
+        List<String> clip = new ArrayList<>();
+        emu.setClipboardListener(clip::add);
+        emu.setAllowClipboardWrite(true);
+        send(emu, ESC + "]52;c;" + b64("first") + "\u0007");
+        emu.setAllowClipboardWrite(false);
+        send(emu, ESC + "]52;c;" + b64("second") + "\u0007");
+        assertEquals(List.of("first"), clip);
     }
 
     @Test
@@ -178,6 +206,7 @@ class TerminalEmulatorMouseAndClipboardTest {
         List<String> reports = new ArrayList<>();
         List<byte[]> replies = new ArrayList<>();
         emu.setClipboardListener(clip::add);
+        emu.setAllowClipboardWrite(true);
         emu.setUnhandledListener(reports::add);
         emu.setDataListener(replies::add);
         send(emu, ESC + "]52;c;?\u0007");
@@ -193,6 +222,7 @@ class TerminalEmulatorMouseAndClipboardTest {
         TerminalEmulator emu = new TerminalEmulator(80, 24);
         List<String> clip = new ArrayList<>();
         emu.setClipboardListener(clip::add);
+        emu.setAllowClipboardWrite(true);
         send(emu, ESC + "]52;c;@@not-base64@@\u0007");
         send(emu, ESC + "]52;c;" + "QUFB".repeat(70_000) + "\u0007");   // 280 000 chars > cap
         assertTrue(clip.isEmpty());
