@@ -542,8 +542,11 @@ public class TerminalTab {
         int newCols = Math.max(1, r.width  / charWidth);
         int newRows = Math.max(1, r.height / charHeight);
         emulator.resize(newCols, newRows);
-        if (connection.isConnected())
+        boolean ptyUpdated = connection.isConnected();
+        if (ptyUpdated)
             connection.updatePtySize(newCols, newRows, r.width, r.height);
+        TerminalTrace t = trace;
+        if (t != null) t.resize(newCols, newRows, ptyUpdated);
     }
 
     /** Shows (or updates) the "cols x lines" overlay while the window border is being dragged —

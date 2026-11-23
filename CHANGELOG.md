@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.3.1] — 2026-11-23
+
+### Fixed
+- **Long rules, frames and bars were cut down to one character in curses programs such as
+  `nmon`.** The terminal ignored the "repeat the preceding character" sequence (REP, `ESC[nb`),
+  which ncurses uses under `xterm-256color` to draw any long run of one character — so each
+  horizontal rule, box-drawing frame line and load bar showed only its first character. REP is
+  now implemented, repeating through the normal print path so line-wrap, double-width glyphs and
+  the line-drawing charset behave as if the character had been resent. The count comes from the
+  remote side, so it is capped at one screenful.
+- **After enlarging the window while a full-screen program (such as `nmon`) was running, the shell
+  prompt stayed stuck on one line with no scrollback.** The scroll region saved when the program
+  entered the alternate screen described the old, smaller window, and quitting the program
+  restored it — so Enter scrolled only the top part of the screen and nothing reached the
+  history. A resize now refreshes that saved state. Also, leaving the alternate screen twice in a
+  row (which ncurses does when it is resized) now restores the saved cursor both times, as xterm
+  does, so the prompt comes back right under the command instead of on the last line.
+
+### Added
+- The byte trace now records a `RESIZE columns×lines` line each time the terminal is resized (and
+  whether the new size was sent to the server), so a trace shows whether a program saw the old or
+  the new size.
+
+---
+
 ## [2.3.0] — 2026-11-08
 
 ### Added

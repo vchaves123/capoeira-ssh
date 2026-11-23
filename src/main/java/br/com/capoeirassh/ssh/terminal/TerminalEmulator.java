@@ -49,6 +49,11 @@ public class TerminalEmulator {
     private int     cursorCol;
     private boolean wrapPending = false;
 
+    // The last graphic code point written, as it arrived (before any line-drawing mapping), for
+    // REP (CSI n b). -1 means "nothing to repeat" — at power-on/reset, or when the last thing
+    // written has no column of its own.
+    private int lastPrintedCp = -1;
+
     // Saved cursor (ESC 7 / ESC 8). DECSC saves more than the position: the SGR attributes, the
     // character-set selection and origin mode all travel with it, and a program that swaps
     // charset between a save and a restore relies on the restore putting it back.
@@ -70,6 +75,9 @@ public class TerminalEmulator {
     private boolean      altSavedUseG1;
     private boolean      altSavedAppCursorKeys;
     private final TerminalCell altSavedAttrs = new TerminalCell();
+    // True once an alternate-screen entry has saved the cursor; DECRST 1049 may restore it again
+    // even when already back on the normal screen (see exitAltScreen1049).
+    private boolean      altCursorSaved;
 
     // -----------------------------------------------------------------------
     // Scroll region (0-based, inclusive)
@@ -184,6 +192,8 @@ public class TerminalEmulator {
         cursorRow    = 0;
         cursorCol    = 0;
         wrapPending  = false;
+        lastPrintedCp = -1;
+        altCursorSaved = false;
         scrollTop    = 0;
         scrollBottom = rows - 1;
         currentAttrs.clear();
@@ -240,6 +250,17 @@ public class TerminalEmulator {
         scrollTop    = 0;
         scrollBottom = rows - 1;
         wrapPending  = false;
+
+        // The cursor/region saved when the alternate screen was entered describe a screen of the
+        // OLD size, and leaving it restores them. A program that is resized while it owns the
+        // alternate screen (nmon redraws on SIGWINCH by leaving and re-entering it) would
+        // otherwise hand back a stale margin: after growing 32 -> 51 rows, the exit restored
+        // scroll region [0,31], pinning the prompt to row 31 with no scrollback. The live region
+        // was just reset to the full screen above, so the saved one gets the same treatment.
+        altSavedScrollTop    = 0;
+        altSavedScrollBottom = rows - 1;
+        altSavedRow          = Math.min(altSavedRow, rows - 1);
+        altSavedCol          = Math.min(altSavedCol, cols - 1);
 
         // Keep whatever stops the program set for columns that still exist, and give brand-new
         // columns the default every-8 pattern rather than leaving them with no stops at all.
@@ -443,6 +464,27 @@ public class TerminalEmulator {
         // With DECAWM off the cursor stays put at the right margin and further writes overwrite
         // that last column, instead of continuing on the next line.
         else if (autoWrap) wrapPending = true;
+
+        lastPrintedCp = cp;
+    }
+
+    /**
+     * REP (CSI n b): repeat the preceding graphic character n times. ncurses relies on it with
+     * {@code TERM=xterm-256color} (terminfo {@code rep}) to draw long runs — nmon's horizontal
+     * rules, frame lines and load bars — instead of sending every character. Dropping it leaves
+     * only the first character of each run on screen.
+     *
+     * <p>n comes from the remote side, so it is capped at one full screen: anything past that
+     * only rewrites cells that are already overwritten, and an unbounded count (ESC[999999999b)
+     * would otherwise stall the parser thread.
+     */
+    private void repeatLastChar(int n) {
+        if (lastPrintedCp < 0) return;
+        int count = Math.min(Math.max(1, n), cols * rows);
+        // Each repeat goes through processCodePoint, so wrap, double-width glyphs and the
+        // current line-drawing charset all behave exactly as if the character had been resent.
+        int cp = lastPrintedCp;
+        for (int i = 0; i < count; i++) processCodePoint(cp);
     }
 
     /**
@@ -566,6 +608,7 @@ public class TerminalEmulator {
             case '@' -> insertChars(Math.max(1, p1));
             case 'S' -> scrollUp(Math.max(1, p1));
             case 'T' -> scrollDown(Math.max(1, p1));
+            case 'b' -> repeatLastChar(p1);
             case 'd' -> moveCursor(Math.max(1, p1) - 1, cursorCol);
             case 'g' -> tbc(p1);
             case 'm' -> processSGR();
@@ -606,7 +649,7 @@ public class TerminalEmulator {
                 case 12          -> {} // cursor blink off — ignored
                 case 25          -> cursorVisible = false;
                 case 47, 1047    -> deactivateAltBuffer(true);
-                case 1049        -> deactivateAltBuffer(true);
+                case 1049        -> exitAltScreen1049();
                 case 2004        -> bracketedPaste = false;
                 case 1000, 1002,
                      1003, 1006  -> {} // mouse tracking
@@ -863,6 +906,7 @@ public class TerminalEmulator {
     private void activateAltBuffer(boolean saveState) {
         if (altBufferActive) return;
         if (saveState) {
+            altCursorSaved       = true;
             altSavedRow          = cursorRow;
             altSavedCol          = cursorCol;
             altSavedScrollTop    = scrollTop;
@@ -913,6 +957,27 @@ public class TerminalEmulator {
         }
         wrapPending = false;
         notifyAltBufferChanged();
+    }
+
+    /**
+     * DECRST 1049: leave the alternate screen AND restore the cursor saved on entry — and the
+     * restore happens even when we are already on the normal screen, as xterm does. ncurses
+     * relies on it: when a program is resized it tears the screen down twice in a row, moving the
+     * cursor to the bottom line in between, and only a second restore puts the cursor back where
+     * the shell left it (right under the command). Skipping that second exit left the shell
+     * prompt stranded on the last line.
+     *
+     * <p>Only 1049 does this: 47/1047 never saved a cursor of their own. Nothing is restored if no
+     * entry ever saved one, so a stray exit on a fresh terminal leaves the cursor alone.
+     */
+    private void exitAltScreen1049() {
+        boolean wasAlternate = altBufferActive;
+        deactivateAltBuffer(true);
+        if (!wasAlternate && altCursorSaved) {
+            cursorRow   = Math.min(altSavedRow, rows - 1);
+            cursorCol   = Math.min(altSavedCol, cols - 1);
+            wrapPending = false;
+        }
     }
 
     // -----------------------------------------------------------------------
