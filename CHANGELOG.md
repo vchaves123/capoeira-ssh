@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.4.0] — 2026-11-23
+
+### Added
+- **Mouse support in terminal programs.** When a program asks for the mouse (htop, mc, vim with
+  `:set mouse=a`, tmux…), clicks, drags and the wheel now go to it, in every encoding programs
+  use. **Hold Shift to select text locally** as before, as in xterm. Scrolled back into the
+  history, the mouse and wheel keep working on the history.
+- **Focus events**: programs that ask (editors that reload changed files, for example) are told
+  when the terminal gains or loses focus.
+- **Alternate scroll**: on a full-screen program that requests it, the wheel sends up/down arrow
+  keys instead of doing nothing.
+- **Copy from the remote side to the local clipboard (OSC 52)** — used by tmux, vim and neovim to
+  copy over SSH. Write-only: a remote program can never read your clipboard. Every such copy shows
+  the "Copied" indicator, so a remote program can't silently replace what you are about to paste.
+
+---
+
 ## [2.3.7] — 2026-11-23
 
 ### Added

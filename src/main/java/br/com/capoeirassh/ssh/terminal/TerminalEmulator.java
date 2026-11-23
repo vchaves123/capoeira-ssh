@@ -19,7 +19,9 @@ public class TerminalEmulator {
     public static final int DEFAULT_COLOR  = -1;
     public static final int MAX_SCROLLBACK = 10_000;
     /** Caps OSC/DCS/PM/APC string payload growth if a server never sends the terminator. */
-    private static final int MAX_OSC_LEN   = 8_192;
+    // Large enough for OSC 52 clipboard writes (base64 ≈ 4/3 of the text) without letting one
+    // string hold an unbounded amount of memory; every other OSC is far shorter.
+    private static final int MAX_OSC_LEN   = 262_144;
     /** Caps CSI parameter count so a hostile server streaming endless ';' can't OOM the JVM. */
     private static final int MAX_CSI_PARAMS = 32;
     /** Distinct unhandled sequences reported per emulator before going quiet — a hostile or
@@ -175,6 +177,10 @@ public class TerminalEmulator {
      *  parameters, never the payload of an OSC/DCS string. Called while holding this emulator's
      *  lock — implementations must be quick and must not call back into the emulator. */
     @FunctionalInterface public interface UnhandledListener { void onUnhandled(String description); }
+    /** OSC 52: the remote program asked to put {@code text} on the local clipboard. Write-only —
+     *  reading the clipboard back is never offered. Called while holding this emulator's lock;
+     *  implementations must hand off to the UI thread. */
+    @FunctionalInterface public interface ClipboardListener { void onClipboardWrite(String text); }
 
     private DataListener      dataListener;
     private ChangeListener    changeListener;
@@ -195,6 +201,16 @@ public class TerminalEmulator {
     private static final int MAX_TITLE_STACK = 10;
     // Whether the OSC being finished ended with BEL rather than ST — replies mirror it, as xterm's do.
     private boolean oscEndedByBel = false;
+    // The string being read outgrew MAX_OSC_LEN and was cut: never act on a truncated payload.
+    private boolean oscOverflow = false;
+
+    // Mouse reporting, as requested by the remote program (DECSET 9/1000/1002/1003 for which
+    // events, 1005/1006/1015 for how they are encoded); 0 = off / legacy encoding.
+    private int     mouseMode     = 0;
+    private int     mouseEncoding = 0;
+    private boolean focusEvents   = false;   // DECSET 1004
+    private boolean altScroll     = false;   // DECSET 1007: wheel sends arrow keys on the alt screen
+    private ClipboardListener clipboardListener;
     /** Distinct unhandled sequences already reported, so each is reported once. */
     private final Set<String> reportedUnhandled = new HashSet<>();
     private boolean unhandledCapped = false;
@@ -240,6 +256,10 @@ public class TerminalEmulator {
         lastPrintedCp = -1;
         altCursorSaved = false;
         insertMode    = false;
+        mouseMode     = 0;
+        mouseEncoding = 0;
+        focusEvents   = false;
+        altScroll     = false;
         scrollTop    = 0;
         scrollBottom = rows - 1;
         currentAttrs.clear();
@@ -269,6 +289,67 @@ public class TerminalEmulator {
     public synchronized void setReportedColors(int fgRgb, int bgRgb) { reportFgRgb = fgRgb; reportBgRgb = bgRgb; }
     /** Character cell size in pixels, reported to CSI 14 t / CSI 16 t; 0 = unknown (not answered). */
     public synchronized void setCellPixelSize(int w, int h)        { cellPixelW = w; cellPixelH = h; }
+    public synchronized void setClipboardListener(ClipboardListener l) { this.clipboardListener = l; }
+
+    /** True while the remote program wants mouse events (and so a click is not a selection). */
+    public synchronized boolean isMouseReporting() { return mouseMode != 0; }
+    /** True when motion with no button held should be reported too (DECSET 1003). */
+    public synchronized boolean wantsAllMotion()   { return mouseMode == 1003; }
+    /** True when motion with a button held should be reported (DECSET 1002 or 1003). */
+    public synchronized boolean wantsDragMotion()  { return mouseMode == 1002 || mouseMode == 1003; }
+    public synchronized boolean isFocusReporting() { return focusEvents; }
+    /** Alternate scroll (DECSET 1007): on the alternate screen, with mouse reporting off, the
+     *  wheel should send cursor-up/down keys so pagers like less scroll instead of doing nothing. */
+    public synchronized boolean isAltScrollActive() { return altScroll && altBufferActive && mouseMode == 0; }
+
+    /** Mouse buttons as reported to the remote side. */
+    public static final int MOUSE_LEFT = 0, MOUSE_MIDDLE = 1, MOUSE_RIGHT = 2,
+                            MOUSE_WHEEL_UP = 64, MOUSE_WHEEL_DOWN = 65, MOUSE_NONE = 3;
+    /** Modifier bits, as xterm adds them to the button code. */
+    public static final int MOUSE_MOD_SHIFT = 4, MOUSE_MOD_META = 8, MOUSE_MOD_CTRL = 16;
+
+    /**
+     * Encodes one mouse event for the remote side, in the mode and encoding it asked for, or
+     * returns null when that event is not to be reported (tracking off, X10 mode and this is not
+     * a press, plain-button mode and this is motion, or a coordinate the legacy encoding cannot
+     * carry). {@code col}/{@code row} are 0-based screen cells.
+     *
+     * @param button  MOUSE_LEFT/MIDDLE/RIGHT, MOUSE_WHEEL_UP/DOWN, or MOUSE_NONE for motion
+     *                with no button held
+     * @param release true for a button release
+     * @param motion  true for a movement event
+     * @param mods    MOUSE_MOD_* bits
+     */
+    public synchronized byte[] encodeMouseEvent(int button, boolean release, boolean motion,
+                                                int col, int row, int mods) {
+        if (mouseMode == 0) return null;
+        boolean wheel = button == MOUSE_WHEEL_UP || button == MOUSE_WHEEL_DOWN;
+        if (mouseMode == 9 && (release || motion || wheel)) return null;   // X10: presses only
+        if (motion && mouseMode == 1000) return null;
+        if (motion && button == MOUSE_NONE && mouseMode != 1003) return null;
+        if (release && wheel) return null;                                  // wheels have no release
+        col = Math.max(0, Math.min(col, cols - 1));
+        row = Math.max(0, Math.min(row, rows - 1));
+
+        int cb = button + (mouseMode == 9 ? 0 : mods) + (motion ? 32 : 0);
+        if (mouseEncoding == 1006) {   // SGR: the release keeps its button, final byte 'm'
+            return ("\033[<" + cb + ";" + (col + 1) + ";" + (row + 1) + (release ? 'm' : 'M'))
+                .getBytes(StandardCharsets.US_ASCII);
+        }
+        if (release) cb = MOUSE_NONE + mods;   // the other encodings can't tell which was released
+        if (mouseEncoding == 1015) {   // urxvt: decimal, still offset by 32
+            return ("\033[" + (cb + 32) + ";" + (col + 1) + ";" + (row + 1) + "M")
+                .getBytes(StandardCharsets.US_ASCII);
+        }
+        if (mouseEncoding == 1005) {   // UTF-8: like legacy, coordinates as UTF-8 characters
+            if (col + 33 > 2047 || row + 33 > 2047) return null;
+            String s = "\033[M" + (char) (cb + 32) + (char) (col + 33) + (char) (row + 33);
+            return s.getBytes(StandardCharsets.UTF_8);
+        }
+        // Legacy X10/X11: one byte each, so coordinates past 223 cannot be expressed at all.
+        if (col + 33 > 255 || row + 33 > 255) return null;
+        return new byte[] { 0x1B, '[', 'M', (byte) (cb + 32), (byte) (col + 33), (byte) (row + 33) };
+    }
     public synchronized void setAllowColumnMode(boolean on)          { this.allowColumnMode = on; }
 
     // -----------------------------------------------------------------------
@@ -375,12 +456,17 @@ public class TerminalEmulator {
     private void processOscByte(int b) {
         if (state == State.OSC_ESC) {
             if (b == '\\') { oscEndedByBel = false; finishOsc(); }
-            else           { state = State.OSC; if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b); }
+            else           { state = State.OSC; appendOsc(b); }
             return;
         }
         if      (b == 0x1B) state = State.OSC_ESC;
         else if (b == 0x07) { oscEndedByBel = true; finishOsc(); }
-        else if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b);
+        else appendOsc(b);
+    }
+
+    private void appendOsc(int b) {
+        if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b);
+        else oscOverflow = true;
     }
 
     /** Called on every OSC terminator (BEL, ST, or ESC \). Extracts the title text from a
@@ -436,8 +522,31 @@ public class TerminalEmulator {
                 }
                 return true;
             }
+            case "52" -> { return handleClipboardWrite(pt); }
             default -> { return false; }
         }
+    }
+
+    /**
+     * OSC 52 ; Pc ; Pd — put base64 {@code Pd} on the clipboard (tmux, vim and neovim use it to
+     * copy over SSH). Write-only by design: the "?" query, which would hand the local clipboard
+     * to the remote side, is never answered. A payload cut short by MAX_OSC_LEN, or that is not
+     * valid base64, is ignored rather than copied half-way. Which selection Pc names doesn't
+     * matter here — Windows has just the one clipboard.
+     */
+    private boolean handleClipboardWrite(String pt) {
+        int sep = pt.indexOf(';');
+        if (sep < 0) return false;
+        String data = pt.substring(sep + 1);
+        if (data.equals("?") || oscOverflow || clipboardListener == null) return false;
+        byte[] decoded;
+        try {
+            decoded = java.util.Base64.getDecoder().decode(data);
+        } catch (IllegalArgumentException notBase64) {
+            return false;
+        }
+        clipboardListener.onClipboardWrite(new String(decoded, StandardCharsets.UTF_8));
+        return true;
     }
 
     private void setTitle(String title) {
@@ -489,6 +598,7 @@ public class TerminalEmulator {
     private void beginString(int introducer) {
         state = State.OSC;
         oscBuffer.setLength(0);
+        oscOverflow = false;
         stringIntro = introducer;
     }
 
@@ -956,9 +1066,13 @@ public class TerminalEmulator {
             case 25               -> cursorVisible  ? 1 : 2;
             case 47, 1047, 1049   -> altBufferActive ? 1 : 2;
             case 2004             -> bracketedPaste ? 1 : 2;
+            case 9, 1000, 1002, 1003 -> mouseMode == mode ? 1 : 2;
+            case 1005, 1006, 1015 -> mouseEncoding == mode ? 1 : 2;
+            case 1004             -> focusEvents ? 1 : 2;
+            case 1007             -> altScroll   ? 1 : 2;
             case 4                -> 4;   // smooth scroll: never
             case 12               -> 3;   // cursor blink: always
-            default               -> 0;   // mouse, focus, synchronized output… not implemented
+            default               -> 0;   // synchronized output and anything else: not implemented
         };
     }
 
@@ -982,8 +1096,13 @@ public class TerminalEmulator {
             case 47, 1047    -> { if (on) activateAltBuffer(true); else deactivateAltBuffer(true); }
             case 1049        -> { if (on) activateAltBuffer(true); else exitAltScreen1049(); }
             case 2004        -> bracketedPaste = on;
-            // Mouse tracking (1000/1002/1003/1006) and focus events (1004) are requested by
-            // vim, htop, tmux…, but not implemented: they fall through so they get reported.
+            // Which mouse events to report. Setting one replaces the others; resetting the
+            // active one turns reporting off.
+            case 9, 1000, 1002, 1003 -> { if (on) mouseMode = mode; else if (mouseMode == mode) mouseMode = 0; }
+            // How to encode them (UTF-8, SGR, urxvt); off = the legacy one-byte encoding.
+            case 1005, 1006, 1015    -> { if (on) mouseEncoding = mode; else if (mouseEncoding == mode) mouseEncoding = 0; }
+            case 1004        -> focusEvents = on;
+            case 1007        -> altScroll = on;
             default          -> { return false; }
         }
         return true;
@@ -1658,6 +1777,10 @@ public class TerminalEmulator {
         sb.append(",\"originMode\":").append(originMode);
         sb.append(",\"autoWrap\":").append(autoWrap);
         sb.append(",\"insertMode\":").append(insertMode);
+        sb.append(",\"mouseMode\":").append(mouseMode);
+        sb.append(",\"mouseEncoding\":").append(mouseEncoding);
+        sb.append(",\"focusEvents\":").append(focusEvents);
+        sb.append(",\"altScroll\":").append(altScroll);
         sb.append(",\"appCursorKeys\":").append(appCursorKeys);
         sb.append(",\"bracketedPaste\":").append(bracketedPaste);
         sb.append(",\"g0LineDrawing\":").append(g0LineDrawing);
