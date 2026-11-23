@@ -2,7 +2,9 @@ package br.com.capoeirassh.ssh.terminal;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
@@ -20,6 +22,9 @@ public class TerminalEmulator {
     private static final int MAX_OSC_LEN   = 8_192;
     /** Caps CSI parameter count so a hostile server streaming endless ';' can't OOM the JVM. */
     private static final int MAX_CSI_PARAMS = 32;
+    /** Distinct unhandled sequences reported per emulator before going quiet — a hostile or
+     *  buggy server cannot make the log, or this set, grow without bound. */
+    private static final int MAX_UNHANDLED_KEYS = 200;
     /** Caps a single CSI parameter value so a long digit run can't overflow int. */
     private static final int MAX_CSI_PARAM_VALUE = 65_535;
 
@@ -98,6 +103,13 @@ public class TerminalEmulator {
     private final StringBuilder oscBuffer = new StringBuilder();
     private boolean         csiPrivate       = false;
     private boolean         csiIntermediate  = false; // intermediate bytes 0x20-0x2F seen in CSI
+    // What csiPrivate / csiIntermediate stood for, kept only so an unhandled sequence can be
+    // reported in full: the '?', '>', '<' or '=' that opened it (0 = none) and its intermediates.
+    private int             csiPrefix        = 0;
+    private final StringBuilder csiInterBytes = new StringBuilder();
+    // Introducer of the OSC/DCS/APC/PM/SOS string currently being swallowed (']', 'P', '_', '^',
+    // 'X' or 'k'); 0 when none is open.
+    private int             stringIntro      = 0;
 
     // -----------------------------------------------------------------------
     // Charset (G0 / G1)
@@ -147,12 +159,22 @@ public class TerminalEmulator {
      *  to match. Called while holding this emulator's lock — implementations must hand off
      *  asynchronously (Display.asyncExec), never block. */
     @FunctionalInterface public interface ColumnModeListener { void onColumnModeChanged(int cols); }
+    /** Told about each distinct escape sequence the emulator received but does nothing with, so
+     *  gaps show up in the log instead of as a silent misrender. One call per distinct sequence
+     *  per emulator, capped (see {@link #MAX_UNHANDLED_KEYS}); the text carries only codes and
+     *  parameters, never the payload of an OSC/DCS string. Called while holding this emulator's
+     *  lock — implementations must be quick and must not call back into the emulator. */
+    @FunctionalInterface public interface UnhandledListener { void onUnhandled(String description); }
 
     private DataListener      dataListener;
     private ChangeListener    changeListener;
     private AltBufferListener altBufferListener;
     private TitleListener     titleListener;
     private ColumnModeListener columnModeListener;
+    private UnhandledListener unhandledListener;
+    /** Distinct unhandled sequences already reported, so each is reported once. */
+    private final Set<String> reportedUnhandled = new HashSet<>();
+    private boolean unhandledCapped = false;
     /** Gates DECCOLM (see SessionInfo.allowColumnMode) — when false the sequence is ignored
      *  outright, so a remote can't resize the window. */
     private boolean allowColumnMode = false;
@@ -218,6 +240,7 @@ public class TerminalEmulator {
     public synchronized void setAltBufferListener(AltBufferListener l) { this.altBufferListener = l; }
     public synchronized void setTitleListener(TitleListener l)       { this.titleListener = l; }
     public synchronized void setColumnModeListener(ColumnModeListener l) { this.columnModeListener = l; }
+    public synchronized void setUnhandledListener(UnhandledListener l) { this.unhandledListener = l; }
     public synchronized void setAllowColumnMode(boolean on)          { this.allowColumnMode = on; }
 
     // -----------------------------------------------------------------------
@@ -340,6 +363,9 @@ public class TerminalEmulator {
         state = State.NORMAL;
         String raw = oscBuffer.toString();
         oscBuffer.setLength(0);
+        int intro = stringIntro;
+        stringIntro = 0;
+        reportIgnoredString(intro, raw);
         int sep = raw.indexOf(';');
         if (sep > 0 && titleListener != null) {
             String ps = raw.substring(0, sep);
@@ -359,11 +385,97 @@ public class TerminalEmulator {
             case 0x84 -> ind();
             case 0x85 -> nel();
             case 0x8D -> ri();
-            case 0x9B -> { state = State.CSI; params.clear(); csiPrivate = false; csiIntermediate = false; }
+            case 0x9B -> beginCsi();
             case 0x9C -> finishOsc();  // ST — terminates any open string
-            case 0x90, 0x98, 0x9D, 0x9E, 0x9F -> { state = State.OSC; oscBuffer.setLength(0); } // DCS/SOS/OSC/PM/APC
-            default -> {}
+            case 0x90 -> beginString('P');   // DCS
+            case 0x98 -> beginString('X');   // SOS
+            case 0x9D -> beginString(']');   // OSC
+            case 0x9E -> beginString('^');   // PM
+            case 0x9F -> beginString('_');   // APC
+            default -> unhandled(String.format("C1 0x%02X", b));
         }
+    }
+
+    private void beginCsi() {
+        state = State.CSI;
+        params.clear();
+        csiPrivate      = false;
+        csiIntermediate = false;
+        csiPrefix       = 0;
+        csiInterBytes.setLength(0);
+    }
+
+    private void beginString(int introducer) {
+        state = State.OSC;
+        oscBuffer.setLength(0);
+        stringIntro = introducer;
+    }
+
+    // -----------------------------------------------------------------------
+    // Unhandled-sequence reporting
+    // -----------------------------------------------------------------------
+    private void unhandled(String key) { unhandled(key, null); }
+
+    /** Reports a sequence that was received and ignored — once per distinct {@code key}, up to
+     *  {@link #MAX_UNHANDLED_KEYS}. {@code detail} is appended to the first report only. */
+    private void unhandled(String key, String detail) {
+        if (unhandledListener == null) return;
+        if (reportedUnhandled.contains(key)) return;
+        if (reportedUnhandled.size() >= MAX_UNHANDLED_KEYS) {
+            if (!unhandledCapped) {
+                unhandledCapped = true;
+                unhandledListener.onUnhandled("unhandled-sequence log limit (" + MAX_UNHANDLED_KEYS
+                    + ") reached; further distinct sequences are not logged");
+            }
+            return;
+        }
+        reportedUnhandled.add(key);
+        unhandledListener.onUnhandled("unhandled: " + key + (detail == null ? "" : " (" + detail + ")"));
+    }
+
+    /** Printable ASCII as is, anything else as 0xNN — the log must never carry a raw control byte. */
+    private static String printable(int b) {
+        return (b >= 0x20 && b < 0x7F) ? String.valueOf((char) b) : String.format("0x%02X", b);
+    }
+
+    /** Full text of the CSI sequence being dispatched: prefix, parameters, intermediates, final. */
+    private String csiKey(int finalByte) {
+        StringBuilder sb = new StringBuilder("CSI");
+        if (csiPrefix != 0) sb.append(' ').append((char) csiPrefix);
+        if (!params.isEmpty()) {
+            sb.append(' ');
+            for (int i = 0; i < params.size(); i++) {
+                if (i > 0) sb.append(';');
+                sb.append(params.get(i));
+            }
+        }
+        // An intermediate space (DECSCUSR is "CSI Ps SP q") would vanish in a log line — spell it.
+        if (csiInterBytes.length() > 0) sb.append(' ').append(csiInterBytes.toString().replace(" ", "SP"));
+        return sb.append(' ').append(printable(finalByte)).toString();
+    }
+
+    /** OSC is acted on only for Ps 0 and 2 (the window title); every other OSC, and every
+     *  DCS/APC/PM/SOS, is swallowed. Report the kind and the length — never the payload, which
+     *  can be a title, a URL or clipboard data. */
+    private void reportIgnoredString(int intro, String raw) {
+        if (intro == 0 || unhandledListener == null) return;
+        if (intro == ']') {
+            int n = 0;
+            while (n < raw.length() && n < 6 && raw.charAt(n) >= '0' && raw.charAt(n) <= '9') n++;
+            String ps = raw.substring(0, n);
+            if (ps.equals("0") || ps.equals("2")) return;
+            unhandled("OSC " + (ps.isEmpty() ? "(no number)" : ps), raw.length() + " bytes");
+            return;
+        }
+        String name = switch (intro) {
+            case 'P' -> "DCS";
+            case '_' -> "APC";
+            case '^' -> "PM";
+            case 'X' -> "SOS";
+            case 'k' -> "ESC k (title string)";
+            default  -> "string " + printable(intro);
+        };
+        unhandled(name, raw.length() + " bytes");
     }
 
     /** Executes a C0 control character. Kept separate from the parser state machine because
@@ -406,14 +518,17 @@ public class TerminalEmulator {
             // and ignored — the point is that the final byte must never reach the screen.
             state = State.NORMAL;
             if (b == '8') decaln();
+            else if (unhandledListener != null) unhandled("ESC # " + printable(b));
         } else if (state == State.CSI) {
             processCSI(b);
         } else if (state == State.CHARSET_G0) {
             g0LineDrawing = (b == '0');
             state = State.NORMAL;
+            if (b != '0' && b != 'B' && unhandledListener != null) unhandled("ESC ( " + printable(b));
         } else if (state == State.CHARSET_G1) {
             g1LineDrawing = (b == '0');
             state = State.NORMAL;
+            if (b != '0' && b != 'B' && unhandledListener != null) unhandled("ESC ) " + printable(b));
         }
     }
 
@@ -531,10 +646,10 @@ public class TerminalEmulator {
     private void processEscape(int b) {
         state = State.NORMAL;
         switch (b) {
-            case '[' -> { state = State.CSI; params.clear(); csiPrivate = false; csiIntermediate = false; }
-            case ']' -> { state = State.OSC; oscBuffer.setLength(0); }
+            case '[' -> beginCsi();
+            case ']' -> beginString(']');
             // String sequences — consume until ST (ESC \) using the OSC state machine
-            case 'P', '_', '^', 'X', 'k' -> { state = State.OSC; oscBuffer.setLength(0); }
+            case 'P', '_', '^', 'X', 'k' -> beginString(b);
             case '(' -> state = State.CHARSET_G0;
             case ')' -> state = State.CHARSET_G1;
             // ESC # <digit> — DEC line-size / alignment sequences. Must consume the digit in a
@@ -548,15 +663,26 @@ public class TerminalEmulator {
             case 'D' -> ind();
             case 'E' -> nel();
             case 'M' -> ri();
+            // A stray ST (ESC \) outside any string is harmless noise, not a missing feature.
+            case '\\' -> {}
+            default -> { if (unhandledListener != null) unhandled("ESC " + printable(b)); }
         }
     }
 
     private void processCSI(int b) {
         // Private-mode prefix characters (must come before digits)
-        if (b == '?' || b == '>' || b == '<' || b == '=') { csiPrivate = true; return; }
+        if (b == '?' || b == '>' || b == '<' || b == '=') {
+            csiPrivate = true;
+            if (csiPrefix == 0) csiPrefix = b;
+            return;
+        }
         // Intermediate bytes (SP ! " # $ % & ' ( ) * + , - . /)
         // These are part of the sequence — buffer them, don't exit CSI
-        if (b >= 0x20 && b <= 0x2F) { csiIntermediate = true; return; }
+        if (b >= 0x20 && b <= 0x2F) {
+            csiIntermediate = true;
+            if (csiInterBytes.length() < 4) csiInterBytes.append((char) b);
+            return;
+        }
         if (b >= '0' && b <= '9') {
             if (params.isEmpty()) params.add(0);
             int idx = params.size() - 1;
@@ -582,8 +708,12 @@ public class TerminalEmulator {
 
         state = State.NORMAL;
 
-        // Sequences with intermediate bytes (e.g. DECSCUSR \e[N SP q) — just ignore
-        if (csiIntermediate) { csiIntermediate = false; return; }
+        // Sequences with intermediate bytes (e.g. DECSCUSR \e[N SP q) — none are implemented
+        if (csiIntermediate) {
+            csiIntermediate = false;
+            if (unhandledListener != null) unhandled(csiKey(b));
+            return;
+        }
 
         if (csiPrivate) { processCSIPrivate(b); return; }
 
@@ -618,26 +748,27 @@ public class TerminalEmulator {
             case 'u' -> restoreCursor();
             case 'c' -> sendDA();
             case 't' -> processXtwinops(p1);
+            default  -> { if (unhandledListener != null) unhandled(csiKey(b)); }
         }
     }
 
     private void processCSIPrivate(int b) {
         int p1 = params.isEmpty() ? 0 : params.get(0);
+        boolean handled = true;
         if (b == 'h') {
             switch (p1) {
                 case 1           -> appCursorKeys = true;
                 case 3           -> deccolm(true);   // 132-column mode
                 case 6           -> decom(true);     // origin mode
                 case 7           -> autoWrap = true;  // DECAWM
-                case 12          -> {} // cursor blink on  — ignored
+                case 4, 12       -> {} // smooth scroll / cursor blink — cosmetic, deliberately ignored
                 case 25          -> cursorVisible = true;
                 case 47, 1047    -> activateAltBuffer(true);
                 case 1049        -> activateAltBuffer(true);
                 case 2004        -> bracketedPaste = true;
-                // commonly sent by vim/bash — safe to ignore
-                case 1000, 1002,
-                     1003, 1006  -> {} // mouse tracking
-                case 1004        -> {} // focus events
+                // Mouse tracking (1000/1002/1003/1006) and focus events (1004) are requested by
+                // vim, htop, tmux…, but not implemented: they fall through so they get reported.
+                default          -> handled = false;
             }
         } else if (b == 'l') {
             switch (p1) {
@@ -645,17 +776,20 @@ public class TerminalEmulator {
                 case 3           -> deccolm(false);  // 80-column mode
                 case 6           -> decom(false);    // origin mode off
                 case 7           -> { autoWrap = false; wrapPending = false; }  // DECAWM off
-                case 4           -> {} // smooth scroll — ignored
-                case 12          -> {} // cursor blink off — ignored
+                case 4, 12       -> {} // smooth scroll / cursor blink — cosmetic, deliberately ignored
                 case 25          -> cursorVisible = false;
                 case 47, 1047    -> deactivateAltBuffer(true);
                 case 1049        -> exitAltScreen1049();
                 case 2004        -> bracketedPaste = false;
-                case 1000, 1002,
-                     1003, 1006  -> {} // mouse tracking
-                case 1004        -> {} // focus events
+                default          -> handled = false;
             }
+        } else {
+            handled = false;   // e.g. CSI > c (secondary DA), CSI ? 6 n, CSI ? u — none answered
         }
+
+        if (unhandledListener == null) return;
+        if (!handled)               unhandled(csiKey(b));
+        else if (params.size() > 1) unhandled(csiKey(b), "only the first parameter is applied");
     }
 
     // -----------------------------------------------------------------------
@@ -840,6 +974,7 @@ public class TerminalEmulator {
         switch (n) {
             case 5 -> send("\033[0n");
             case 6 -> send("\033[" + (cursorRow + 1) + ";" + (cursorCol + 1) + "R");
+            default -> { if (unhandledListener != null) unhandled(csiKey('n')); }
         }
     }
 
@@ -847,6 +982,7 @@ public class TerminalEmulator {
 
     private void processXtwinops(int op) {
         if (op == 18) send("\033[8;" + rows + ";" + cols + "t");
+        else if (unhandledListener != null) unhandled(csiKey('t'));
     }
 
     // -----------------------------------------------------------------------
@@ -881,6 +1017,9 @@ public class TerminalEmulator {
                         { currentAttrs.fgColor = 256 + encodeRGB(params.get(i+2),params.get(i+3),params.get(i+4)); i += 4; }
                     else if (p == 48 && i + 4 < params.size() && params.get(i + 1) == 2)
                         { currentAttrs.bgColor = 256 + encodeRGB(params.get(i+2),params.get(i+3),params.get(i+4)); i += 4; }
+                    // dim, italic, conceal, strike-through, overline, underline colour… — and a
+                    // 38/48 colour in a form not handled above
+                    else if (unhandledListener != null) unhandled("SGR " + p);
                 }
             }
         }

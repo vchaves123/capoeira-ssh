@@ -173,6 +173,8 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     private OutputStream logStream;
     private static final DateTimeFormatter LOG_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    /** Timestamp for lines this tab writes into app.log (same style as Main's startup banner). */
+    private static final DateTimeFormatter APP_LOG_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final java.util.concurrent.atomic.AtomicInteger LOG_SEQ = new java.util.concurrent.atomic.AtomicInteger();
 
     // -----------------------------------------------------------------------
@@ -273,6 +275,15 @@ public class TerminalTab {
             remoteTitle = title;
             applyTitleIfActive();
         }));
+
+        // Escape sequences the emulator received but does nothing with go to app.log (stdout/err
+        // is redirected there by Main), one line per distinct sequence per tab, capped by the
+        // emulator — so the next missing terminal feature shows up in the log rather than as a
+        // silent misrender. Control characters in the session name are flattened so a line stays
+        // one line.
+        String logLabel = info.label().replaceAll("\\p{Cntrl}", " ");
+        emulator.setUnhandledListener(desc -> System.err.println(
+            LocalDateTime.now().format(APP_LOG_TS) + " [terminal \"" + logLabel + "\"] " + desc));
 
         setupCanvas();
         setupScrollBar();
