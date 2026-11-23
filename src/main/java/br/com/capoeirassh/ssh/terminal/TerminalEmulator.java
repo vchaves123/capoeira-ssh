@@ -33,7 +33,7 @@ public class TerminalEmulator {
     // -----------------------------------------------------------------------
     // Parser states
     // -----------------------------------------------------------------------
-    private enum State { NORMAL, ESC, ESC_HASH, CSI, OSC, OSC_ESC, CHARSET_G0, CHARSET_G1 }
+    private enum State { NORMAL, ESC, ESC_INTER, CSI, OSC, OSC_ESC }
 
     // -----------------------------------------------------------------------
     // Buffers
@@ -110,6 +110,14 @@ public class TerminalEmulator {
     // Introducer of the OSC/DCS/APC/PM/SOS string currently being swallowed (']', 'P', '_', '^',
     // 'X' or 'k'); 0 when none is open.
     private int             stringIntro      = 0;
+    // Intermediate bytes of an "ESC <intermediates> <final>" sequence still being read.
+    private final StringBuilder escInterBytes = new StringBuilder();
+    // Colon-separated sub-parameters of the CSI being read (ECMA-48 §5.4.2), keyed by the index
+    // of the parameter they belong to — e.g. "38:2::255:0:0" gives params[0]=38 with sub-params
+    // [2, 0, 255, 0, 0]. csiInSub: the digits now arriving belong to the last sub-parameter.
+    private final java.util.Map<Integer, List<Integer>> csiSubs = new java.util.HashMap<>();
+    private boolean         csiInSub         = false;
+    private static final int MAX_CSI_SUBPARAMS = 8;
 
     // -----------------------------------------------------------------------
     // Charset (G0 / G1)
@@ -403,6 +411,8 @@ public class TerminalEmulator {
         csiIntermediate = false;
         csiPrefix       = 0;
         csiInterBytes.setLength(0);
+        csiSubs.clear();
+        csiInSub        = false;
     }
 
     private void beginString(int introducer) {
@@ -447,6 +457,8 @@ public class TerminalEmulator {
             for (int i = 0; i < params.size(); i++) {
                 if (i > 0) sb.append(';');
                 sb.append(params.get(i));
+                List<Integer> subs = csiSubs.get(i);
+                if (subs != null) for (int s : subs) sb.append(':').append(s);
             }
         }
         // An intermediate space (DECSCUSR is "CSI Ps SP q") would vanish in a log line — spell it.
@@ -494,6 +506,9 @@ public class TerminalEmulator {
     }
 
     private void processASCII(int b) {
+        // DEL is ignored everywhere — in text and inside a sequence alike (ECMA-48, and what xterm
+        // does). Treating it as a printable character wrote a cell and moved the cursor.
+        if (b == 0x7F) return;
         // ESC always (re)starts an escape sequence, regardless of current parser state.
         // CAN (0x18) and SUB (0x1A) also cancel the current sequence.
         if (b == 0x1B) { state = State.ESC; return; }
@@ -513,23 +528,49 @@ public class TerminalEmulator {
             else          processCodePoint(b);
         } else if (state == State.ESC) {
             processEscape(b);
-        } else if (state == State.ESC_HASH) {
-            // Only DECALN is acted on; DECDHL/DECDWL (3,4,5,6) and anything else are consumed
-            // and ignored — the point is that the final byte must never reach the screen.
+        } else if (state == State.ESC_INTER) {
+            // More intermediates may follow (e.g. "ESC ( % 5"); the first byte from 0x30 up is
+            // the final one and completes the sequence.
+            if (b >= 0x20 && b <= 0x2F) {
+                if (escInterBytes.length() < 4) escInterBytes.append((char) b);
+                return;
+            }
             state = State.NORMAL;
-            if (b == '8') decaln();
-            else if (unhandledListener != null) unhandled("ESC # " + printable(b));
+            dispatchEscIntermediate(b);
         } else if (state == State.CSI) {
             processCSI(b);
-        } else if (state == State.CHARSET_G0) {
-            g0LineDrawing = (b == '0');
-            state = State.NORMAL;
-            if (b != '0' && b != 'B' && unhandledListener != null) unhandled("ESC ( " + printable(b));
-        } else if (state == State.CHARSET_G1) {
-            g1LineDrawing = (b == '0');
-            state = State.NORMAL;
-            if (b != '0' && b != 'B' && unhandledListener != null) unhandled("ESC ) " + printable(b));
         }
+    }
+
+    /**
+     * An escape sequence of the form ESC, one or more intermediate bytes (0x20-0x2F), final byte.
+     * Handled as one class rather than one intermediate at a time: the parser used to know only
+     * '(' ')' and '#', so any other intermediate dropped straight back to text and the final byte
+     * was printed — "ESC % G" showed up on screen as a stray "G".
+     */
+    private void dispatchEscIntermediate(int finalByte) {
+        String inter = escInterBytes.toString();
+        char first = inter.charAt(0);
+        boolean single = inter.length() == 1;
+
+        if (first == '(' || first == ')') {
+            // G0/G1 designation. Only DEC Special Graphics ("0") differs from ASCII here; any
+            // other set — including multi-byte designators like "( % 5" — is treated as ASCII.
+            boolean lineDrawing = single && finalByte == '0';
+            if (first == '(') g0LineDrawing = lineDrawing; else g1LineDrawing = lineDrawing;
+            if (single && (finalByte == '0' || finalByte == 'B')) return;
+        } else if (single && first == '#' && finalByte == '8') {
+            decaln();
+            return;
+        } else if (single && first == '%' && finalByte == 'G') {
+            return;   // select UTF-8: already the only encoding we decode
+        } else if (single && first == ' ' && finalByte == 'F') {
+            return;   // S7C1T: our responses are 7-bit already
+        }
+        // Everything else is consumed (never printed) and reported: ESC # 3-6 (double-size
+        // lines), ESC % @, ESC SP G (8-bit responses), ESC * + - . / (G2/G3 sets, unsupported).
+        if (unhandledListener != null)
+            unhandled("ESC " + inter.replace(" ", "SP") + " " + printable(finalByte));
     }
 
     private void processCodePoint(int cp) {
@@ -644,18 +685,21 @@ public class TerminalEmulator {
     }
 
     private void processEscape(int b) {
+        // ESC followed by an intermediate byte: the sequence isn't complete until its final byte.
+        // Covers charset designation "( )", "#" line attributes, "%", " " and the G2/G3
+        // designators — see dispatchEscIntermediate.
+        if (b >= 0x20 && b <= 0x2F) {
+            escInterBytes.setLength(0);
+            escInterBytes.append((char) b);
+            state = State.ESC_INTER;
+            return;
+        }
         state = State.NORMAL;
         switch (b) {
             case '[' -> beginCsi();
             case ']' -> beginString(']');
             // String sequences — consume until ST (ESC \) using the OSC state machine
             case 'P', '_', '^', 'X', 'k' -> beginString(b);
-            case '(' -> state = State.CHARSET_G0;
-            case ')' -> state = State.CHARSET_G1;
-            // ESC # <digit> — DEC line-size / alignment sequences. Must consume the digit in a
-            // dedicated state: without it the '#' was dropped, the parser fell back to NORMAL,
-            // and the digit was printed as literal text on screen.
-            case '#' -> state = State.ESC_HASH;
             case '7' -> saveCursor();
             case '8' -> restoreCursor();
             case 'c' -> ris();
@@ -686,8 +730,24 @@ public class TerminalEmulator {
         if (b >= '0' && b <= '9') {
             if (params.isEmpty()) params.add(0);
             int idx = params.size() - 1;
+            if (csiInSub) {
+                List<Integer> subs = csiSubs.get(idx);
+                int last = subs.size() - 1;
+                subs.set(last, (int) Math.min((long) subs.get(last) * 10 + (b - '0'), MAX_CSI_PARAM_VALUE));
+                return;
+            }
             // Clamp accumulation so a long digit run can't overflow int into a negative value.
             params.set(idx, (int) Math.min((long) params.get(idx) * 10 + (b - '0'), MAX_CSI_PARAM_VALUE));
+            return;
+        }
+        // ':' opens a sub-parameter of the current parameter ("ESC[4:3m", "ESC[38:2::R:G:Bm").
+        // It used to be taken for the final byte: the sequence ended there and the rest of it
+        // ("3m") was printed as text. An omitted sub-parameter stands for 0, like a parameter.
+        if (b == ':') {
+            if (params.isEmpty()) params.add(0);
+            List<Integer> subs = csiSubs.computeIfAbsent(params.size() - 1, k -> new ArrayList<>());
+            if (subs.size() < MAX_CSI_SUBPARAMS) subs.add(0);
+            csiInSub = true;
             return;
         }
         // ';' ends the current parameter and opens the next. Arriving with nothing accumulated
@@ -703,6 +763,7 @@ public class TerminalEmulator {
         if (b == ';') {
             if (params.isEmpty()) params.add(0);
             if (params.size() < MAX_CSI_PARAMS) params.add(0);
+            csiInSub = false;
             return;
         }
 
@@ -711,6 +772,13 @@ public class TerminalEmulator {
         // Sequences with intermediate bytes (e.g. DECSCUSR \e[N SP q) — none are implemented
         if (csiIntermediate) {
             csiIntermediate = false;
+            if (unhandledListener != null) unhandled(csiKey(b));
+            return;
+        }
+
+        // Sub-parameters are only understood in SGR. Anywhere else, acting on the main values
+        // alone could do the wrong thing, so the whole sequence is dropped (and reported).
+        if (!csiSubs.isEmpty() && (csiPrivate || b != 'm')) {
             if (unhandledListener != null) unhandled(csiKey(b));
             return;
         }
@@ -992,6 +1060,8 @@ public class TerminalEmulator {
         if (params.isEmpty()) params.add(0);
         for (int i = 0; i < params.size(); i++) {
             int p = params.get(i);
+            List<Integer> subs = csiSubs.get(i);
+            if (subs != null) { applySgrSubParams(p, subs); continue; }
             switch (p) {
                 case 0  -> currentAttrs.resetAttrs();
                 case 1  -> currentAttrs.bold      = true;
@@ -1017,12 +1087,54 @@ public class TerminalEmulator {
                         { currentAttrs.fgColor = 256 + encodeRGB(params.get(i+2),params.get(i+3),params.get(i+4)); i += 4; }
                     else if (p == 48 && i + 4 < params.size() && params.get(i + 1) == 2)
                         { currentAttrs.bgColor = 256 + encodeRGB(params.get(i+2),params.get(i+3),params.get(i+4)); i += 4; }
-                    // dim, italic, conceal, strike-through, overline, underline colour… — and a
-                    // 38/48 colour in a form not handled above
+                    // Underline colour: not drawn, but its arguments must be consumed — read as
+                    // attributes, "58;5;196" turned blink on (the 5) and ignored the colour.
+                    else if (p == 58 && i + 2 < params.size() && params.get(i + 1) == 5)
+                        { i += 2; unhandled("SGR 58"); }
+                    else if (p == 58 && i + 4 < params.size() && params.get(i + 1) == 2)
+                        { i += 4; unhandled("SGR 58"); }
+                    // A 38/48/58 colour in a form not handled above: stop here rather than read
+                    // its arguments as attributes of their own.
+                    else if (p == 38 || p == 48 || p == 58)
+                        { unhandled("SGR " + p); i = params.size(); }
+                    // dim, italic, conceal, strike-through, overline…
                     else if (unhandledListener != null) unhandled("SGR " + p);
                 }
             }
         }
+    }
+
+    /** One SGR parameter written with colon sub-parameters ("4:3", "38:2::R:G:B", "38:5:N"). */
+    private void applySgrSubParams(int p, List<Integer> subs) {
+        switch (p) {
+            case 4 -> {
+                // 4:0 is "no underline"; 4:1 single, 4:2 double, 4:3 curly, 4:4 dotted, 4:5
+                // dashed. Only a single underline can be drawn, so every style maps to it.
+                int style = subs.isEmpty() ? 1 : subs.get(0);
+                currentAttrs.underline = style != 0;
+                if (style > 1) unhandled("SGR 4:" + style, "drawn as a single underline");
+            }
+            case 38, 48 -> {
+                int color = colorFromSubParams(subs);
+                if (color == Integer.MIN_VALUE) { unhandled("SGR " + p + " (unsupported colour form)"); return; }
+                if (p == 38) currentAttrs.fgColor = color; else currentAttrs.bgColor = color;
+            }
+            case 58 -> unhandled("SGR 58");
+            default -> unhandled("SGR " + p + " (with sub-parameters)");
+        }
+    }
+
+    /**
+     * Colour from the sub-parameters of 38/48: "5:N" (indexed) or "2:…" (RGB). The RGB form is
+     * written two ways in the wild — the ITU form "2:CS:R:G:B" with a colour-space id (often
+     * left empty, "38:2::R:G:B"), and the common shorthand "2:R:G:B" — told apart by how many
+     * sub-parameters there are. Returns Integer.MIN_VALUE for anything else.
+     */
+    private int colorFromSubParams(List<Integer> s) {
+        if (s.size() >= 2 && s.get(0) == 5) return s.get(1);
+        if (s.size() >= 5 && s.get(0) == 2) return 256 + encodeRGB(s.get(2), s.get(3), s.get(4));
+        if (s.size() == 4 && s.get(0) == 2) return 256 + encodeRGB(s.get(1), s.get(2), s.get(3));
+        return Integer.MIN_VALUE;
     }
 
     private static int encodeRGB(int r, int g, int b) {
