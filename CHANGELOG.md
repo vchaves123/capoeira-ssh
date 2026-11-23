@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.3.4] — 2026-11-23
+
+### Fixed
+- **Mode changes combining several modes applied only the first one.** A program can set or reset
+  many private modes in one sequence (`ESC[?1049;2004h`, `ESC[?12;25h`); only the first was acted
+  on. In practice this left a hidden cursor hidden when a program asked to show it (`?12;25h`) and
+  lost bracketed paste when it was enabled together with the alternate screen. All modes in the
+  list are now applied, in order.
+
+---
+
 ## [2.3.3] — 2026-11-23
 
 ### Fixed
