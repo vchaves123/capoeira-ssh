@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.4.0] — 2026-11-23
 
+### Documentation
+- New [docs/TERMINAL-SEQUENCES.md](docs/TERMINAL-SEQUENCES.md): every terminal control sequence,
+  whether Capoeira handles it, and how to diagnose a missing one. A new test feeds every capability
+  the `xterm-256color` terminal type advertises to the emulator and fails on any that is ignored
+  without being listed as a known gap.
+
 ### Added
 - **Mouse support in terminal programs.** When a program asks for the mouse (htop, mc, vim with
   `:set mouse=a`, tmux…), clicks, drags and the wheel now go to it, in every encoding programs
