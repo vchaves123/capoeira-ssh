@@ -40,11 +40,11 @@ class TerminalEmulatorUnhandledLogTest {
     }
 
     @Test
-    @DisplayName("Private modes that are accepted but not implemented (mouse, focus) are reported")
+    @DisplayName("Private modes that are not implemented (synchronized output, left/right margins) are reported")
     void unimplementedPrivateModes_reported() {
         TerminalEmulator emu = emulator();
-        send(emu, ESC + "[?1000h" + ESC + "[?1004h");
-        assertEquals(List.of("unhandled: CSI ? 1000 h", "unhandled: CSI ? 1004 h"), reports);
+        send(emu, ESC + "[?2026h" + ESC + "[?69h");
+        assertEquals(List.of("unhandled: CSI ? 2026 h", "unhandled: CSI ? 69 h"), reports);
     }
 
     @Test
@@ -68,8 +68,8 @@ class TerminalEmulatorUnhandledLogTest {
     @DisplayName("DECSET with several modes reports just the modes it does not implement")
     void multiParameterDecset_reportsOnlyUnimplementedModes() {
         TerminalEmulator emu = emulator();
-        send(emu, ESC + "[?25;1004h");
-        assertEquals(List.of("unhandled: CSI ? 1004 h"), reports);
+        send(emu, ESC + "[?25;2026h");
+        assertEquals(List.of("unhandled: CSI ? 2026 h"), reports);
     }
 
     @Test
@@ -139,6 +139,7 @@ class TerminalEmulatorUnhandledLogTest {
             "[1;4;5;7m", "[22;24;25;27;39;49m", "[2;3;8;9m", "[23;28;29m", "[4h", "[4l", "[I", "[2Z", "[>c", "[>q", "[?6n", "[?2004$p", "[4$p", "[19t",
             "[22;0;0t", "[23;0;0t", "]10;?\u0007", "]11;?\u0007", "]4;1;?\u0007", "[92;104m", "[?25l", "[?25h", "[?1049h", "[?1049l",
             "[?1h", "[?1l", "[?7l", "[?7h", "[?2004h", "[?2004l", "[?4l", "[?12h", "[?12l",
+            "[?1000h", "[?1006h", "[?1004h", "[?1007h", "[?1006l", "[?1000l", "[?1004l", "[?1007l",
             "[5;10r", "[r", "[L", "[M", "[P", "[X", "[@", "[S", "[T", "[d", "[G", "[A", "[B",
             "[C", "[D", "[E", "[F", "[3;4f", "[s", "[u", "[3g", "[g", "[6n", "[5n", "[c", "[18t",
             "7", "8", "M", "D", "E", "H", "#8", "(0", "(B", ")0", ")B", "]0;title\u0007",

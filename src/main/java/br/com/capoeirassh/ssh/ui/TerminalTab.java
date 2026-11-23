@@ -140,6 +140,10 @@ public class TerminalTab {
     private int selEndCol    = -1, selEndRow    = -1;
     /** True while the trailing MouseUp of a double-click should be ignored. */
     private boolean suppressNextMouseUp = false;
+    // Mouse reporting: the button whose press went to the remote program (-1 = none), and the
+    // last cell a motion event was reported for, so motion is sent per cell rather than per pixel.
+    private int mouseButtonDown = -1;
+    private int lastMouseCol = -1, lastMouseRow = -1;
 
     /** Pending debounced resize runnable; cancelled and rescheduled on every SWT.Resize event. */
     private Runnable pendingResize;
@@ -291,6 +295,15 @@ public class TerminalTab {
         emulator.setUnhandledListener(desc -> System.err.println(
             LocalDateTime.now().format(APP_LOG_TS) + " [terminal \"" + logLabel + "\"] " + desc));
 
+        // OSC 52: a remote program (tmux, vim…) copying to the local clipboard. Write-only — the
+        // emulator never answers a read. The "Copied" indicator is shown every time, so a remote
+        // program can't silently swap what the user is about to paste.
+        emulator.setClipboardListener(text -> display.asyncExec(() -> {
+            if (canvas.isDisposed()) return;
+            copyToClipboard(text);
+            showCopiedIndicator();
+        }));
+
         setupCanvas();
         setupScrollBar();
         startCursorBlink();
@@ -361,11 +374,44 @@ public class TerminalTab {
             }
         });
 
-        canvas.addListener(SWT.MouseWheel, e -> { if (!disconnected) scroll(e.count > 0 ? -3 : 3); });
+        canvas.addListener(SWT.MouseWheel, e -> {
+            if (disconnected) return;
+            if (mouseGoesToApp(e)) {
+                sendMouse(e.count > 0 ? TerminalEmulator.MOUSE_WHEEL_UP : TerminalEmulator.MOUSE_WHEEL_DOWN, false, false, e);
+                return;
+            }
+            // Alternate scroll (DECSET 1007): a pager on the alternate screen has no scrollback
+            // of ours to move through, so the wheel becomes cursor-up/down keys for it.
+            if (scrollOffset == 0 && emulator.isAltScrollActive()) {
+                boolean app = emulator.isAppCursorKeys();
+                String key = e.count > 0 ? (app ? "\033OA" : "\033[A") : (app ? "\033OB" : "\033[B");
+                byte[] bytes = key.getBytes(StandardCharsets.US_ASCII);
+                for (int i = 0; i < 3; i++) sendToServer(bytes);
+                return;
+            }
+            scroll(e.count > 0 ? -3 : 3);
+        });
+
+        // Focus reporting (DECSET 1004): editors use it to reload changed files or pause work.
+        canvas.addListener(SWT.FocusIn, e -> {
+            if (!disconnected && emulator.isFocusReporting()) sendToServer("\033[I".getBytes(StandardCharsets.US_ASCII));
+        });
+        canvas.addListener(SWT.FocusOut, e -> {
+            if (!disconnected && emulator.isFocusReporting()) sendToServer("\033[O".getBytes(StandardCharsets.US_ASCII));
+        });
 
         canvas.addListener(SWT.MouseDown, e -> {
             if (disconnected) { handleOverlayClick(e.x, e.y); return; }
             canvas.setFocus();
+            if (mouseGoesToApp(e) && e.button >= 1 && e.button <= 3) {
+                int btn = e.button == 1 ? TerminalEmulator.MOUSE_LEFT
+                        : e.button == 2 ? TerminalEmulator.MOUSE_MIDDLE : TerminalEmulator.MOUSE_RIGHT;
+                mouseButtonDown = btn;
+                lastMouseCol = e.x / charWidth;
+                lastMouseRow = e.y / charHeight;
+                sendMouse(btn, false, false, e);
+                return;
+            }
             if (e.button == 1 && e.count >= 3) {
                 // Triple click: select the whole line, trimmed to its last non-blank
                 // character — selecting all the way to the terminal's right edge would copy
@@ -406,6 +452,16 @@ public class TerminalTab {
         });
 
         canvas.addListener(SWT.MouseMove, e -> {
+            if (mouseGoesToApp(e)) {
+                boolean held = (e.stateMask & (SWT.BUTTON1 | SWT.BUTTON2 | SWT.BUTTON3)) != 0;
+                if (held ? !emulator.wantsDragMotion() : !emulator.wantsAllMotion()) return;
+                int col = e.x / charWidth, row = e.y / charHeight;
+                if (col == lastMouseCol && row == lastMouseRow) return;   // report cell changes only
+                lastMouseCol = col;
+                lastMouseRow = row;
+                sendMouse(held && mouseButtonDown >= 0 ? mouseButtonDown : TerminalEmulator.MOUSE_NONE, false, true, e);
+                return;
+            }
             if (selAnchorCol < 0 || (e.stateMask & SWT.BUTTON1) == 0) return;
             selEndCol = Math.max(0, Math.min(e.x / charWidth, emulator.getCols() - 1));
 
@@ -425,6 +481,14 @@ public class TerminalTab {
         });
 
         canvas.addListener(SWT.MouseUp, e -> {
+            // A press that went to the program gets its release there too, even if Shift is down
+            // by now — otherwise the program would think the button is still held.
+            if (mouseButtonDown >= 0) {
+                int btn = mouseButtonDown;
+                mouseButtonDown = -1;
+                if (!disconnected) sendMouse(btn, true, false, e);
+                return;
+            }
             if (e.button != 1 || selAnchorCol < 0) return;
             if (suppressNextMouseUp) { suppressNextMouseUp = false; return; }
             selEndCol = Math.max(0, Math.min(e.x / charWidth,  emulator.getCols() - 1));
@@ -438,7 +502,7 @@ public class TerminalTab {
         });
 
         canvas.addListener(SWT.MouseDoubleClick, e -> {
-            if (e.button != 1 || disconnected) return;
+            if (e.button != 1 || disconnected || mouseGoesToApp(e)) return;
             int col = e.x / charWidth;
             int row = e.y / charHeight;
             int cols = emulator.getCols();
@@ -1120,6 +1184,24 @@ public class TerminalTab {
         TerminalTrace t = trace;
         if (t != null) t.tx(data);
         try { connection.send(data); } catch (IOException ignored) {}
+    }
+
+    /**
+     * Whether this mouse event belongs to the remote program rather than to local selection: it
+     * asked for mouse reporting, the view is at the live screen (not scrolled back into
+     * history), and Shift is not held — Shift+mouse always selects locally, as in xterm.
+     */
+    private boolean mouseGoesToApp(org.eclipse.swt.widgets.Event e) {
+        return !disconnected && scrollOffset == 0 && emulator.isMouseReporting()
+            && (e.stateMask & SWT.SHIFT) == 0;
+    }
+
+    private void sendMouse(int button, boolean release, boolean motion, org.eclipse.swt.widgets.Event e) {
+        int mods = ((e.stateMask & SWT.ALT) != 0 ? TerminalEmulator.MOUSE_MOD_META : 0)
+                 | ((e.stateMask & SWT.CTRL) != 0 ? TerminalEmulator.MOUSE_MOD_CTRL : 0);
+        byte[] bytes = emulator.encodeMouseEvent(button, release, motion,
+                                                 e.x / charWidth, e.y / charHeight, mods);
+        if (bytes != null) sendToServer(bytes);
     }
 
     /** Wraps {@link #sendToServer} for bytes that originate from the user (typed keys, pasted

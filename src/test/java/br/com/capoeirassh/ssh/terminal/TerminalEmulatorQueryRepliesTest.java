@@ -104,9 +104,9 @@ class TerminalEmulatorQueryRepliesTest {
     }
 
     @Test
-    @DisplayName("DECRQM says 'not recognized' for modes we don't implement")
+    @DisplayName("DECRQM: reset for an implemented mode that is off, not recognized for unimplemented ones")
     void decrqmUnknown() {
-        assertEquals(ESC + "[?1000;0$y", reply(emu(), ESC + "[?1000$p"));
+        assertEquals(ESC + "[?1000;2$y", reply(emu(), ESC + "[?1000$p"));
         assertEquals(ESC + "[?2026;0$y", reply(emu(), ESC + "[?2026$p"));
     }
 

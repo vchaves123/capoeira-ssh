@@ -239,13 +239,13 @@ class TerminalEmulatorTest {
         emu.setTitleListener(reported::set);
 
         StringBuilder huge = new StringBuilder(ESC + "]0;");
-        for (int i = 0; i < 20_000; i++) huge.append('x');
+        for (int i = 0; i < 400_000; i++) huge.append('x');   // well past MAX_OSC_LEN (256 KiB)
         send(emu, huge.toString());
         send(emu, ""); // BEL terminates it now
 
         assertNotNull(reported.get(), "title should have been reported once terminated");
-        assertTrue(reported.get().length() < 20_000,
-                "buffer should have been capped well below the 20000 x's sent, was " + reported.get().length());
+        assertTrue(reported.get().length() <= 262_144,
+                "buffer should have been capped at MAX_OSC_LEN, was " + reported.get().length());
     }
 
     // -----------------------------------------------------------------------
