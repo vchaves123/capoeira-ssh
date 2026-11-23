@@ -114,11 +114,11 @@ class TerminalEmulatorUnhandledLogTest {
     }
 
     @Test
-    @DisplayName("A non-printable final byte is written as 0xNN, never raw")
-    void nonPrintableFinal_isEscaped() {
+    @DisplayName("DEL inside a sequence is skipped, not taken as its final byte")
+    void delInsideCsi_isSkipped() {
         TerminalEmulator emu = emulator();
-        send(emu, ESC + "[5\u007f");
-        assertEquals(List.of("unhandled: CSI 5 0x7F"), reports);
+        send(emu, ESC + "[5\u007fz");
+        assertEquals(List.of("unhandled: CSI 5 z"), reports);
     }
 
     @Test

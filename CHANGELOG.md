@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.3.3] — 2026-11-23
+
+### Fixed
+- **Stray characters printed by some escape sequences.** Several sequences left part of
+  themselves on screen as text:
+  - SGR with colon sub-parameters — `ESC[4:3m` (curly underline) or `ESC[38:2::R:G:Bm` (RGB
+    colour) — printed `3m` or the colour numbers. Colons are now understood: `4:0`…`4:5` switch
+    underline off/on (every style is drawn as a single underline), and `38:`/`48:` accept the
+    indexed form and both RGB forms (with or without the colour-space field). Any other sequence
+    with sub-parameters is dropped whole rather than misread.
+  - `ESC % G`, `ESC SP F` and the G2/G3 charset designators (`ESC * B`, `ESC + 0`, …) printed
+    their last character. Every `ESC` + intermediate + final sequence is now consumed as a unit.
+  - DEL (`0x7F`) was written as a character and moved the cursor; it is now ignored, as xterm does.
+- `ESC[58;5;Nm` (underline colour) turned blinking on, reading the `5` as an attribute. Its
+  arguments are now consumed (the colour itself is not drawn), and an incomplete `38`/`48`/`58`
+  colour no longer spills its arguments into other attributes.
+
+---
+
 ## [2.3.2] — 2026-11-23
 
 ### Added
