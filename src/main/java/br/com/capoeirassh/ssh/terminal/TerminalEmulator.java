@@ -182,6 +182,19 @@ public class TerminalEmulator {
     private TitleListener     titleListener;
     private ColumnModeListener columnModeListener;
     private UnhandledListener unhandledListener;
+
+    // What the emulator can't know on its own, supplied by the UI so that queries can be answered:
+    // the default colours (OSC 10/11/12) and the character cell size in pixels (CSI 14/16 t).
+    private int reportFgRgb = 0xC0C0C0;
+    private int reportBgRgb = 0x000000;
+    private int cellPixelW  = 0;
+    private int cellPixelH  = 0;
+    // Last window title set by OSC 0/2, and the stack XTWINOPS 22/23 push it to and pop it from.
+    private String currentTitle = "";
+    private final java.util.ArrayDeque<String> titleStack = new java.util.ArrayDeque<>();
+    private static final int MAX_TITLE_STACK = 10;
+    // Whether the OSC being finished ended with BEL rather than ST — replies mirror it, as xterm's do.
+    private boolean oscEndedByBel = false;
     /** Distinct unhandled sequences already reported, so each is reported once. */
     private final Set<String> reportedUnhandled = new HashSet<>();
     private boolean unhandledCapped = false;
@@ -252,6 +265,10 @@ public class TerminalEmulator {
     public synchronized void setTitleListener(TitleListener l)       { this.titleListener = l; }
     public synchronized void setColumnModeListener(ColumnModeListener l) { this.columnModeListener = l; }
     public synchronized void setUnhandledListener(UnhandledListener l) { this.unhandledListener = l; }
+    /** Default text/background colours (0xRRGGBB), reported to OSC 10/11/12 queries. */
+    public synchronized void setReportedColors(int fgRgb, int bgRgb) { reportFgRgb = fgRgb; reportBgRgb = bgRgb; }
+    /** Character cell size in pixels, reported to CSI 14 t / CSI 16 t; 0 = unknown (not answered). */
+    public synchronized void setCellPixelSize(int w, int h)        { cellPixelW = w; cellPixelH = h; }
     public synchronized void setAllowColumnMode(boolean on)          { this.allowColumnMode = on; }
 
     // -----------------------------------------------------------------------
@@ -357,12 +374,12 @@ public class TerminalEmulator {
      *  byte, so they remain unambiguous terminators. */
     private void processOscByte(int b) {
         if (state == State.OSC_ESC) {
-            if (b == '\\') finishOsc();
+            if (b == '\\') { oscEndedByBel = false; finishOsc(); }
             else           { state = State.OSC; if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b); }
             return;
         }
         if      (b == 0x1B) state = State.OSC_ESC;
-        else if (b == 0x07) finishOsc();
+        else if (b == 0x07) { oscEndedByBel = true; finishOsc(); }
         else if (oscBuffer.length() < MAX_OSC_LEN) oscBuffer.append((char) b);
     }
 
@@ -376,19 +393,70 @@ public class TerminalEmulator {
         oscBuffer.setLength(0);
         int intro = stringIntro;
         stringIntro = 0;
+        if (intro == ']' && handleOsc(raw)) return;
         reportIgnoredString(intro, raw);
+    }
+
+    /** Acts on the OSC strings the emulator understands; false for any other (it gets reported). */
+    private boolean handleOsc(String raw) {
         int sep = raw.indexOf(';');
-        if (sep > 0 && titleListener != null) {
-            String ps = raw.substring(0, sep);
-            if (ps.equals("0") || ps.equals("2")) {
+        if (sep <= 0) return false;
+        String ps = raw.substring(0, sep);
+        String pt = raw.substring(sep + 1);
+        switch (ps) {
+            case "0", "2" -> {
                 // oscBuffer holds one raw byte per char (0-255), never UTF-8-decoded — harmless
                 // while this buffer was only ever discarded, but the title text can contain
                 // accented characters or icon glyphs, so decode it properly before surfacing it.
-                byte[] bytes = new byte[raw.length() - sep - 1];
-                for (int i = 0; i < bytes.length; i++) bytes[i] = (byte) raw.charAt(sep + 1 + i);
-                titleListener.onTitleChanged(new String(bytes, StandardCharsets.UTF_8));
+                byte[] bytes = new byte[pt.length()];
+                for (int i = 0; i < bytes.length; i++) bytes[i] = (byte) pt.charAt(i);
+                setTitle(new String(bytes, StandardCharsets.UTF_8));
+                return true;
             }
+            case "10", "11", "12" -> {
+                // Colour queries ("?") — programs ask for the background to pick a light or dark
+                // theme (vim, bat, delta…) and wait for an answer until a timeout. Setting these
+                // colours from the remote side is not supported.
+                if (!pt.equals("?")) return false;
+                int rgb = ps.equals("11") ? reportBgRgb : reportFgRgb;   // 12 = cursor: drawn in fg
+                send("\033]" + ps + ";" + xparseColor(rgb) + oscTerminator());
+                return true;
+            }
+            case "4" -> {
+                // Palette queries, possibly several: "4;1;?;9;?". Setting the palette is not
+                // supported, so anything but a pure query is left to be reported.
+                String[] parts = pt.split(";", -1);
+                if (parts.length == 0 || parts.length % 2 != 0) return false;
+                for (int i = 0; i < parts.length; i += 2) {
+                    if (!parts[i + 1].equals("?") || !isSmallInt(parts[i], 255)) return false;
+                }
+                for (int i = 0; i < parts.length; i += 2) {
+                    int idx = Integer.parseInt(parts[i]);
+                    send("\033]4;" + idx + ";" + xparseColor(PALETTE[idx]) + oscTerminator());
+                }
+                return true;
+            }
+            default -> { return false; }
         }
+    }
+
+    private void setTitle(String title) {
+        currentTitle = title;
+        if (titleListener != null) titleListener.onTitleChanged(title);
+    }
+
+    private String oscTerminator() { return oscEndedByBel ? "\007" : "\033\\"; }
+
+    /** 0xRRGGBB as X11's "rgb:RRRR/GGGG/BBBB" — the format xterm answers colour queries in. */
+    private static String xparseColor(int rgb) {
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        return String.format("rgb:%02x%02x/%02x%02x/%02x%02x", r, r, g, g, b, b);
+    }
+
+    private static boolean isSmallInt(String s, int max) {
+        if (s.isEmpty() || s.length() > 3) return false;
+        for (int i = 0; i < s.length(); i++) if (s.charAt(i) < '0' || s.charAt(i) > '9') return false;
+        return Integer.parseInt(s) <= max;
     }
 
     private void processC1(int b) {
@@ -397,7 +465,7 @@ public class TerminalEmulator {
             case 0x85 -> nel();
             case 0x8D -> ri();
             case 0x9B -> beginCsi();
-            case 0x9C -> finishOsc();  // ST — terminates any open string
+            case 0x9C -> { oscEndedByBel = false; finishOsc(); }  // ST — terminates any open string
             case 0x90 -> beginString('P');   // DCS
             case 0x98 -> beginString('X');   // SOS
             case 0x9D -> beginString(']');   // OSC
@@ -779,6 +847,7 @@ public class TerminalEmulator {
         // Sequences with intermediate bytes (e.g. DECSCUSR \e[N SP q) — none are implemented
         if (csiIntermediate) {
             csiIntermediate = false;
+            if (b == 'p' && csiInterBytes.toString().equals("$")) { answerModeQuery(); return; }
             if (unhandledListener != null) unhandled(csiKey(b));
             return;
         }
@@ -844,8 +913,61 @@ public class TerminalEmulator {
             }
             return;
         }
-        // e.g. CSI > c (secondary DA), CSI ? 6 n, CSI ? u — none answered
+        int p1 = params.isEmpty() ? 0 : params.get(0);
+        if (csiPrefix == '>' && b == 'c' && p1 == 0) {
+            // Secondary DA. Answer as a VT220 (Pp=1), firmware 1.0 — deliberately not claiming to
+            // be xterm, which would invite xterm-only follow-up queries.
+            send("\033[>1;10;0c");
+            return;
+        }
+        if (csiPrefix == '>' && b == 'q' && p1 == 0) {
+            // XTVERSION: name and version, as a DCS string.
+            send("\033P>|Capoeira SSH " + br.com.capoeirassh.ssh.BuildInfo.VERSION + "\033\\");
+            return;
+        }
+        if (csiPrefix == '?' && b == 'n' && p1 == 6) {
+            // DECXCPR: cursor position, private form of DSR 6.
+            send("\033[?" + (cursorRow + 1) + ";" + (cursorCol + 1) + "R");
+            return;
+        }
+        // e.g. CSI ? u (kitty keyboard query: no reply is the documented "unsupported" answer)
         if (unhandledListener != null) unhandled(csiKey(b));
+    }
+
+    /**
+     * DECRQM ("CSI ? Ps $ p" / "CSI Ps $ p"): report whether a mode is set. Programs probe modes
+     * this way before relying on them (synchronized output, bracketed paste…) and otherwise wait
+     * for a timeout. Answer codes: 0 not recognized, 1 set, 2 reset, 3 permanently set,
+     * 4 permanently reset.
+     */
+    private void answerModeQuery() {
+        int mode = params.isEmpty() ? 0 : params.get(0);
+        boolean dec = csiPrefix == '?';
+        int v = dec ? privateModeState(mode) : ansiModeState(mode);
+        send("\033[" + (dec ? "?" : "") + mode + ";" + v + "$y");
+    }
+
+    private int privateModeState(int mode) {
+        return switch (mode) {
+            case 1                -> appCursorKeys  ? 1 : 2;
+            case 3                -> cols == 132    ? 1 : 2;
+            case 6                -> originMode     ? 1 : 2;
+            case 7                -> autoWrap       ? 1 : 2;
+            case 25               -> cursorVisible  ? 1 : 2;
+            case 47, 1047, 1049   -> altBufferActive ? 1 : 2;
+            case 2004             -> bracketedPaste ? 1 : 2;
+            case 4                -> 4;   // smooth scroll: never
+            case 12               -> 3;   // cursor blink: always
+            default               -> 0;   // mouse, focus, synchronized output… not implemented
+        };
+    }
+
+    private int ansiModeState(int mode) {
+        return switch (mode) {
+            case 4  -> insertMode ? 1 : 2;
+            case 20 -> 4;                 // LNM: never
+            default -> 0;
+        };
     }
 
     /** Applies one DEC private mode; false when the mode is not implemented. */
@@ -1055,9 +1177,30 @@ public class TerminalEmulator {
 
     private void sendDA() { send("\033[?1;2c"); }
 
+    /** XTWINOPS (CSI Ps t): only the reports and the title stack. The window-manipulating
+     *  operations (move, resize, iconify, raise…) are deliberately not honoured — a remote
+     *  program must not be able to move or resize the window — and are only logged. */
     private void processXtwinops(int op) {
-        if (op == 18) send("\033[8;" + rows + ";" + cols + "t");
-        else if (unhandledListener != null) unhandled(csiKey('t'));
+        switch (op) {
+            case 18 -> send("\033[8;" + rows + ";" + cols + "t");      // text area, characters
+            case 19 -> send("\033[9;" + rows + ";" + cols + "t");      // screen, characters
+            case 14 -> {                                               // text area, pixels
+                if (cellPixelW <= 0) { unhandled(csiKey('t')); return; }
+                send("\033[4;" + rows * cellPixelH + ";" + cols * cellPixelW + "t");
+            }
+            case 16 -> {                                               // character cell, pixels
+                if (cellPixelW <= 0) { unhandled(csiKey('t')); return; }
+                send("\033[6;" + cellPixelH + ";" + cellPixelW + "t");
+            }
+            // Title stack: programs that set the title push the shell's first and pop it on
+            // exit, so the title comes back (ncurses sends 22 / 23 with the alternate screen).
+            case 22 -> {
+                if (titleStack.size() >= MAX_TITLE_STACK) titleStack.removeLast();
+                titleStack.push(currentTitle);
+            }
+            case 23 -> { if (!titleStack.isEmpty()) setTitle(titleStack.pop()); }
+            default -> { if (unhandledListener != null) unhandled(csiKey('t')); }
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -227,6 +227,10 @@ public class TerminalTab {
         initFont();
 
         emulator = new TerminalEmulator(80, 24);
+        // What the emulator can't know by itself, for answering colour and size queries (OSC
+        // 10/11, CSI 14/16 t). Kept current by setDefaultColors() and initFont().
+        emulator.setReportedColors(defaultFgRgb, defaultBgRgb);
+        emulator.setCellPixelSize(charWidth, charHeight);
         emulator.setChangeListener(() -> {
             // Coalesce bursts into at most one pending asyncExec. The SSH reader thread calls
             // this once per socket read — during a fast stream (e.g. a CLI printing many small
@@ -320,6 +324,7 @@ public class TerminalTab {
         charWidth  = sz.x;
         charHeight = gc.getFontMetrics().getHeight();
         gc.dispose();
+        if (emulator != null) emulator.setCellPixelSize(charWidth, charHeight);
 
         // Coverage and substitute fonts are both specific to this family/size pair, and the
         // substitutes have to be sized against the cell — so this must come after the measurement.
@@ -2003,6 +2008,7 @@ public class TerminalTab {
         RGB f = fg.getRGB(), b = bg.getRGB();
         defaultFgRgb = (f.red << 16) | (f.green << 8) | f.blue;
         defaultBgRgb = (b.red << 16) | (b.green << 8) | b.blue;
+        if (emulator != null) emulator.setReportedColors(defaultFgRgb, defaultBgRgb);
     }
 
     public int[] getAppearance() {
