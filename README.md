@@ -20,7 +20,9 @@ A lightweight SSH terminal client with a built-in xterm-256color emulator, built
 
 ## Features
 
-- **xterm-256color** terminal emulator with full colour, bold, underline and reverse support
+- **xterm-256color** terminal emulator with full colour, bold, faint, italic, underline, strike-through
+  and reverse support, mouse reporting, and OSC 52 clipboard copy — see
+  [docs/TERMINAL-SEQUENCES.md](docs/TERMINAL-SEQUENCES.md) for exactly what is handled
 - **Tabbed interface** — open multiple sessions side by side, drag tabs to reorder
 - **Session manager** — save hosts, port, authentication method and terminal appearance per session
 - **Session icons** — pick one of 36 bundled icons to tell sessions apart at a glance
