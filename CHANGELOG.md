@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.3.2] — 2026-11-23
+
+### Added
+- **Unhandled terminal sequences are now logged.** Each escape sequence the terminal receives but
+  does nothing with is written once to `~/.capoeira/log/app.log`, tagged with the session name —
+  for example `unhandled: CSI ? 1000 h` (mouse tracking) or `unhandled: SGR 3` (italic) — so a
+  missing feature shows up in the log instead of as a silent misrender. Up to 200 distinct
+  sequences per tab are logged. Only codes and parameters are written: for OSC and DCS strings
+  (window titles, links, clipboard data) only the number and the length are recorded, never the
+  content.
+
+---
+
 ## [2.3.1] — 2026-11-23
 
 ### Fixed
