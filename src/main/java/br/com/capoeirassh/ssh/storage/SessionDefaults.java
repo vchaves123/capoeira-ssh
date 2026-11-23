@@ -91,6 +91,7 @@ public final class SessionDefaults {
         c.sshVerbose = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
         c.allowColumnMode = Boolean.parseBoolean(p.getProperty("allowColumnMode", "true"));
         c.legacyAlgorithms = Boolean.parseBoolean(p.getProperty("legacyAlgorithms", "false"));
+        c.allowClipboardWrite = Boolean.parseBoolean(p.getProperty("allowClipboardWrite", "false"));
         current = c;
     }
 
@@ -117,6 +118,7 @@ public final class SessionDefaults {
         p.setProperty("sshVerbose", String.valueOf(current.sshVerbose));
         p.setProperty("allowColumnMode", String.valueOf(current.allowColumnMode));
         p.setProperty("legacyAlgorithms", String.valueOf(current.legacyAlgorithms));
+        p.setProperty("allowClipboardWrite", String.valueOf(current.allowClipboardWrite));
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             p.store(baos, null);

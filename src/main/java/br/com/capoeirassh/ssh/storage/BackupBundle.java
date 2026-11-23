@@ -355,6 +355,7 @@ public final class BackupBundle {
         s.sshVerbose    = Boolean.parseBoolean(p.getProperty("sshVerbose", "false"));
         s.allowColumnMode = Boolean.parseBoolean(p.getProperty("allowColumnMode", "true"));
         s.legacyAlgorithms = Boolean.parseBoolean(p.getProperty("legacyAlgorithms", "false"));
+        s.allowClipboardWrite = Boolean.parseBoolean(p.getProperty("allowClipboardWrite", "false"));
         s.sortOrder     = def(p.getProperty("sortOrder", "0"), 0);
         s.tags          = parseTags(p.getProperty("tags", ""));
         try { s.authType = SessionInfo.AuthType.valueOf(p.getProperty("authType", "PASSWORD")); }

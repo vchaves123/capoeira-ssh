@@ -27,6 +27,9 @@ public class ConfigurationSettings {
     /** When true, offer the SHA-1-era algorithms modern SSH disabled, to reach legacy gear —
      *  see {@link SessionInfo#legacyAlgorithms}. Takes effect on the next connect. */
     public boolean legacyAlgorithms = false;
+    /** When true, remote programs may write to the local clipboard with OSC 52 —
+     *  see {@link SessionInfo#allowClipboardWrite}. */
+    public boolean allowClipboardWrite = false;
 
     public static ConfigurationSettings fromSession(SessionInfo s) {
         ConfigurationSettings c = new ConfigurationSettings();
@@ -42,6 +45,7 @@ public class ConfigurationSettings {
         c.sshVerbose    = s.sshVerbose;
         c.allowColumnMode = s.allowColumnMode;
         c.legacyAlgorithms = s.legacyAlgorithms;
+        c.allowClipboardWrite = s.allowClipboardWrite;
         return c;
     }
 
@@ -58,6 +62,7 @@ public class ConfigurationSettings {
         s.sshVerbose    = sshVerbose;
         s.allowColumnMode = allowColumnMode;
         s.legacyAlgorithms = legacyAlgorithms;
+        s.allowClipboardWrite = allowClipboardWrite;
     }
 
     public ConfigurationSettings copy() {
@@ -70,6 +75,7 @@ public class ConfigurationSettings {
         c.sshVerbose = sshVerbose;
         c.allowColumnMode = allowColumnMode;
         c.legacyAlgorithms = legacyAlgorithms;
+        c.allowClipboardWrite = allowClipboardWrite;
         return c;
     }
 }

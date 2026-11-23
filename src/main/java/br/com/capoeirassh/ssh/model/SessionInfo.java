@@ -47,6 +47,11 @@ public class SessionInfo {
      *  equivalent — off there by default, on here, since a full-screen app asking for 132
      *  columns and silently getting 80 renders corrupted output instead of failing visibly. */
     public boolean  allowColumnMode = true;
+    /** When true, a remote program may put text on the local clipboard with OSC 52 (tmux, vim
+     *  and neovim use it to copy over SSH). Write-only — the emulator never answers a read.
+     *  Off by default: a program on the server silently replacing what the user is about to
+     *  paste is a risk worth opting into knowingly; the "Copied" indicator shows every write. */
+    public boolean  allowClipboardWrite = false;
     /** When true, the algorithms this client offers are widened to include ones modern SSH
      *  disabled by default — notably the {@code ssh-rsa} host key (RSA signed with SHA-1), plus
      *  the SHA-1 key exchanges, CBC ciphers and SHA-1/MD5 MACs of the same generation. Needed to
@@ -111,6 +116,7 @@ public class SessionInfo {
         c.backspaceCode = backspaceCode;
         c.sshVerbose = sshVerbose;
         c.allowColumnMode = allowColumnMode;
+        c.allowClipboardWrite = allowClipboardWrite;
         c.legacyAlgorithms = legacyAlgorithms;
         c.sortOrder = sortOrder;
         c.tags = new java.util.ArrayList<>(tags);

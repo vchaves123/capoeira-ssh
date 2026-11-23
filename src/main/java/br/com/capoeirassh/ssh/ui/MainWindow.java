@@ -1029,6 +1029,7 @@ public class MainWindow {
         current.backspaceCode = info.backspaceCode;
         current.sshVerbose    = info.sshVerbose;
         current.allowColumnMode = info.allowColumnMode;
+        current.allowClipboardWrite = info.allowClipboardWrite;
 
         boolean isSerial = info.connectionType == br.com.capoeirassh.ssh.model.SessionInfo.ConnectionType.SERIAL;
         String hostHint = isSerial ? info.serialPortName : info.host;
@@ -1058,6 +1059,8 @@ public class MainWindow {
         terminal.setSshVerbose(s.sshVerbose);
         info.allowColumnMode = s.allowColumnMode;
         terminal.setAllowColumnMode(s.allowColumnMode);
+        info.allowClipboardWrite = s.allowClipboardWrite;
+        terminal.setAllowClipboardWrite(s.allowClipboardWrite);
     }
 
     private void closeAll() {
