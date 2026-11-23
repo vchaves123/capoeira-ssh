@@ -65,11 +65,11 @@ class TerminalEmulatorUnhandledLogTest {
     }
 
     @Test
-    @DisplayName("DECSET with several parameters says only the first one was applied")
-    void multiParameterDecset_flagged() {
+    @DisplayName("DECSET with several modes reports just the modes it does not implement")
+    void multiParameterDecset_reportsOnlyUnimplementedModes() {
         TerminalEmulator emu = emulator();
         send(emu, ESC + "[?25;1004h");
-        assertEquals(List.of("unhandled: CSI ? 25;1004 h (only the first parameter is applied)"), reports);
+        assertEquals(List.of("unhandled: CSI ? 1004 h"), reports);
     }
 
     @Test

@@ -821,43 +821,39 @@ public class TerminalEmulator {
     }
 
     private void processCSIPrivate(int b) {
-        int p1 = params.isEmpty() ? 0 : params.get(0);
-        boolean handled = true;
-        if (b == 'h') {
-            switch (p1) {
-                case 1           -> appCursorKeys = true;
-                case 3           -> deccolm(true);   // 132-column mode
-                case 6           -> decom(true);     // origin mode
-                case 7           -> autoWrap = true;  // DECAWM
-                case 4, 12       -> {} // smooth scroll / cursor blink — cosmetic, deliberately ignored
-                case 25          -> cursorVisible = true;
-                case 47, 1047    -> activateAltBuffer(true);
-                case 1049        -> activateAltBuffer(true);
-                case 2004        -> bracketedPaste = true;
-                // Mouse tracking (1000/1002/1003/1006) and focus events (1004) are requested by
-                // vim, htop, tmux…, but not implemented: they fall through so they get reported.
-                default          -> handled = false;
+        if (csiPrefix == '?' && (b == 'h' || b == 'l')) {
+            // DECSET/DECRST take any number of modes ("CSI ? 1000 ; 1006 h", "CSI ? 12 ; 25 h"),
+            // applied left to right. Only the first used to be acted on, so the rest were lost —
+            // cvvis ("?12;25h") never showed the cursor, rs2 ("?3;4l") never left 132 columns.
+            boolean on = b == 'h';
+            if (params.isEmpty()) params.add(0);
+            for (int mode : params) {
+                if (!setPrivateMode(mode, on) && unhandledListener != null)
+                    unhandled("CSI ? " + mode + " " + (char) b);
             }
-        } else if (b == 'l') {
-            switch (p1) {
-                case 1           -> appCursorKeys = false;
-                case 3           -> deccolm(false);  // 80-column mode
-                case 6           -> decom(false);    // origin mode off
-                case 7           -> { autoWrap = false; wrapPending = false; }  // DECAWM off
-                case 4, 12       -> {} // smooth scroll / cursor blink — cosmetic, deliberately ignored
-                case 25          -> cursorVisible = false;
-                case 47, 1047    -> deactivateAltBuffer(true);
-                case 1049        -> exitAltScreen1049();
-                case 2004        -> bracketedPaste = false;
-                default          -> handled = false;
-            }
-        } else {
-            handled = false;   // e.g. CSI > c (secondary DA), CSI ? 6 n, CSI ? u — none answered
+            return;
         }
+        // e.g. CSI > c (secondary DA), CSI ? 6 n, CSI ? u — none answered
+        if (unhandledListener != null) unhandled(csiKey(b));
+    }
 
-        if (unhandledListener == null) return;
-        if (!handled)               unhandled(csiKey(b));
-        else if (params.size() > 1) unhandled(csiKey(b), "only the first parameter is applied");
+    /** Applies one DEC private mode; false when the mode is not implemented. */
+    private boolean setPrivateMode(int mode, boolean on) {
+        switch (mode) {
+            case 1           -> appCursorKeys = on;
+            case 3           -> deccolm(on);     // 132 / 80-column mode
+            case 6           -> decom(on);       // origin mode
+            case 7           -> { autoWrap = on; if (!on) wrapPending = false; }  // DECAWM
+            case 4, 12       -> {} // smooth scroll / cursor blink — cosmetic, deliberately ignored
+            case 25          -> cursorVisible = on;
+            case 47, 1047    -> { if (on) activateAltBuffer(true); else deactivateAltBuffer(true); }
+            case 1049        -> { if (on) activateAltBuffer(true); else exitAltScreen1049(); }
+            case 2004        -> bracketedPaste = on;
+            // Mouse tracking (1000/1002/1003/1006) and focus events (1004) are requested by
+            // vim, htop, tmux…, but not implemented: they fall through so they get reported.
+            default          -> { return false; }
+        }
+        return true;
     }
 
     // -----------------------------------------------------------------------
