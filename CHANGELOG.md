@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.3.6] — 2026-11-23
+
+### Added
+- **Backward and forward tab** (`ESC[nZ` / `ESC[nI`) — used by curses programs to move across
+  forms and menus; the cursor used to stay put.
+- **Insert mode** (`ESC[4h` / `ESC[4l`): while on, printed text pushes the rest of the line to the
+  right instead of overwriting it. Some editors and older curses programs rely on it.
+
+---
+
 ## [2.3.5] — 2026-11-23
 
 ### Added

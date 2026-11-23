@@ -53,6 +53,8 @@ public class TerminalEmulator {
     private int     cursorRow;
     private int     cursorCol;
     private boolean wrapPending = false;
+    // IRM (CSI 4 h): printing shifts the rest of the line right instead of overwriting it.
+    private boolean insertMode  = false;
 
     // The last graphic code point written, as it arrived (before any line-drawing mapping), for
     // REP (CSI n b). -1 means "nothing to repeat" — at power-on/reset, or when the last thing
@@ -224,6 +226,7 @@ public class TerminalEmulator {
         wrapPending  = false;
         lastPrintedCp = -1;
         altCursorSaved = false;
+        insertMode    = false;
         scrollTop    = 0;
         scrollBottom = rows - 1;
         currentAttrs.clear();
@@ -610,6 +613,10 @@ public class TerminalEmulator {
             advanceLine();
         }
 
+        // IRM: open a gap of the glyph's width at the cursor first; what falls off the right
+        // margin is lost, exactly as with ICH.
+        if (insertMode) insertChars(width);
+
         writeCell(cursorRow, cursorCol, ch);
         if (width == 2) {
             writeCell(cursorRow, cursorCol + 1, ' ');
@@ -816,6 +823,10 @@ public class TerminalEmulator {
             case 'u' -> restoreCursor();
             case 'c' -> sendDA();
             case 't' -> processXtwinops(p1);
+            case 'I' -> forwardTabs(Math.max(1, p1));
+            case 'Z' -> backTabs(Math.max(1, p1));
+            case 'h' -> setAnsiModes(true);
+            case 'l' -> setAnsiModes(false);
             default  -> { if (unhandledListener != null) unhandled(csiKey(b)); }
         }
     }
@@ -1317,6 +1328,32 @@ public class TerminalEmulator {
         wrapPending = false;
     }
 
+    /** CHT (CSI n I): n forward tabs. Capped at the line width — past that every extra tab is a
+     *  no-op at the right margin, and n comes from the remote side. */
+    private void forwardTabs(int n) {
+        for (int i = Math.min(n, cols); i > 0; i--) advanceTab();
+    }
+
+    /** CBT (CSI n Z): back n tab stops; with none left the cursor stops at column 0. ncurses
+     *  uses it (terminfo cbt) to move left across a form or menu. */
+    private void backTabs(int n) {
+        for (int i = Math.min(n, cols); i > 0 && cursorCol > 0; i--) {
+            int c = cursorCol - 1;
+            while (c > 0 && !(c < tabStops.length && tabStops[c])) c--;
+            cursorCol = c;
+        }
+        wrapPending = false;
+    }
+
+    /** SM/RM (CSI Ps h / CSI Ps l, no prefix): ANSI modes. Only IRM (4) is implemented. */
+    private void setAnsiModes(boolean on) {
+        if (params.isEmpty()) params.add(0);
+        for (int mode : params) {
+            if (mode == 4) insertMode = on;
+            else if (unhandledListener != null) unhandled("CSI " + mode + " " + (on ? 'h' : 'l'));
+        }
+    }
+
     /**
      * Scrolls the scroll region by {@code n} lines.
      * Positive = scroll up (new blank line at bottom);
@@ -1477,6 +1514,7 @@ public class TerminalEmulator {
         sb.append(",\"scroll\":[").append(scrollTop).append(',').append(scrollBottom).append(']');
         sb.append(",\"originMode\":").append(originMode);
         sb.append(",\"autoWrap\":").append(autoWrap);
+        sb.append(",\"insertMode\":").append(insertMode);
         sb.append(",\"appCursorKeys\":").append(appCursorKeys);
         sb.append(",\"bracketedPaste\":").append(bracketedPaste);
         sb.append(",\"g0LineDrawing\":").append(g0LineDrawing);
