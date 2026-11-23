@@ -76,8 +76,8 @@ class TerminalEmulatorUnhandledLogTest {
     @DisplayName("Unsupported SGR attributes are reported one by one")
     void unsupportedSgr_reported() {
         TerminalEmulator emu = emulator();
-        send(emu, ESC + "[2;3;9m");
-        assertEquals(List.of("unhandled: SGR 2", "unhandled: SGR 3", "unhandled: SGR 9"), reports);
+        send(emu, ESC + "[21;53m");   // double underline, overline
+        assertEquals(List.of("unhandled: SGR 21", "unhandled: SGR 53"), reports);
     }
 
     @Test
@@ -136,7 +136,7 @@ class TerminalEmulatorUnhandledLogTest {
         TerminalEmulator emu = emulator();
         String[] handled = {
             "[H", "[2J", "[3J", "[K", "[1K", "[1;31m", "[0m", "[m", "[38;5;196m", "[48;2;1;2;3m",
-            "[1;4;5;7m", "[22;24;25;27;39;49m", "[92;104m", "[?25l", "[?25h", "[?1049h", "[?1049l",
+            "[1;4;5;7m", "[22;24;25;27;39;49m", "[2;3;8;9m", "[23;28;29m", "[92;104m", "[?25l", "[?25h", "[?1049h", "[?1049l",
             "[?1h", "[?1l", "[?7l", "[?7h", "[?2004h", "[?2004l", "[?4l", "[?12h", "[?12l",
             "[5;10r", "[r", "[L", "[M", "[P", "[X", "[@", "[S", "[T", "[d", "[G", "[A", "[B",
             "[C", "[D", "[E", "[F", "[3;4f", "[s", "[u", "[3g", "[g", "[6n", "[5n", "[c", "[18t",

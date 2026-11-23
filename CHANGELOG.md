@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [2.3.5] — 2026-11-23
+
+### Added
+- **Faint, italic, concealed and strike-through text** (SGR 2, 3, 8, 9 and their resets 22, 23,
+  28, 29). These were silently ignored, so dimmed hints, italic comments and struck-out text in
+  modern command-line tools looked like plain text. Faint text is drawn halfway between the text
+  and background colour; concealed text keeps its background but hides the glyph.
+
+---
+
 ## [2.3.4] — 2026-11-23
 
 ### Fixed
