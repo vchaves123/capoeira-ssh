@@ -80,6 +80,19 @@ class TerminalTraceTest {
     }
 
     @Test
+    @DisplayName("a resize is recorded as RESIZE with the new size and whether the server was told")
+    void resize_recordedWithSizeAndPtyFlag() throws Exception {
+        List<String> lines = traceLines(t -> {
+            t.resize(210, 51, true);
+            t.resize(80, 24, false);
+        });
+
+        assertTrue(lines.get(1).contains(" RESIZE ") && lines.get(1).endsWith(" 210x51 pty=sent"),
+                "got: " + lines.get(1));
+        assertTrue(lines.get(2).endsWith(" 80x24 pty=not-sent"), "got: " + lines.get(2));
+    }
+
+    @Test
     @DisplayName("only the requested slice of the buffer is recorded")
     void rxRespectsOffsetAndLength() throws Exception {
         // The SSH reader reuses one 4 KB buffer and only the first n bytes are real — recording

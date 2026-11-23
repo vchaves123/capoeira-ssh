@@ -94,6 +94,13 @@ public final class TerminalTrace implements AutoCloseable {
     /** Record a snapshot of emulator state, produced by {@link TerminalEmulator#dumpState()}. */
     public void state(String json) { writeLine("STATE", json); }
 
+    /** Record a terminal resize, so a later reading can place it among the surrounding bytes —
+     *  whether a program saw the old or the new size depends on exactly when this happened.
+     *  {@code ptyUpdated} says whether the new size was also sent to the server. */
+    public void resize(int cols, int rows, boolean ptyUpdated) {
+        writeLine("RESIZE", cols + "x" + rows + " pty=" + (ptyUpdated ? "sent" : "not-sent"));
+    }
+
     private void writeBytes(String kind, byte[] data, int offset, int length) {
         if (data == null || length <= 0) return;
         StringBuilder sb = new StringBuilder(length * 2 + 8);
