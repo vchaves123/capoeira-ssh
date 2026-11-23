@@ -51,6 +51,8 @@ public class TerminalTab {
     // -----------------------------------------------------------------------
     private Font  termFont;
     private Font  termFontBold;   // cached bold variant, rebuilt on font/size change
+    private Font  termFontItalic;      // cached italic variant, same lifecycle as termFontBold
+    private Font  termFontBoldItalic;  // cached bold+italic variant, same lifecycle
     /** Supplies a substitute font for code points termFont has no glyph for. */
     private GlyphFallback glyphFallback;
     private Font  overlayFont;    // cached 16pt bold for the disconnected overlay
@@ -303,8 +305,12 @@ public class TerminalTab {
         String fontName = MonoFonts.resolve(display, termFontName);
         if (termFont != null && !termFont.isDisposed()) termFont.dispose();
         if (termFontBold != null && !termFontBold.isDisposed()) termFontBold.dispose();
+        if (termFontItalic != null && !termFontItalic.isDisposed()) termFontItalic.dispose();
+        if (termFontBoldItalic != null && !termFontBoldItalic.isDisposed()) termFontBoldItalic.dispose();
         if (overlayFont  != null && !overlayFont.isDisposed())  overlayFont.dispose();
         termFontBold = null;   // rebuilt lazily in render() for the new font/size
+        termFontItalic = null;
+        termFontBoldItalic = null;
         overlayFont  = null;
         termFont = new Font(display, fontName, termFontSize, SWT.NORMAL);
 
@@ -789,6 +795,10 @@ public class TerminalTab {
         int fg = TerminalEmulator.resolveColor(cell.fgColor);
         int bg = TerminalEmulator.resolveColor(cell.bgColor);
 
+        // SGR 2 (faint): the foreground blended halfway toward the background — done before the
+        // reverse-video swap below, so a faint reversed cell dims its text, as xterm does.
+        if (cell.dim) fg = blendHalf(fg < 0 ? defaultFgRgb : fg, bg < 0 ? defaultBgRgb : bg);
+
         // Reverse video swaps foreground and background. resolveColor returns -1 for
         // "the terminal default", and swapping -1 with -1 is a no-op — which is why
         // reverse used to render identically to normal text whenever the cell kept
@@ -846,6 +856,8 @@ public class TerminalTab {
             if (c == f.cols() - 1 && !isCursor) lastColBg = bg;
             return lastColBg;
         }
+        // SGR 8 (concealed): like blink's off phase, permanently — background only.
+        if (cell.invisible) return lastColBg;
 
         // The trailer half of a double-width glyph carries no character of its own —
         // its background was painted above (so a wide glyph's highlight covers both
@@ -859,14 +871,7 @@ public class TerminalTab {
             // substitute font instead of a tofu box (see GlyphFallback).
             Font drawFont = glyphFallback != null
                     ? glyphFallback.fontFor(cell.character, cell.bold) : null;
-            if (drawFont == null && cell.bold) {
-                // Reuse a cached bold font — creating and disposing a native Font per
-                // bold cell per frame let a hostile server churn GDI/X11 font handles
-                // and freeze the whole UI thread.
-                if (termFontBold == null || termFontBold.isDisposed())
-                    termFontBold = new Font(display, termFont.getFontData()[0].getName(), termFontSize, SWT.BOLD);
-                drawFont = termFontBold;
-            }
+            if (drawFont == null && (cell.bold || cell.italic)) drawFont = styledFont(cell.bold, cell.italic);
             if (drawFont != null) {
                 gc.setFont(drawFont);
                 // Substitute glyphs are sized to fit the cell but keep the substitute
@@ -881,6 +886,10 @@ public class TerminalTab {
 
             if (cell.underline) {
                 gc.drawLine(px, py + charHeight - 1, px + charWidth - 1, py + charHeight - 1);
+            }
+            if (cell.strike) {
+                int my = py + charHeight / 2;
+                gc.drawLine(px, my, px + charWidth - 1, my);
             }
 
             if (cfg != null) cfg.dispose();
@@ -1031,6 +1040,32 @@ public class TerminalTab {
         int realFg = (fg < 0) ? defaultFgRgb : fg;
         int realBg = (bg < 0) ? defaultBgRgb : bg;
         return new int[]{ realBg, realFg };
+    }
+
+    /** The colour halfway between two 0xRRGGBB colours, channel by channel — SGR 2's faint text.
+     *  Package-private and static for the same reason as {@link #swapForReverseVideo}. */
+    static int blendHalf(int a, int b) {
+        int r = (((a >> 16) & 0xFF) + ((b >> 16) & 0xFF)) / 2;
+        int g = (((a >>  8) & 0xFF) + ((b >>  8) & 0xFF)) / 2;
+        int bl = ((a & 0xFF) + (b & 0xFF)) / 2;
+        return (r << 16) | (g << 8) | bl;
+    }
+
+    /**
+     * The terminal font in bold, italic or both, cached — creating and disposing a native Font
+     * per styled cell per frame let a hostile server churn GDI/X11 font handles and freeze the
+     * whole UI thread. All variants are dropped in {@link #initFont} when the font changes.
+     */
+    private Font styledFont(boolean bold, boolean italic) {
+        int style = (bold ? SWT.BOLD : 0) | (italic ? SWT.ITALIC : 0);
+        Font cached = bold && italic ? termFontBoldItalic : bold ? termFontBold : termFontItalic;
+        if (cached == null || cached.isDisposed()) {
+            cached = new Font(display, termFont.getFontData()[0].getName(), termFontSize, style);
+            if (bold && italic) termFontBoldItalic = cached;
+            else if (bold)      termFontBold       = cached;
+            else                termFontItalic     = cached;
+        }
+        return cached;
     }
 
     /** A cell's code point as a drawable string. BMP code points take the single-char fast path;
@@ -2006,6 +2041,8 @@ public class TerminalTab {
             if (colorActivityBlue != null && !colorActivityBlue.isDisposed()) colorActivityBlue.dispose();
             if (colorDisconnectedRed != null && !colorDisconnectedRed.isDisposed()) colorDisconnectedRed.dispose();
             if (termFontBold != null && !termFontBold.isDisposed()) termFontBold.dispose();
+            if (termFontItalic != null && !termFontItalic.isDisposed()) termFontItalic.dispose();
+            if (termFontBoldItalic != null && !termFontBoldItalic.isDisposed()) termFontBoldItalic.dispose();
             if (overlayFont  != null && !overlayFont.isDisposed())  overlayFont.dispose();
             if (glyphFallback != null) glyphFallback.dispose();
             if (resizeIndicator != null && !resizeIndicator.isDisposed()) resizeIndicator.dispose();

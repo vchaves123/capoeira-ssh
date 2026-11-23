@@ -12,6 +12,14 @@ public final class TerminalCell {
     public boolean underline = false;
     public boolean reverse   = false;
     public boolean blink     = false;
+    /** SGR 2 — faint: drawn halfway between the foreground and background colour. */
+    public boolean dim       = false;
+    /** SGR 3 */
+    public boolean italic    = false;
+    /** SGR 8 — concealed: the glyph (and its underline/strike) is not drawn, the background is. */
+    public boolean invisible = false;
+    /** SGR 9 */
+    public boolean strike    = false;
     /** True for the second cell of a double-width character (CJK, emoji): it holds no
      *  character of its own, it only reserves the column the wide glyph spills into. The
      *  renderer must skip it (the wide glyph is drawn from the first cell) — see
@@ -30,6 +38,10 @@ public final class TerminalCell {
         this.underline   = src.underline;
         this.reverse     = src.reverse;
         this.blink       = src.blink;
+        this.dim         = src.dim;
+        this.italic      = src.italic;
+        this.invisible   = src.invisible;
+        this.strike      = src.strike;
         this.wideTrailer = src.wideTrailer;
     }
 
@@ -40,6 +52,10 @@ public final class TerminalCell {
         underline   = false;
         reverse     = false;
         blink       = false;
+        dim         = false;
+        italic      = false;
+        invisible   = false;
+        strike      = false;
         wideTrailer = false;
     }
 

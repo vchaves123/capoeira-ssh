@@ -1061,10 +1061,17 @@ public class TerminalEmulator {
             switch (p) {
                 case 0  -> currentAttrs.resetAttrs();
                 case 1  -> currentAttrs.bold      = true;
+                case 2  -> currentAttrs.dim       = true;
+                case 3  -> currentAttrs.italic    = true;
+                case 8  -> currentAttrs.invisible = true;
+                case 9  -> currentAttrs.strike    = true;
+                case 23 -> currentAttrs.italic    = false;
+                case 28 -> currentAttrs.invisible = false;
+                case 29 -> currentAttrs.strike    = false;
                 case 4  -> currentAttrs.underline = true;
                 case 5  -> currentAttrs.blink     = true;
                 case 7  -> currentAttrs.reverse   = true;
-                case 22 -> currentAttrs.bold      = false;
+                case 22 -> { currentAttrs.bold = false; currentAttrs.dim = false; }  // "normal intensity" ends both
                 case 24 -> currentAttrs.underline = false;
                 case 25 -> currentAttrs.blink     = false;
                 case 27 -> currentAttrs.reverse   = false;
@@ -1359,6 +1366,10 @@ public class TerminalEmulator {
         cell.underline = currentAttrs.underline;
         cell.reverse   = currentAttrs.reverse;
         cell.blink     = currentAttrs.blink;
+        cell.dim       = currentAttrs.dim;
+        cell.italic    = currentAttrs.italic;
+        cell.invisible = currentAttrs.invisible;
+        cell.strike    = currentAttrs.strike;
         // Caller sets this afterward for the trailer half of a wide glyph; any ordinary write
         // must clear a stale flag left by a wide glyph previously occupying this column.
         cell.wideTrailer = false;
@@ -1396,6 +1407,10 @@ public class TerminalEmulator {
         cell.underline = false;
         cell.reverse   = false;
         cell.blink     = false;
+        cell.dim       = false;
+        cell.italic    = false;
+        cell.invisible = false;
+        cell.strike    = false;
     }
 
     // -----------------------------------------------------------------------
@@ -1533,6 +1548,8 @@ public class TerminalEmulator {
         return a.fgColor == b.fgColor && a.bgColor == b.bgColor
             && a.bold == b.bold && a.underline == b.underline
             && a.reverse == b.reverse && a.blink == b.blink
+            && a.dim == b.dim && a.italic == b.italic
+            && a.invisible == b.invisible && a.strike == b.strike
             && a.wideTrailer == b.wideTrailer;
     }
 
@@ -1547,6 +1564,10 @@ public class TerminalEmulator {
         if (cell.underline)   { if (!first) sb.append(','); sb.append("\"underline\":true"); first = false; }
         if (cell.reverse)     { if (!first) sb.append(','); sb.append("\"reverse\":true");   first = false; }
         if (cell.blink)       { if (!first) sb.append(','); sb.append("\"blink\":true");     first = false; }
+        if (cell.dim)         { if (!first) sb.append(','); sb.append("\"dim\":true");       first = false; }
+        if (cell.italic)      { if (!first) sb.append(','); sb.append("\"italic\":true");    first = false; }
+        if (cell.invisible)   { if (!first) sb.append(','); sb.append("\"invisible\":true"); first = false; }
+        if (cell.strike)      { if (!first) sb.append(','); sb.append("\"strike\":true");    first = false; }
         if (cell.wideTrailer) { if (!first) sb.append(','); sb.append("\"wide\":true");      }
         sb.append('}');
     }
